@@ -1,0 +1,13 @@
+# Godot 4+ local cache & temp files
+.godot/
+
+# Local exported binaries & PCKs
+builds/
+*.exe
+*.pck
+*.x86_64
+
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
