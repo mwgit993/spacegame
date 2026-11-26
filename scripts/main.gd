@@ -1,6 +1,6 @@
 extends Node2D
 
-enum State { TITLE, STATS, OPTIONS, HANGAR, LOADOUT, INTRO_WARP, PLAYING, PAUSED, DRAFT, HYPERSPACE, GAME_OVER_DELAY }
+enum State { TITLE, STATS, OPTIONS, HANGAR, LOADOUT, INTRO_WARP, PLAYING, PAUSED, DRAFT, HYPERSPACE, GAME_OVER_DELAY, SOUNDTRACK }
 
 const VIEW_W: float = 480.0
 const VIEW_H: float = 270.0
@@ -427,6 +427,20 @@ var _opt_shake_btn: Button
 var _opt_touch_btn: Button
 var _opt_fullscreen_btn: Button
 var _opt_speed_btn: Button
+var _opt_soundtrack_btn: Button
+
+# Soundtrack picker (Options > SOUNDTRACK): one row per place music plays
+# (GenesisMusic.SLOT_KEYS); left/right picks the original or one of its alternatives.
+var soundtrack_panel: Control
+var _snd_row_btns: Array[Button] = []
+var _snd_value_lbls: Array[Label] = []
+var _snd_info_lbl: Label
+var _snd_cursor: ColorRect
+var _snd_back_btn: Button
+var _snd_row_idx: int = 0
+var _snd_hyper_timer: float = 0.0
+var _snd_resume_mode: GenesisMusic.Mode = GenesisMusic.Mode.TITLE
+var _snd_resume_stage: int = 0
 
 # Speed-up (RT / F): runs the flight at 2x, held or toggled per MetaSave.speed_up_toggle.
 const SPEED_UP_SCALE: float = 2.0
@@ -570,6 +584,8 @@ func _run_smoke_test() -> void:
 		_select_loadout_slot(s_idx)
 		InputPrompts.set_gamepad(not InputPrompts.is_gamepad)
 	if not _smoke_check_speed_up():
+		smoke_ok = false
+	if not _smoke_check_soundtrack():
 		smoke_ok = false
 	MetaSave.select_ship("neko")
 	_start_run()
@@ -913,6 +929,84 @@ func _smoke_check_speed_up() -> bool:
 	return ok
 
 
+# Soundtrack: every alternative track builds and renders finite audio, its composed melodies
+# fit the song form, and the picker saves picks, previews, and returns to Options.
+func _smoke_check_soundtrack() -> bool:
+	var ok: bool = true
+	var saved_picks: Dictionary = MetaSave.music_picks.duplicate()
+	for slot: String in GenesisMusic.SLOT_KEYS:
+		var count: int = GenesisMusic.candidate_count(slot)
+		if count != 5:
+			push_error("SMOKE: soundtrack slot %s has %d alternatives, expected 5" % [slot, count])
+			ok = false
+		for idx: int in range(count + 1):
+			GenesisMusic.preview(slot, idx)
+			var song: Dictionary = GenesisMusic._song
+			if idx > 0 and song.is_empty():
+				push_error("SMOKE: soundtrack %s #%d did not load" % [slot, idx])
+				ok = false
+				continue
+			if idx > 0 and not song.has("hyper"):
+				var want_len: int = int(song.get("bar_steps", 16)) * 8
+				for which: String in ["mel_a", "mel_b"]:
+					var mel: Array = song[which]
+					if mel.size() != want_len:
+						push_error("SMOKE: soundtrack %s #%d %s has %d steps, expected %d" % [slot, idx, which, mel.size(), want_len])
+						ok = false
+			var loudest: float = 0.0
+			for start: int in [0, 300]:
+				GenesisMusic._step = start
+				var buf: PackedVector2Array = GenesisMusic._render_block(2048)
+				if buf.size() != 2048:
+					push_error("SMOKE: soundtrack %s #%d failed to render" % [slot, idx])
+					ok = false
+				for v: Vector2 in buf:
+					if is_nan(v.x) or is_nan(v.y) or absf(v.x) > 1.0 or absf(v.y) > 1.0:
+						push_error("SMOKE: soundtrack %s #%d rendered a bad sample" % [slot, idx])
+						ok = false
+						break
+					loudest = maxf(loudest, absf(v.x))
+			if loudest < 0.01:
+				push_error("SMOKE: soundtrack %s #%d is silent" % [slot, idx])
+				ok = false
+	GenesisMusic.end_preview()
+
+	_open_options_from_title()
+	_enter_soundtrack()
+	if state != State.SOUNDTRACK or not soundtrack_panel.visible:
+		push_error("SMOKE: soundtrack picker did not open")
+		ok = false
+	_snd_row_idx = 0
+	_snd_move_row(1) # stage 1
+	var before: int = GenesisMusic.get_pick("stage_1")
+	_snd_change_track(1)
+	var after: int = GenesisMusic.get_pick("stage_1")
+	if after != (before + 1) % 6 or int(MetaSave.music_picks.get("stage_1", -1)) != after:
+		push_error("SMOKE: soundtrack pick did not change (%d -> %d)" % [before, after])
+		ok = false
+	if GenesisMusic.current_mode != GenesisMusic.Mode.STAGE or GenesisMusic._preview_slot != "stage_1":
+		push_error("SMOKE: soundtrack picker is not previewing stage 1")
+		ok = false
+	MetaSave.music_picks = {}
+	MetaSave.load_game()
+	if int(MetaSave.music_picks.get("stage_1", -1)) != after:
+		push_error("SMOKE: soundtrack pick did not survive save + load")
+		ok = false
+	for i: int in range(12):
+		_snd_move_row(1)
+	_on_snd_row_clicked(0)
+	_on_snd_row_clicked(0)
+	_leave_soundtrack()
+	if state != State.OPTIONS or GenesisMusic._preview_slot != "" or GenesisMusic.current_mode != GenesisMusic.Mode.TITLE:
+		push_error("SMOKE: leaving the soundtrack picker did not return to Options and the title music")
+		ok = false
+	_leave_options()
+	MetaSave.music_picks = saved_picks
+	GenesisMusic.set_picks(MetaSave.music_picks)
+	MetaSave.save_game()
+	return ok
+
+
 func _smoke_speed_is(want_fast: bool, what: String) -> bool:
 	var want_scale: float = SPEED_UP_SCALE if want_fast else 1.0
 	var want_tps: int = roundi(float(_base_physics_tps) * want_scale)
@@ -1025,6 +1119,7 @@ func _build_ui() -> void:
 	_build_title_ui()
 	_build_stats_ui()
 	_build_options_ui()
+	_build_soundtrack_ui()
 	_build_skill_tree_ui()
 	_build_loadout_ui()
 	_build_draft_ui()
@@ -1271,7 +1366,7 @@ func _build_options_ui() -> void:
 
 	var reset_btn: Button = Button.new()
 	reset_btn.position = Vector2(50.0, 229.0)
-	reset_btn.size = Vector2(158.0, 26.0)
+	reset_btn.size = Vector2(116.0, 26.0)
 	reset_btn.text = "RESET SAVE"
 	_style_menu_btn(reset_btn, Color("#ff4c68"))
 	reset_btn.pressed.connect(func() -> void:
@@ -1281,14 +1376,193 @@ func _build_options_ui() -> void:
 	)
 	options_panel.add_child(reset_btn)
 
+	_opt_soundtrack_btn = Button.new()
+	_opt_soundtrack_btn.position = Vector2(172.0, 229.0)
+	_opt_soundtrack_btn.size = Vector2(128.0, 26.0)
+	_opt_soundtrack_btn.text = "SOUNDTRACK"
+	_style_menu_btn(_opt_soundtrack_btn, Color("#ffe854"))
+	_opt_soundtrack_btn.pressed.connect(_enter_soundtrack)
+	options_panel.add_child(_opt_soundtrack_btn)
+
 	var back_btn: Button = Button.new()
-	back_btn.position = Vector2(284.0, 229.0)
-	back_btn.size = Vector2(136.0, 26.0)
+	back_btn.position = Vector2(306.0, 229.0)
+	back_btn.size = Vector2(114.0, 26.0)
 	back_btn.text = "BACK"
 	_style_menu_btn(back_btn)
 	InputPrompts.bind_button(back_btn, "back")
 	back_btn.pressed.connect(_leave_options)
 	options_panel.add_child(back_btn)
+
+
+func _build_soundtrack_ui() -> void:
+	soundtrack_panel = Control.new()
+	soundtrack_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	soundtrack_panel.visible = false
+	ui_layer.add_child(soundtrack_panel)
+
+	var card: Panel = Panel.new()
+	card.position = Vector2(32.0, 10.0)
+	card.size = Vector2(416.0, 250.0)
+	card.add_theme_stylebox_override("panel", _make_ff6_box())
+	soundtrack_panel.add_child(card)
+
+	var hdr: Label = Label.new()
+	hdr.position = Vector2(50.0, 15.0)
+	hdr.size = Vector2(380.0, 14.0)
+	hdr.text = "SOUNDTRACK: PICK ONE TRACK PER SLOT"
+	hdr.add_theme_font_size_override("font_size", FONT_SZ)
+	hdr.add_theme_color_override("font_color", Color("#ffe854"))
+	soundtrack_panel.add_child(hdr)
+
+	_snd_cursor = ColorRect.new()
+	_snd_cursor.size = Vector2(388.0, 15.0)
+	_snd_cursor.color = Color(0.16, 0.42, 1.0, 0.38)
+	_snd_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	soundtrack_panel.add_child(_snd_cursor)
+
+	for i: int in range(GenesisMusic.SLOT_KEYS.size()):
+		var y: float = 32.0 + float(i) * 16.0
+		var row: Button = Button.new()
+		row.position = Vector2(46.0, y)
+		row.size = Vector2(388.0, 15.0)
+		row.flat = true
+		row.focus_mode = Control.FOCUS_NONE
+		row.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		row.text = _snd_slot_label(i)
+		row.add_theme_font_size_override("font_size", FONT_SZ)
+		row.add_theme_color_override("font_color", Color("#dce6ff"))
+		row.add_theme_color_override("font_hover_color", Color.WHITE)
+		row.add_theme_color_override("font_pressed_color", Color("#ffe854"))
+		row.pressed.connect(_on_snd_row_clicked.bind(i))
+		soundtrack_panel.add_child(row)
+		_snd_row_btns.append(row)
+
+		var val: Label = Label.new()
+		val.position = Vector2(176.0, y)
+		val.size = Vector2(256.0, 15.0)
+		val.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		val.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		val.add_theme_font_size_override("font_size", FONT_SZ)
+		soundtrack_panel.add_child(val)
+		_snd_value_lbls.append(val)
+
+	_snd_info_lbl = Label.new()
+	_snd_info_lbl.position = Vector2(50.0, 210.0)
+	_snd_info_lbl.size = Vector2(380.0, 14.0)
+	_snd_info_lbl.add_theme_font_size_override("font_size", FONT_SZ)
+	_snd_info_lbl.add_theme_color_override("font_color", Color("#28e8ff"))
+	soundtrack_panel.add_child(_snd_info_lbl)
+
+	var foot: PromptBar = PromptBar.new()
+	foot.position = Vector2(50.0, 233.0)
+	foot.size = Vector2(260.0, 16.0)
+	foot.text_color = Color("#9ab6e8")
+	foot.set_segments([{"act": "move"}, " CHOOSE   ", {"act": "confirm"}, " REPLAY"])
+	soundtrack_panel.add_child(foot)
+
+	_snd_back_btn = Button.new()
+	_snd_back_btn.position = Vector2(326.0, 229.0)
+	_snd_back_btn.size = Vector2(94.0, 24.0)
+	_snd_back_btn.text = "BACK"
+	_style_menu_btn(_snd_back_btn)
+	_snd_back_btn.focus_mode = Control.FOCUS_NONE
+	InputPrompts.bind_button(_snd_back_btn, "back")
+	_snd_back_btn.pressed.connect(_leave_soundtrack)
+	soundtrack_panel.add_child(_snd_back_btn)
+
+
+func _snd_slot_label(i: int) -> String:
+	var slot: String = GenesisMusic.SLOT_KEYS[i]
+	if slot.begins_with("stage_"):
+		var st: int = int(slot.substr(6))
+		var st_def: Dictionary = StageData.get_stage(st - 1)
+		return "S%d %s" % [st, String(st_def["name"])]
+	match slot:
+		"title":
+			return "TITLE & MENUS"
+		"boss":
+			return "BOSS FIGHTS"
+		"hyperspace":
+			return "HYPERSPACE JUMP"
+	return slot.to_upper()
+
+
+func _enter_soundtrack() -> void:
+	RetroSfx.play("ui", -7.0, 0.02)
+	# Remember what was playing (title, or the paused run's stage/boss) to resume it on the way out.
+	_snd_resume_mode = GenesisMusic.current_mode
+	_snd_resume_stage = GenesisMusic.current_stage_idx
+	options_panel.visible = false
+	soundtrack_panel.visible = true
+	state = State.SOUNDTRACK
+	_refresh_soundtrack_ui()
+	_snd_preview_current()
+
+
+func _leave_soundtrack() -> void:
+	RetroSfx.play("ui", -7.0, 0.02)
+	GenesisMusic.end_preview()
+	soundtrack_panel.visible = false
+	options_panel.visible = true
+	state = State.OPTIONS
+	# Pick up any changed pick right away: restart whatever was playing before.
+	match _snd_resume_mode:
+		GenesisMusic.Mode.STAGE, GenesisMusic.Mode.BOSS, GenesisMusic.Mode.HYPERSPACE:
+			GenesisMusic.resume_after_preview(_snd_resume_mode, _snd_resume_stage)
+			GenesisMusic.set_paused_duck(true)
+		_:
+			GenesisMusic.resume_after_preview(GenesisMusic.Mode.TITLE, 0)
+	_opt_soundtrack_btn.grab_focus()
+
+
+func _refresh_soundtrack_ui() -> void:
+	for i: int in range(_snd_row_btns.size()):
+		var slot: String = GenesisMusic.SLOT_KEYS[i]
+		var idx: int = GenesisMusic.get_pick(slot)
+		var sel: bool = i == _snd_row_idx
+		var name_txt: String = GenesisMusic.candidate_name(slot, idx)
+		_snd_value_lbls[i].text = ("< %s >" % name_txt) if idx == 0 else ("< #%d  %s >" % [idx, name_txt])
+		_snd_value_lbls[i].add_theme_color_override("font_color", Color("#ffe854") if sel else (Color("#9ab6e8") if idx == 0 else Color("#dce6ff")))
+	_snd_cursor.position = Vector2(46.0, 32.0 + float(_snd_row_idx) * 16.0)
+	var cur_slot: String = GenesisMusic.SLOT_KEYS[_snd_row_idx]
+	var cur_idx: int = GenesisMusic.get_pick(cur_slot)
+	_snd_info_lbl.text = "%d/%d  %s" % [cur_idx, GenesisMusic.candidate_count(cur_slot), GenesisMusic.candidate_info(cur_slot, cur_idx)]
+
+
+func _snd_preview_current() -> void:
+	var slot: String = GenesisMusic.SLOT_KEYS[_snd_row_idx]
+	GenesisMusic.preview(slot, GenesisMusic.get_pick(slot))
+	_snd_hyper_timer = 0.0
+
+
+func _snd_move_row(dir: int) -> void:
+	var n: int = GenesisMusic.SLOT_KEYS.size()
+	_snd_row_idx = posmod(_snd_row_idx + dir, n)
+	RetroSfx.play("ui", -11.0, 0.03)
+	_refresh_soundtrack_ui()
+	_snd_preview_current()
+
+
+func _snd_change_track(dir: int) -> void:
+	var slot: String = GenesisMusic.SLOT_KEYS[_snd_row_idx]
+	var count: int = GenesisMusic.candidate_count(slot) + 1
+	var idx: int = posmod(GenesisMusic.get_pick(slot) + dir, count)
+	MetaSave.music_picks[slot] = idx
+	GenesisMusic.set_picks(MetaSave.music_picks)
+	MetaSave.save_game()
+	_refresh_soundtrack_ui()
+	_snd_preview_current()
+
+
+# Mouse / touch: tap a row to select it (and hear it); tap the selected row again for its next track.
+func _on_snd_row_clicked(i: int) -> void:
+	if i == _snd_row_idx:
+		_snd_change_track(1)
+	else:
+		_snd_row_idx = i
+		RetroSfx.play("ui", -11.0, 0.03)
+		_refresh_soundtrack_ui()
+		_snd_preview_current()
 
 
 func _leave_options() -> void:
@@ -2288,6 +2562,7 @@ func _hide_all_menus() -> void:
 	title_panel.visible = false
 	stats_panel.visible = false
 	options_panel.visible = false
+	soundtrack_panel.visible = false
 	hangar_panel.visible = false
 	loadout_panel.visible = false
 	draft_panel.visible = false
@@ -2768,6 +3043,11 @@ func _process(delta: float) -> void:
 
 	_poll_controller_menu_stick(delta)
 
+	if state == State.SOUNDTRACK and GenesisMusic.SLOT_KEYS[_snd_row_idx] == "hyperspace":
+		_snd_hyper_timer += delta
+		if _snd_hyper_timer >= 3.4:
+			_snd_preview_current()
+
 	if state == State.TITLE and _title_ship_sprite != null:
 		var t: float = float(Time.get_ticks_msec()) * 0.003
 		_title_ship_sprite.position = Vector2(354.0 + cos(t * 0.7) * 8.0, 134.0 + sin(t) * 10.0)
@@ -2835,6 +3115,15 @@ func _poll_controller_menu_stick(delta: float) -> void:
 		if absf(py) > absf(ay):
 			ay = py
 
+	if state == State.SOUNDTRACK:
+		if absf(ay) > 0.55 and absf(ay) >= absf(ax):
+			_snd_move_row(1 if ay > 0.0 else -1)
+			_joy_nav_cooldown = 0.19
+		elif absf(ax) > 0.55:
+			_snd_change_track(1 if ax > 0.0 else -1)
+			_joy_nav_cooldown = 0.24
+		return
+
 	if state == State.HANGAR:
 		if absf(ax) > 0.52 or absf(ay) > 0.52:
 			_move_tree_selection(Vector2(ax, ay))
@@ -2900,6 +3189,21 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif jb.button_index == JOY_BUTTON_A:
 				_on_buy_tree_node()
 				return
+		if state == State.SOUNDTRACK:
+			match jb.button_index:
+				JOY_BUTTON_DPAD_UP:
+					_snd_move_row(-1)
+				JOY_BUTTON_DPAD_DOWN:
+					_snd_move_row(1)
+				JOY_BUTTON_DPAD_LEFT:
+					_snd_change_track(-1)
+				JOY_BUTTON_DPAD_RIGHT:
+					_snd_change_track(1)
+				JOY_BUTTON_A:
+					_snd_preview_current()
+				JOY_BUTTON_B:
+					_leave_soundtrack()
+			return
 		if jb.button_index == JOY_BUTTON_B and state != State.PLAYING:
 			if state == State.PAUSED:
 				_resume_game()
@@ -2944,6 +3248,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif state == State.OPTIONS:
 			if k == KEY_ESCAPE or k == KEY_BACKSPACE:
 				_leave_options()
+		elif state == State.SOUNDTRACK:
+			if k == KEY_W or k == KEY_UP:
+				_snd_move_row(-1)
+			elif k == KEY_S or k == KEY_DOWN:
+				_snd_move_row(1)
+			elif k == KEY_A or k == KEY_LEFT:
+				_snd_change_track(-1)
+			elif k == KEY_D or k == KEY_RIGHT:
+				_snd_change_track(1)
+			elif k == KEY_ENTER or k == KEY_KP_ENTER or k == KEY_SPACE:
+				_snd_preview_current()
+			elif k == KEY_ESCAPE or k == KEY_BACKSPACE:
+				_leave_soundtrack()
 		elif state == State.HANGAR:
 			if k == KEY_W or k == KEY_UP:
 				_move_tree_selection(Vector2.UP)
