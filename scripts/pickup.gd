@@ -47,12 +47,14 @@ func _process(delta: float) -> void:
 			return
 		elif force_vacuum:
 			velocity = to_player.normalized() * 480.0
-			global_position += velocity * delta
+			# move_toward stops on the ship instead of overshooting it: with the 2x speed-up on a
+			# slow frame, one frame's pull can be longer than the whole 13 px grab circle.
+			global_position = global_position.move_toward(player_ref.global_position, 480.0 * delta)
 			return
 		elif dist < mag_radius:
 			var pull_strength: float = lerpf(165.0, 390.0, 1.0 - (dist / mag_radius))
 			velocity = to_player.normalized() * pull_strength
-			global_position += velocity * delta
+			global_position = global_position.move_toward(player_ref.global_position, pull_strength * delta)
 			return
 
 	velocity.y = lerpf(velocity.y, sin(_bob_phase) * 14.0, 4.5 * delta)

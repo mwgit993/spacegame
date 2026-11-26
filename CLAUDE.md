@@ -14,7 +14,7 @@ godot --headless --path . --quit-after 30 -- --smoke-test  # must print STAR_VIP
 godot --path .                                             # play the game
 ```
 
-- There is no unit-test framework or linter. The smoke test is the only automated check. It is `_run_smoke_test()` in `scripts/main.gd`, and it drives every menu, ship, upgrade, stage and boss by calling private methods directly. It mostly checks for crashes and script errors, not behavior; the skill-tree checks (save migration refund, locked draft cards, every node buyable, draft-card perk effects) instead push an error and exit 1 without printing the PASSED line. If you rename a method it calls, update it there. If you add a ship, upgrade or stage, add it to the smoke test.
+- There is no unit-test framework or linter. The smoke test is the only automated check. It is `_run_smoke_test()` in `scripts/main.gd`, and it drives every menu, ship, upgrade, stage and boss by calling private methods directly. It mostly checks for crashes and script errors, not behavior; the skill-tree checks (save migration refund, locked draft cards, every node buyable, draft-card perk effects) and the speed-up checks (`_smoke_check_speed_up`: hold, toggle, drop to 1x on every way out of flight, setting saved and loaded) instead push an error and exit 1 without printing the PASSED line. If you rename a method it calls, update it there. If you add a ship, upgrade or stage, add it to the smoke test.
 - **The smoke test overwrites the real save file.** It buys skill-tree nodes and finally calls `MetaSave.reset_save()`, all against `user://star_viper_save.json`, the same file normal play uses. Back that file up before running the test on a machine where someone has progress.
 - `build_releases.bat` (Windows only) copies the Godot editor binary next to an exported `.pck`. It has the original author's Godot install paths hardcoded. `export_presets.cfg` has `Windows` and `SteamDeck` (Linux) presets.
 
@@ -22,13 +22,13 @@ godot --path .                                             # play the game
 
 - Use explicit static types everywhere. Don't use `:=` when the right-hand side is a `Variant`, such as a `Dictionary` lookup or an element of an untyped `Array`. Cast instead, for example `String(d["id"])` or `int(d.get("x", 0))`. The codebase does this consistently.
 - Nearly the whole scene tree is built in code. `scenes/main.tscn` contains a single `Node2D` with `main.gd`, and all UI is laid out with literal pixel coordinates. Don't go looking for `.tscn` files or a theme resource.
-- Input is polled directly with `Input.is_physical_key_pressed(KEY_*)` and joypad button and axis checks, in `player.gd` and in `main.gd` (`_unhandled_input`, `_poll_controller_menu_stick`). The project defines no InputMap actions. Touch and mouse-drag flight is handled in `player.gd`.
+- Input is polled directly with `Input.is_physical_key_pressed(KEY_*)` and joypad button and axis checks, in `player.gd` and in `main.gd` (`_unhandled_input`, `_poll_controller_menu_stick`, and `_update_speed_up` for the speed-up button: `F` or the right trigger, which is not a fire button). The project defines no InputMap actions. Touch and mouse-drag flight is handled in `player.gd`.
 - On-screen button prompts follow the last device used. `InputPrompts` switches between keyboard/mouse and gamepad on each real press (stick drift and small mouse nudges are ignored) and draws key caps or Xbox button glyphs. Never write key names into UI text. Use `InputPrompts.bind_button(btn, action)` for a button, or a `PromptBar` (`scripts/prompt_bar.gd`) for a line of text with glyphs. Actions are listed in `InputPrompts.ACTIONS`. If you change a binding in `_unhandled_input` or `player.gd`, update its entry there too.
 - Text uses the FF6-style bitmap font at `font_size = 10`, or an integer multiple of it. Texture filtering is nearest-neighbor and antialiasing is off.
 
 ## Screen layout (480×270 native, integer-scaled)
 
-- `y 0–19`: top status bar, drawn by `main._draw_hud` on `hud_bar`. `y 19–23`: XP bar. `y 24–33`: boss HP gauge with 28 pips (only shown during a boss fight).
+- `y 0–19`: top status bar, drawn by `main._draw_hud` on `hud_bar`. `y 19–23`: XP bar. `y 24–33`: boss HP gauge with 28 pips (only shown during a boss fight); at `x 436–476` on the same row, the speed-up `>> x2` badge while 2x is on.
 - `y 30–249`: playfield. The player is clamped to `PlayerShip.MIN_Y`/`MAX_Y`, and bouncing bullets reflect at roughly `y 27` and `y 254`.
 - `y 258–270`: scrolling floor deck, drawn by `StarfieldBg`. There is no bottom HUD.
 
@@ -52,6 +52,8 @@ godot --path .                                             # play the game
 World layering is `world_root` → `pickup_layer`, `enemy_layer`, `player`, `bullet_layer`, `fx_layer`. UI lives on a separate `CanvasLayer`.
 
 **Pausing and drafts don't use `get_tree().paused`.** They set `world_root.process_mode = PROCESS_MODE_DISABLED` and slow `starfield.speed_scale`. `GenesisMusic` runs with `PROCESS_MODE_ALWAYS` and is only ducked. Anything new that should freeze during pause must live under `world_root`.
+
+**The speed-up button uses `Engine.time_scale`.** `main._set_speed_up` sets it to 2 and doubles `Engine.physics_ticks_per_second`, but only in `PLAYING` and `HYPERSPACE`. The `state` property's setter calls `_on_state_changed`, which drops back to 1x on any other state, so always change state through `state = ...`. Everything driven by `delta` speeds up; audio doesn't (music renders by buffer space, SFX keep their pitch). Because movement happens in `_process`, a 2x frame moves things twice as far between overlap checks: `GameBullet._update_sweep` adds a capsule along each shot's path while `time_scale > 1`, and `GamePickup` uses `move_toward` so a pull can't overshoot the ship. Anything new that moves fast or tests distance once per frame needs the same care. Cooldowns that reset to their interval (rather than carrying the remainder) fire up to one frame late each time, so at 2x the player fires about 7–16% fewer shots per game second than at 1x.
 
 **Entities are created with `.new()` and set up through a `setup(...)` call.** The player, enemies and bullets are `Area2D` subclasses; `GamePickup` is a plain `Node2D`. They talk to `main` through signals: `GameEnemy.destroyed(enemy, killed_by_player)`, `boss_phase_broken`, `GamePickup.collected`, `PlayerShip.hp_changed` and `player_died`.
 

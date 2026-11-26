@@ -41,6 +41,7 @@ const ACTIONS: Dictionary = {
 	"fire": {"kbm": ["key_SPACE"], "pad": ["pad_a"]},
 	"focus": {"kbm": ["key_SHIFT"], "pad": ["pad_lb"]},
 	"autofire": {"kbm": ["key_C"], "pad": ["pad_y"]},
+	"speed": {"kbm": ["key_F"], "pad": ["pad_rt"]},
 }
 
 # 3x5 pixel font for key caps and small button labels (M, N and W are wider).

@@ -377,7 +377,12 @@ const RUN_UPGRADE_POOL: Array[Dictionary] = [
 	},
 ]
 
-var state: State = State.TITLE
+# Every change goes through _on_state_changed(), so no way out of the flight can leave the
+# speed-up running.
+var state: State = State.TITLE:
+	set(value):
+		state = value
+		_on_state_changed()
 
 var starfield: StarfieldBg
 var world_root: Node2D
@@ -421,6 +426,19 @@ var _opt_autofire_btn: Button
 var _opt_shake_btn: Button
 var _opt_touch_btn: Button
 var _opt_fullscreen_btn: Button
+var _opt_speed_btn: Button
+
+# Speed-up (RT / F): runs the flight at 2x, held or toggled per MetaSave.speed_up_toggle.
+const SPEED_UP_SCALE: float = 2.0
+# Trigger hysteresis: a pull counts once past PRESS and ends only below RELEASE, so a wobbly
+# half-pull can't flip TOGGLE mode twice.
+const SPEED_TRIGGER_PRESS: float = 0.55
+const SPEED_TRIGGER_RELEASE: float = 0.25
+var _speed_up_active: bool = false      # 2x currently applied to Engine.time_scale
+var _speed_toggle_on: bool = false      # TOGGLE mode: switched on by the last press
+var _speed_input_held: bool = false     # RT or F held on the previous update (edge detection)
+var _speed_trigger_down: bool = false   # RT inside its hysteresis "pressed" state
+var _base_physics_tps: int = 60
 
 # Analog stick UI navigation repeat timer
 var _joy_nav_cooldown: float = 0.0
@@ -495,6 +513,7 @@ var _loadout_cursor_idx: int = 0
 
 func _ready() -> void:
 	randomize()
+	_base_physics_tps = Engine.physics_ticks_per_second
 	MetaSave.apply_audio_and_display_settings()
 	_build_world()
 	_build_ui()
@@ -550,6 +569,8 @@ func _run_smoke_test() -> void:
 	for s_idx: int in range(SkillTreeData.SHIPS.size()):
 		_select_loadout_slot(s_idx)
 		InputPrompts.set_gamepad(not InputPrompts.is_gamepad)
+	if not _smoke_check_speed_up():
+		smoke_ok = false
 	MetaSave.select_ship("neko")
 	_start_run()
 	_update_intro_warp(1.0)
@@ -685,6 +706,8 @@ func _run_smoke_test() -> void:
 	player.invuln_timer = 0.0
 	player.take_player_hit()
 	MetaSave.reset_save()
+	if not _smoke_speed_is(false, "at the end of the smoke test"):
+		smoke_ok = false
 	if not smoke_ok:
 		push_error("STAR_VIPER_SMOKE_TEST_FAILED")
 		get_tree().quit(1)
@@ -738,6 +761,167 @@ func _smoke_check_input_prompts() -> bool:
 	for g_id: String in InputPrompts.all_glyph_ids():
 		InputPrompts.glyph(g_id)
 	return true
+
+
+# Speed-up button: HOLD and TOGGLE reach 2x only while flying, every way out of the flight drops
+# to 1x, a jittery trigger pull flips TOGGLE exactly once, shots sweep their path at 2x, and the
+# mode saves, loads, and defaults to HOLD for older saves.
+func _smoke_check_speed_up() -> bool:
+	var ok: bool = true
+	var saved_mode: bool = MetaSave.speed_up_toggle
+
+	# --- HOLD ---
+	MetaSave.speed_up_toggle = false
+	_start_run()
+	_update_speed_up(true, 0.0)
+	ok = _smoke_speed_is(false, "held during the intro warp") and ok
+	_update_intro_warp(1.0)
+	_update_intro_warp(1.0)
+	_update_speed_up(false, 0.0)
+	ok = _smoke_speed_is(false, "idle in flight") and ok
+	_update_speed_up(true, 0.0)
+	ok = _smoke_speed_is(true, "F held") and ok
+	var shot: GameBullet = player._spawn_player_bullet(Vector2(100.0, 120.0), Vector2(520.0, 0.0), 1.0, "bullet_rail", 0, false, 3.2)
+	shot._process(1.0 / 30.0)
+	if shot._sweep_node == null or shot._sweep_node.disabled or shot._sweep_shape.mid_height < 15.0:
+		push_error("SMOKE: speed-up: a 2x shot did not sweep its path")
+		ok = false
+	_update_speed_up(false, 0.0)
+	ok = _smoke_speed_is(false, "F released") and ok
+	shot._process(1.0 / 60.0)
+	if not shot._sweep_node.disabled:
+		push_error("SMOKE: speed-up: shot sweep still on at 1x")
+		ok = false
+	shot.queue_free()
+	_update_speed_up(false, 0.9)
+	ok = _smoke_speed_is(true, "RT pulled") and ok
+	_update_speed_up(false, 0.4)
+	ok = _smoke_speed_is(true, "RT eased back into the hysteresis band") and ok
+	_update_speed_up(false, 0.1)
+	ok = _smoke_speed_is(false, "RT released") and ok
+	_update_speed_up(true, 0.0)
+	_pause_game()
+	ok = _smoke_speed_is(false, "paused while held") and ok
+	_update_speed_up(true, 0.0)
+	ok = _smoke_speed_is(false, "held in the pause menu") and ok
+	_resume_game()
+	_update_speed_up(true, 0.0)
+	ok = _smoke_speed_is(true, "still held after resuming") and ok
+	_open_upgrade_draft()
+	ok = _smoke_speed_is(false, "level-up draft while held") and ok
+	_update_speed_up(true, 0.0)
+	ok = _smoke_speed_is(false, "held in the draft") and ok
+	_pick_draft_card(0)
+	_update_speed_up(true, 0.0)
+	ok = _smoke_speed_is(true, "still held after the draft") and ok
+	_begin_hyperspace_jump()
+	_update_speed_up(true, 0.0)
+	ok = _smoke_speed_is(true, "held during the hyperspace jump") and ok
+	_update_hyperspace(_hyper_duration + 0.5)
+	_update_speed_up(true, 0.0)
+	_on_player_died()
+	ok = _smoke_speed_is(false, "game over while held") and ok
+	_update_speed_up(true, 0.0)
+	ok = _smoke_speed_is(false, "held during the game-over delay") and ok
+	_enter_title()
+	_update_speed_up(false, 0.0)
+
+	# --- TOGGLE ---
+	MetaSave.speed_up_toggle = true
+	_start_run()
+	_update_intro_warp(1.0)
+	_update_intro_warp(1.0)
+	_update_speed_up(false, 0.0)
+	ok = _smoke_speed_is(false, "toggle idle") and ok
+	for t: float in [0.2, 0.6, 0.9, 0.5, 0.6, 0.35, 0.1, 0.0]:
+		_update_speed_up(false, t)
+	ok = _smoke_speed_is(true, "toggle after one jittery RT pull") and ok
+	for t: float in [0.7, 1.0, 0.3, 0.0]:
+		_update_speed_up(false, t)
+	ok = _smoke_speed_is(false, "toggle after a second RT pull") and ok
+	for k: bool in [true, true, true, false]:
+		_update_speed_up(k, 0.0)
+	ok = _smoke_speed_is(true, "toggle after one long F press") and ok
+	_open_upgrade_draft()
+	ok = _smoke_speed_is(false, "toggle in a level-up draft") and ok
+	_pick_draft_card(0)
+	_update_speed_up(false, 0.0)
+	ok = _smoke_speed_is(true, "toggle carries on after the draft") and ok
+	_pause_game()
+	ok = _smoke_speed_is(false, "toggle on pause") and ok
+	_resume_game()
+	_update_speed_up(false, 0.0)
+	ok = _smoke_speed_is(false, "toggle off after resuming") and ok
+	_update_speed_up(true, 0.0)
+	_update_speed_up(false, 0.0)
+	_pause_game()
+	_open_options_from_pause()
+	ok = _smoke_speed_is(false, "options opened from pause") and ok
+	_leave_options()
+	_retire_from_pause()
+	_update_speed_up(false, 0.0)
+	ok = _smoke_speed_is(false, "after retiring") and ok
+	_start_run()
+	_update_intro_warp(1.0)
+	_update_intro_warp(1.0)
+	_update_speed_up(true, 0.0)
+	ok = _smoke_speed_is(true, "toggled on in a new run") and ok
+	_enter_title()
+	ok = _smoke_speed_is(false, "back on the title screen") and ok
+	_update_speed_up(false, 0.0)
+	_update_speed_up(true, 0.0)
+	ok = _smoke_speed_is(false, "F pressed on the title screen") and ok
+	_update_speed_up(false, 0.0)
+
+	# --- OPTIONS row, save and load ---
+	_open_options_from_title()
+	_opt_speed_btn.pressed.emit()
+	if MetaSave.speed_up_toggle or not _opt_speed_btn.text.ends_with("HOLD"):
+		push_error("SMOKE: speed-up option row did not switch TOGGLE -> HOLD")
+		ok = false
+	_opt_speed_btn.pressed.emit()
+	if not MetaSave.speed_up_toggle or not _opt_speed_btn.text.ends_with("TOGGLE"):
+		push_error("SMOKE: speed-up option row did not switch HOLD -> TOGGLE")
+		ok = false
+	MetaSave.speed_up_toggle = false
+	MetaSave.load_game()
+	if not MetaSave.speed_up_toggle:
+		push_error("SMOKE: speed-up TOGGLE setting did not survive save + load")
+		ok = false
+	# A save written before this option existed must load as HOLD.
+	var save_r: FileAccess = FileAccess.open(MetaSave.SAVE_PATH, FileAccess.READ)
+	var save_data: Variant = JSON.parse_string(save_r.get_as_text()) if save_r != null else null
+	if save_r != null:
+		save_r.close()
+	var save_w: FileAccess = null
+	if typeof(save_data) == TYPE_DICTIONARY and (save_data as Dictionary).has("speed_up_toggle"):
+		save_w = FileAccess.open(MetaSave.SAVE_PATH, FileAccess.WRITE)
+	if save_w == null:
+		push_error("SMOKE: speed-up setting missing from the save file, or the save can't be rewritten")
+		ok = false
+	else:
+		(save_data as Dictionary).erase("speed_up_toggle")
+		save_w.store_string(JSON.stringify(save_data, "\t"))
+		save_w.close()
+		MetaSave.load_game()
+		if MetaSave.speed_up_toggle:
+			push_error("SMOKE: an old save without the speed-up setting did not default to HOLD")
+			ok = false
+	MetaSave.speed_up_toggle = saved_mode
+	MetaSave.save_game()
+	_leave_options()
+	return ok
+
+
+func _smoke_speed_is(want_fast: bool, what: String) -> bool:
+	var want_scale: float = SPEED_UP_SCALE if want_fast else 1.0
+	var want_tps: int = roundi(float(_base_physics_tps) * want_scale)
+	if _speed_up_active == want_fast and Engine.time_scale == want_scale and Engine.physics_ticks_per_second == want_tps:
+		return true
+	push_error("SMOKE: speed-up %s: expected %s, got time_scale %.1f and %d physics ticks" % [
+		what, "2x" if want_fast else "1x", Engine.time_scale, Engine.physics_ticks_per_second,
+	])
+	return false
 
 
 func _build_world() -> void:
@@ -911,8 +1095,8 @@ func _build_title_ui() -> void:
 	foot.size = Vector2(430.0, 16.0)
 	foot.text_color = Color("#9ab6e8")
 	foot.set_segments([
-		"MOVE ", {"act": "move"}, "   FIRE ", {"act": "fire"}, "   FOCUS ", {"act": "focus"},
-		"   AUTOFIRE ", {"act": "autofire"}, "   PAUSE ", {"act": "pause"},
+		"MOVE ", {"act": "move"}, "  FIRE ", {"act": "fire"}, "  FOCUS ", {"act": "focus"},
+		"  AUTOFIRE ", {"act": "autofire"}, "  PAUSE ", {"act": "pause"}, "  SPEED UP ", {"act": "speed"},
 	])
 	title_panel.add_child(foot)
 
@@ -1072,8 +1256,21 @@ func _build_options_ui() -> void:
 	)
 	options_panel.add_child(_opt_fullscreen_btn)
 
+	_opt_speed_btn = Button.new()
+	_opt_speed_btn.position = Vector2(50.0, 202.0)
+	_opt_speed_btn.size = Vector2(370.0, 23.0)
+	_style_menu_btn(_opt_speed_btn)
+	_opt_speed_btn.pressed.connect(func() -> void:
+		MetaSave.speed_up_toggle = not MetaSave.speed_up_toggle
+		_speed_toggle_on = false
+		MetaSave.save_game()
+		RetroSfx.play("ui", -7.0, 0.02)
+		_refresh_options_ui()
+	)
+	options_panel.add_child(_opt_speed_btn)
+
 	var reset_btn: Button = Button.new()
-	reset_btn.position = Vector2(50.0, 210.0)
+	reset_btn.position = Vector2(50.0, 229.0)
 	reset_btn.size = Vector2(158.0, 26.0)
 	reset_btn.text = "RESET SAVE"
 	_style_menu_btn(reset_btn, Color("#ff4c68"))
@@ -1085,7 +1282,7 @@ func _build_options_ui() -> void:
 	options_panel.add_child(reset_btn)
 
 	var back_btn: Button = Button.new()
-	back_btn.position = Vector2(284.0, 210.0)
+	back_btn.position = Vector2(284.0, 229.0)
 	back_btn.size = Vector2(136.0, 26.0)
 	back_btn.text = "BACK"
 	_style_menu_btn(back_btn)
@@ -2146,6 +2343,61 @@ func _unfreeze_world() -> void:
 	GenesisMusic.set_paused_duck(false)
 
 
+# Called by the `state` setter on every change: 2x only runs while flying (PLAYING or the
+# hyperspace jump), so pause, drafts, game over, retire, title and every menu drop to 1x.
+func _on_state_changed() -> void:
+	var flying: bool = state == State.PLAYING or state == State.HYPERSPACE
+	if not flying:
+		_set_speed_up(false)
+	# A TOGGLE-mode 2x carries on after a level-up draft (drafts pop up on their own), but
+	# pausing or leaving the run switches it off.
+	if not flying and state != State.DRAFT:
+		_speed_toggle_on = false
+
+
+# Strongest right trigger across all pads (0..1).
+func _read_speed_trigger() -> float:
+	var strongest: float = 0.0
+	for pad: int in Input.get_connected_joypads():
+		strongest = maxf(strongest, Input.get_joy_axis(pad, JOY_AXIS_TRIGGER_RIGHT))
+	return strongest
+
+
+# Runs every frame with the raw speed-up inputs (F key, right trigger). The smoke test calls it
+# directly with fake values.
+func _update_speed_up(key_held: bool, trigger: float) -> void:
+	if _speed_trigger_down:
+		_speed_trigger_down = trigger > SPEED_TRIGGER_RELEASE
+	else:
+		_speed_trigger_down = trigger >= SPEED_TRIGGER_PRESS
+	var held: bool = key_held or _speed_trigger_down
+	var just_pressed: bool = held and not _speed_input_held
+	_speed_input_held = held
+	var flying: bool = state == State.PLAYING or state == State.HYPERSPACE
+	if not MetaSave.speed_up_toggle:
+		_speed_toggle_on = false
+		_set_speed_up(flying and held)
+		return
+	if just_pressed and flying:
+		_speed_toggle_on = not _speed_toggle_on
+	_set_speed_up(flying and _speed_toggle_on)
+
+
+func _set_speed_up(on: bool) -> void:
+	var time_scale_val: float = SPEED_UP_SCALE if on else 1.0
+	# Physics here only checks Area2D overlaps. Raising its tick rate with the clock keeps those
+	# checks at 60 per game second on displays faster than 60 Hz. Fast shots are handled by
+	# GameBullet._update_sweep, because they move in _process and extra ticks can't see them.
+	var tps: int = roundi(float(_base_physics_tps) * time_scale_val)
+	if on == _speed_up_active and Engine.time_scale == time_scale_val and Engine.physics_ticks_per_second == tps:
+		return
+	_speed_up_active = on
+	Engine.time_scale = time_scale_val
+	Engine.physics_ticks_per_second = tps
+	if hud_bar != null:
+		hud_bar.queue_redraw()
+
+
 func _enter_title() -> void:
 	_unfreeze_world()
 	state = State.TITLE
@@ -2218,6 +2470,7 @@ func _refresh_options_ui() -> void:
 	var t_names: Array[String] = ["AUTO (PHONE/TABLET)", "ALWAYS ON", "OFF"]
 	_opt_touch_btn.text = "TOUCH CONTROLS:    %s" % t_names[clampi(MetaSave.touch_mode, 0, 2)]
 	_opt_fullscreen_btn.text = "DISPLAY MODE:      %s" % ("FULLSCREEN" if MetaSave.fullscreen_enabled else "WINDOWED")
+	_opt_speed_btn.text = "SPEED UP:          %s" % ("TOGGLE" if MetaSave.speed_up_toggle else "HOLD")
 
 
 func _adjust_music(delta_vol: float) -> void:
@@ -2506,6 +2759,8 @@ func _update_hyperspace(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	_update_speed_up(Input.is_physical_key_pressed(KEY_F), _read_speed_trigger())
+
 	if state != State.PAUSED and _banner_timer > 0.0:
 		_banner_timer -= delta
 		if _banner_timer <= 0.0:
@@ -3202,6 +3457,15 @@ func _draw_hud() -> void:
 				hud_bar.draw_rect(Rect2(72.0, bar_y, 318.0, 9.0), Color("#dce6ff"), false, 1.0)
 				hud_bar.draw_line(Vector2(105.0, bar_y), Vector2(105.0, bar_y + 9.0), Color("#dce6ff"), 1.0)
 				break
+
+	# --- 1c) Speed-up ">> x2" badge, under the pause button and clear of the boss gauge ---
+	if _speed_up_active:
+		var ff_box: Rect2 = Rect2(436.0, 24.0, 40.0, 9.0)
+		hud_bar.draw_rect(ff_box, Color("#0b1029"))
+		hud_bar.draw_rect(ff_box, Color("#ffe854"), false, 1.0)
+		var arrows_lit: bool = (Time.get_ticks_msec() / 250) % 2 == 0
+		hud_bar.draw_string(font, Vector2(442.0, 32.0), ">>", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#ffe854") if arrows_lit else Color("#ff9624"))
+		hud_bar.draw_string(font, Vector2(458.0, 32.0), "x2", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color.WHITE)
 
 	# --- 2) Virtual Touch Thumbstick Feedback Ring ---
 	if player.is_touch_dragging():
