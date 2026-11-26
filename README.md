@@ -5,7 +5,8 @@ A horizontal 16-bit style roguelite space shooter built in **Godot 4.7** (`480x2
 ## Controls
 - **Move:** `WASD` / `Arrow Keys` / Any Connected Controller Left Stick or D-Pad / Touch Drag
 - **Focus Slow-Dodge (shows 3px core hitbox):** Hold `Shift` / Controller `LB`, `RB`, or `LT` / Touch `FOCUS` pad
-- **Fire:** Autofire ON by default (`C` or Controller `Y` toggles) / Hold `Space`, `Z`, `J`, `A`, `X`, or `RT`
+- **Fire:** Autofire ON by default (`C` or Controller `Y` toggles) / Hold `Space`, `Z`, `J`, `A`, or `X`
+- **Speed Up (2x game speed):** Hold `F` / Controller `RT` (switch it to a toggle under **Options → SPEED UP**)
 - **Pause (Stats & Installed Upgrades):** `Esc` / `P` / Controller `Start` / Top-right `II` button
 - **Level-Up Powerup Draft:** Keys `1` / `2` / `3`, Mouse/Touch tap, or Controller D-Pad + `A` (`R` or `Y` to Reroll when unlocked)
 - **Skill Tree & Ship Loadout:** Navigate nodes with `WASD` / Arrows / D-Pad / Stick or Mouse click & drag; `Tab` / `X` switches between **Skill Tree** and **Fleet Ship Loadout**

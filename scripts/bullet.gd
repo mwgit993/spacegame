@@ -49,6 +49,10 @@ var _glow_timer: float = 0.0
 var _anim_timer: float = 0.0
 var _wave_base_pos: Vector2 = Vector2.ZERO
 var _wave_time: float = 0.0
+# Speed-up only: capsule covering the stretch flown this frame (see _update_sweep)
+var _sweep_node: CollisionShape2D = null
+var _sweep_shape: CapsuleShape2D = null
+var _sweep_back: Vector2 = Vector2.ZERO
 
 
 func setup(
@@ -122,6 +126,7 @@ func _update_visual_orientation() -> void:
 
 
 func _process(delta: float) -> void:
+	var prev_pos: Vector2 = global_position
 	if slow_timer > 0.0:
 		slow_timer -= delta
 		delta *= slow_factor
@@ -220,8 +225,42 @@ func _process(delta: float) -> void:
 		queue_free()
 		return
 
+	_update_sweep(prev_pos)
+
 	if global_position.x < -28.0 or global_position.x > 512.0 or global_position.y < 10.0 or global_position.y > 282.0:
 		queue_free()
+
+
+# Speed-up runs the clock at 2x, so a shot moves twice as far per frame and can jump clean over
+# a small hitbox between two overlap checks (movement happens in _process, so more physics ticks
+# don't help). While it's on, a capsule covering this frame's flight path closes that gap. At
+# normal speed the capsule stays off, so hits there are exactly as before.
+func _update_sweep(prev_pos: Vector2) -> void:
+	if Engine.time_scale <= 1.0:
+		if _sweep_node != null and not _sweep_node.disabled:
+			_sweep_node.disabled = true
+		return
+	if _sweep_node == null:
+		_sweep_shape = CapsuleShape2D.new()
+		_sweep_shape.radius = _shape_circle.radius
+		_sweep_shape.mid_height = 0.0
+		_sweep_node = CollisionShape2D.new()
+		_sweep_node.shape = _sweep_shape
+		add_child(_sweep_node)
+		_sweep_back = Vector2.ZERO
+	if _sweep_node.disabled:
+		_sweep_node.disabled = false
+	if _sweep_shape.radius != _shape_circle.radius:
+		_sweep_shape.radius = _shape_circle.radius
+	# Capsules run along local Y: stretch one from where the shot was to where it is now.
+	var back: Vector2 = to_local(prev_pos)
+	# A straight shot at a steady frame rate covers the same local stretch every frame, so skip
+	# the physics-server updates (most of this function's cost with 1000+ shots on screen).
+	if back.distance_squared_to(_sweep_back) < 0.04:
+		return
+	_sweep_back = back
+	_sweep_shape.mid_height = back.length()
+	_sweep_node.transform = Transform2D(back.angle() - PI * 0.5, back * 0.5)
 
 
 func _find_nearest_enemy(exclude_node: Node, skip_already_hit: bool = false) -> Node2D:

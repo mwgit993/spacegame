@@ -482,11 +482,8 @@ func _process(delta: float) -> void:
 		):
 			joy_focus = true
 
-		if (
-			Input.is_joy_button_pressed(pad_id, JOY_BUTTON_A)
-			or Input.is_joy_button_pressed(pad_id, JOY_BUTTON_X)
-			or Input.get_joy_axis(pad_id, JOY_AXIS_TRIGGER_RIGHT) > 0.35
-		):
+		# RT is the speed-up button (main.gd), not fire.
+		if Input.is_joy_button_pressed(pad_id, JOY_BUTTON_A) or Input.is_joy_button_pressed(pad_id, JOY_BUTTON_X):
 			joy_fire = true
 
 		if Input.is_joy_button_pressed(pad_id, JOY_BUTTON_Y):

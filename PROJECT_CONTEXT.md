@@ -36,7 +36,7 @@
 ## 3. Viewport, HUD & Boss Presentation (`480 × 270`)
 - `y = 0..19`: **Top FF6 Status Bar** (`HP`, `Shields`, `LV`, `Stage`, `Scrap`, `Score`, `II` Pause).
 - `y = 19..23`: **Full-Width Glowing XP Progress Bar**.
-- `y = 24..33`: **Mega Man-Style 28-Pip Segmented Boss HP Gauge** (appears during boss fights).
+- `y = 24..33`: **Mega Man-Style 28-Pip Segmented Boss HP Gauge** (appears during boss fights). At the right end of that row (`x = 436..476`), a `>> x2` badge shows while the **Speed-Up** button (`RT` / `F`, hold or toggle in Options) runs the game at 2x.
 - `y = 30..249`: **Clean Full-Height Flight Corridor** (`y = 258..270` scrolling stage floor deck; no bottom HUD bar!).
 - **Enemy Bullet Readability:** All enemy projectiles render at `z_index = 6` with a pulsing scarlet/crimson danger glow and dark-crimson contrast rim so they pop against every background and explosion.
 - **Mega Man Boss Intros & 3-Frame Animations:** All 8 giant bosses arrive via a vertical cyan-white teleport beam, strike an animated signature taunt pose, fill their 28-pip HP bar tick-by-tick (`boss_hp_tick`), animate across 3 custom pixel-art frames (`_0`, `_1`, `_2`) with weapon recoil & charge glints, and detonate in a 1.15s chain-explosion meltdown (cancelling enemy bullets on kill).

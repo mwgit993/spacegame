@@ -40,6 +40,7 @@ var screen_shake_enabled: bool = true
 var default_autofire: bool = true
 var fullscreen_enabled: bool = false
 var touch_mode: int = 0 # 0 = AUTO (shows on touch), 1 = ALWAYS ON (phone/mouse test), 2 = OFF
+var speed_up_toggle: bool = false # Speed-up button (RT / F): false = HOLD for 2x, true = press to TOGGLE 2x
 
 # Rogue Legacy-style Skill Tree node levels & Fleet Loadout!
 var tree_levels: Dictionary = {"core_root": 1}
@@ -328,6 +329,7 @@ func save_game() -> void:
 		"default_autofire": default_autofire,
 		"fullscreen_enabled": fullscreen_enabled,
 		"touch_mode": touch_mode,
+		"speed_up_toggle": speed_up_toggle,
 		"selected_ship": selected_ship,
 		"tree_version": TREE_VERSION,
 		"tree_levels": tree_levels,
@@ -397,6 +399,7 @@ func load_game() -> void:
 	default_autofire = bool(data.get("default_autofire", true))
 	fullscreen_enabled = bool(data.get("fullscreen_enabled", false))
 	touch_mode = int(data.get("touch_mode", 0))
+	speed_up_toggle = bool(data.get("speed_up_toggle", false))
 
 	_init_default_tree()
 	# _init_default_tree() resets the ship, so restore the saved choice afterwards.
