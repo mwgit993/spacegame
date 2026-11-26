@@ -475,6 +475,9 @@ func _build_all() -> void:
 	# --- 8 Unique Towering 16-Bit Stage Bosses (painted via BossPainter!) ---
 	BossPainter.build_all_bosses(_cache)
 
+	# --- Stage-signature enemies and their special shots (painted via EnemyArt) ---
+	EnemyArt.build_all(_cache)
+
 	# --- Bullets & Pickups ---
 	_cache["bullet_vulcan"] = _make_tex(PackedStringArray([
 		".OOOOYYYY.",

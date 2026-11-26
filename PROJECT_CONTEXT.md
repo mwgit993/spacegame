@@ -51,7 +51,8 @@
 | `scripts/skill_tree_data.gd` | 7 Playable Ship definitions + 36-node *Rogue Legacy* Starforge Skill Tree |
 | `scripts/main.gd` | State machine (`TITLE`, `STATS`, `OPTIONS`, `HANGAR`, `LOADOUT`, `INTRO_WARP`, `PLAYING`, `PAUSED`, `DRAFT`, `HYPERSPACE`, `GAME_OVER_DELAY`), XP leveling, Skill Tree & Loadout UIs, split Pause menu, `--smoke-test` |
 | `scripts/player.gd` | Multi-controller + Keyboard + Touch flight, 7 ship blasters, 5 Tech Beams, 7 visible Hull Addons, crits, Lazarus Revive |
-| `scripts/enemy.gd` | 4 regular enemy types + 8 animated 3-phase Stage Bosses (Mega Man intro, 28-pip HP fill, adaptive plating, death meltdown) |
+| `scripts/enemy.gd` | 4 generic enemy types (re-skinned per stage) + 20 stage-signature enemies (`THEMED`: asteroids, turrets, blimps, spore pods, ice crystals, golems, jellyfish, viruses...) + 8 animated 3-phase Stage Bosses (Mega Man intro, 28-pip HP fill, adaptive plating, death meltdown) |
+| `scripts/enemy_art.gd` | Sprites for the stage-signature enemies and their special shots (bombs, spores, ice shards, frost puffs) |
 | `scripts/boss_painter.gd` | Procedural 3-frame native-pixel painter for all 8 giant bosses (`_0`, `_1`, `_2`) |
 | `scripts/bullet.gd` | Enemy danger-glow bullets + player piercing, wave-helix, wall-ricochet, chain-lightning, AoE, and animated pouncing Space Cats |
 | `scripts/pickup.gd` / `fx_layer.gd` | Magnetized tiered XP Gems & Hull Heals, lightning arcs, blast rings, screen shake, popups |

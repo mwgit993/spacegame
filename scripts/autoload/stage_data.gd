@@ -2,6 +2,29 @@ extends Node
 
 const WAVES_PER_STAGE: int = 4
 
+# Per-stage difficulty curve, one row per stage. Regular enemies read it through
+# get_difficulty(); bosses keep their own numbers (GameEnemy.STAGE_BOSS_HP and _boss_attack).
+#   hp          enemy HP multiplier (later waves of a stage add +16% per wave on top)
+#   shot_speed  multiplier on every regular enemy's bullet speed
+#   fire_rate   multiplier on how often regular enemies fire (their cooldowns are divided by it)
+#   groups      spawn groups in the stage's first wave (+1 for each later wave)
+#   pace        multiplier on the gap between groups (lower = more enemies on screen at once)
+#   themed      share of groups built from the stage's own enemies (the rest are generic fodder)
+# Stage 1 is the baseline (all 1.0), so it plays exactly like before the themed enemies.
+const DIFFICULTY: Array[Dictionary] = [
+	{"hp": 1.00, "shot_speed": 1.00, "fire_rate": 1.00, "groups": 10, "pace": 1.00, "themed": 0.40},
+	{"hp": 1.34, "shot_speed": 1.03, "fire_rate": 1.05, "groups": 10, "pace": 0.97, "themed": 0.50},
+	{"hp": 1.80, "shot_speed": 1.06, "fire_rate": 1.10, "groups": 11, "pace": 0.94, "themed": 0.55},
+	{"hp": 2.41, "shot_speed": 1.09, "fire_rate": 1.15, "groups": 11, "pace": 0.91, "themed": 0.60},
+	{"hp": 3.22, "shot_speed": 1.12, "fire_rate": 1.20, "groups": 12, "pace": 0.88, "themed": 0.60},
+	{"hp": 4.32, "shot_speed": 1.15, "fire_rate": 1.25, "groups": 12, "pace": 0.85, "themed": 0.65},
+	{"hp": 5.79, "shot_speed": 1.18, "fire_rate": 1.30, "groups": 13, "pace": 0.82, "themed": 0.65},
+	{"hp": 7.76, "shot_speed": 1.22, "fire_rate": 1.35, "groups": 13, "pace": 0.80, "themed": 0.70},
+]
+# Each loop after stage 8 multiplies HP by this on top of the stage's row (GameEnemy also applies
+# its own 2.2x per loop), and nudges bullet speed and fire rate up from the stage-8 values.
+const LOOP_HP_STEP: float = 10.4
+
 const STAGES: Array[Dictionary] = [
 	{
 		"id": "space",
@@ -177,6 +200,21 @@ const STAGES: Array[Dictionary] = [
 func get_stage(stage_idx: int) -> Dictionary:
 	var wrapped: int = posmod(stage_idx, STAGES.size())
 	return STAGES[wrapped]
+
+
+# The DIFFICULTY row for a stage index (which keeps counting past 8 when the game loops).
+func get_difficulty(stage_idx: int) -> Dictionary:
+	var k: int = posmod(stage_idx, STAGES.size())
+	var loop: int = maxi(0, stage_idx / STAGES.size())
+	var row: Dictionary = DIFFICULTY[k].duplicate()
+	if loop > 0:
+		var last: Dictionary = DIFFICULTY[DIFFICULTY.size() - 1]
+		row["hp"] = float(row["hp"]) * pow(LOOP_HP_STEP, float(loop))
+		row["shot_speed"] = minf(1.40, maxf(float(row["shot_speed"]), float(last["shot_speed"])) + 0.04 * float(loop))
+		row["fire_rate"] = minf(1.70, maxf(float(row["fire_rate"]), float(last["fire_rate"])) + 0.08 * float(loop))
+		row["pace"] = minf(float(row["pace"]), float(last["pace"]))
+		row["groups"] = maxi(int(row["groups"]), int(last["groups"]))
+	return row
 
 
 func get_stage_index_for_wave(wave_num: int) -> int:
