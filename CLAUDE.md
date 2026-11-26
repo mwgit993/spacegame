@@ -103,7 +103,7 @@ World layering is `world_root` → `pickup_layer`, `enemy_layer`, `player`, `bul
   - `GameEnemy.STAGE_BOSS_HP`
   - a boss pattern in `GameEnemy._boss_attack` (`match stage_idx`)
   - boss frames in `BossPainter.build_all_bosses`
-  - a biome in `StarfieldBg`
+  - a biome in `StarfieldBg`: per-frame animation in `scripts/starfield.gd` plus a builder in `scripts/stage_bg_painter.gd` that paints the stage's still parallax layers into textures once. The next stage's layers are built on a worker thread during play. Keep bright detail away from the y 30–249 playfield so bullets stay readable.
   - a song in `GenesisMusic.STAGE_SONGS`, plus a `"stage_N"` slot with 5 alternatives in `music_candidates.gd` (the smoke test expects 5 per slot)
   - a `StageData.DIFFICULTY` row, its own enemies (see **Stage enemy**) and their recipes in `main._queue_themed_group`
 
