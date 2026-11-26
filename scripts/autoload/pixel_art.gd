@@ -1455,3 +1455,262 @@ func _build_all() -> void:
 		"............................",
 		"............................",
 	]))
+
+	_build_draft_card_icons()
+
+
+# --- DRAFT CARD upgrades (unlocked in the Skill Tree): 11x9 badges, projectiles, and 28x18 card art ---
+func _build_draft_card_icons() -> void:
+	var badges: Dictionary = {
+		"badge_seek": [
+			".......RRR.",
+			"......RWWWR",
+			"....Y.RW.WR",
+			"...Y..RWWWR",
+			"..Y....RRR.",
+			".Y.........",
+			".Y.........",
+			"WW.........",
+			"...........",
+		],
+		"badge_shrapnel": [
+			"........OO.",
+			"....OO.....",
+			"LLW.....YY.",
+			"LLWW.YY....",
+			"LLW.....YY.",
+			"....OO.....",
+			"........OO.",
+			"...........",
+			"...........",
+		],
+		"badge_berserk": [
+			".RR...RR...",
+			"RRRR.RRRR..",
+			"RWRRRRRRR..",
+			"RRRRRRRRR.Y",
+			".RRRRRRR.YO",
+			"..RRRRR..OY",
+			"...RRR...YO",
+			"....R......",
+			"...........",
+		],
+		"badge_execute": [
+			"...LLLLL...",
+			"..LLLLLLL..",
+			".LLkkLkkLL.",
+			".LLkkLkkLL.",
+			".LLLLkLLLL.",
+			"..LLLLLLL..",
+			"...L.L.L...",
+			"...........",
+			"...........",
+		],
+		"badge_ambush": [
+			".....R.....",
+			"...RRRRR...",
+			"..R..Y..R..",
+			"RRR..Y..RRR",
+			"..R.....R..",
+			"...RRYRR...",
+			".....R.....",
+			"...........",
+			"...........",
+		],
+		"badge_cryo": [
+			".....C.....",
+			"..C..C..C..",
+			"...C.W.C...",
+			"....WWW....",
+			"CCWWWLWWWCC",
+			"....WWW....",
+			"...C.W.C...",
+			"..C..C..C..",
+			".....C.....",
+		],
+		"badge_napalm": [
+			".....R.....",
+			"....ROR....",
+			"...ROOR..R.",
+			"..ROOYOR.R.",
+			".ROOYYYORR.",
+			".ROYYWYYOR.",
+			".ROYWWWYOR.",
+			"..ROYWYOR..",
+			"...RRRRR...",
+		],
+		"badge_leech": [
+			".GG...GG...",
+			"GGGG.GGGG..",
+			"GWGGGGGGG..",
+			"GGGGGGGGG..",
+			".GGGGGGG...",
+			"..GGGGG..R.",
+			"...GGG..RRR",
+			"....G...RRR",
+			".........R.",
+		],
+		"badge_reflect": [
+			"CC.........",
+			"CLC......Y.",
+			"CLC.......Y",
+			"CLCWWWWWWWW",
+			"CLC.......Y",
+			"CLC......Y.",
+			"CC.........",
+			"...........",
+			"...........",
+		],
+		"badge_last_stand": [
+			"...YYYYY...",
+			"..Y.....Y..",
+			".Y..RRR..Y.",
+			".Y..RWR..Y.",
+			".Y..RRR..Y.",
+			"..Y.....Y..",
+			"...YYYYY...",
+			"...........",
+			"...........",
+		],
+		"badge_chrono": [
+			"...CCCCC...",
+			"..C.....C..",
+			".C...W...C.",
+			".C...W...C.",
+			".C...WWW.C.",
+			"..C.....C..",
+			"...CCCCC...",
+			"...........",
+			"...........",
+		],
+		"badge_graze": [
+			"RRWW.......",
+			"...........",
+			"..DDLLL....",
+			"YOLLLLWWWW.",
+			"..DDLLL....",
+			"...........",
+			".......WWRR",
+			"...........",
+			"...........",
+		],
+		"badge_aura": [
+			"..P.PPP.P..",
+			".P.......P.",
+			"P..DDLL...P",
+			"P.YLLLWW..P",
+			"P..DDLL...P",
+			".P.......P.",
+			"..P.PPP.P..",
+			"...........",
+			"...........",
+		],
+		"badge_chain": [
+			".O.O.......",
+			"..OYO......",
+			"OOYWYOO....",
+			"..OYO..O.O.",
+			".O.O.O..OYO",
+			".....OOOYWY",
+			"........OYO",
+			".......O.O.",
+			"...........",
+		],
+		"badge_orbital": [
+			"....YWY....",
+			"....YWY....",
+			"....YWY....",
+			"....YWY....",
+			"...YWWWY...",
+			"..O.YWY.O..",
+			".O..RRR..O.",
+			"...RRRRR...",
+			"...........",
+		],
+		"badge_mines": [
+			".....K.....",
+			"..K.KKK.K..",
+			"...KkRkK...",
+			".KKkRWRkKK.",
+			"...KkRkK...",
+			"..K.KKK.K..",
+			".....K.....",
+			"...........",
+			"...........",
+		],
+		"badge_salvage": [
+			"..SS...SS..",
+			".S.......S.",
+			"S..YYYY...S",
+			"S.YOOOOY..S",
+			"..YOWWOY...",
+			"...YYYY....",
+			"...........",
+			"...........",
+			"...........",
+		],
+	}
+	for key: String in badges.keys():
+		var rows: Array = badges[key]
+		_cache[key] = _make_tex(PackedStringArray(rows))
+
+	_cache["bullet_mine"] = _make_tex(PackedStringArray([
+		"....K....",
+		"..K.K.K..",
+		"...kRk...",
+		"KKkRWRkKK",
+		"...kRk...",
+		"..K.K.K..",
+		"....K....",
+	]))
+
+	_cache["bullet_shard"] = _make_tex(PackedStringArray([
+		".OYY.",
+		"OYWWW",
+		".OYY.",
+	]))
+
+	# Draft card art (28x18) = the upgrade's badge drawn at 2x, centered.
+	var card_badges: Dictionary = {
+		"upg_homing": "badge_seek",
+		"upg_shrapnel": "badge_shrapnel",
+		"upg_crit": "badge_crit",
+		"upg_berserk": "badge_berserk",
+		"upg_execute": "badge_execute",
+		"upg_ambush": "badge_ambush",
+		"upg_cryo": "badge_cryo",
+		"upg_napalm": "badge_napalm",
+		"upg_leech": "badge_leech",
+		"upg_reflect": "badge_reflect",
+		"upg_last_stand": "badge_last_stand",
+		"upg_chrono": "badge_chrono",
+		"upg_graze": "badge_graze",
+		"upg_aura": "badge_aura",
+		"upg_chain": "badge_chain",
+		"upg_orbital": "badge_orbital",
+		"upg_mines": "badge_mines",
+		"upg_salvage": "badge_salvage",
+	}
+	for upg_key: String in card_badges.keys():
+		var badge_tex: ImageTexture = _cache[String(card_badges[upg_key])]
+		_cache[upg_key] = _make_card_from_badge(badge_tex.get_image())
+
+
+func _make_card_from_badge(badge: Image) -> ImageTexture:
+	var card: Image = Image.create(28, 18, false, Image.FORMAT_RGBA8)
+	var bw: int = badge.get_width()
+	var bh: int = badge.get_height()
+	var ox: int = (28 - bw * 2) / 2
+	var oy: int = maxi(0, (18 - bh * 2) / 2)
+	for y: int in range(bh):
+		for x: int in range(bw):
+			var col: Color = badge.get_pixel(x, y)
+			if col.a <= 0.0:
+				continue
+			for dy: int in range(2):
+				for dx: int in range(2):
+					var px: int = ox + x * 2 + dx
+					var py: int = oy + y * 2 + dy
+					if px >= 0 and px < 28 and py >= 0 and py < 18:
+						card.set_pixel(px, py, col)
+	return ImageTexture.create_from_image(card)

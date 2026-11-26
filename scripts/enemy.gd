@@ -57,6 +57,14 @@ var _bullet_a: String = "bullet_enemy_pink"
 var _bullet_b: String = "bullet_enemy_orange"
 var _dead: bool = false
 
+# Status effects from the player's Cryo Rounds / Napalm Rounds draft perks
+var _chill_timer: float = 0.0
+var _chill_factor: float = 1.0          # Time scale while chilled (slows movement and firing)
+var _burn_timer: float = 0.0
+var _burn_dps: float = 0.0
+var _burn_tick: float = 0.0
+var _status_fx_timer: float = 0.0
+
 # Stage-by-stage exponential Boss HP curve (accounts for Option orbs, Spread, Laser & Rapid upgrades!)
 const STAGE_BOSS_HP: Array[float] = [
 	360.0,   # Stage 1: Outer Orbit
@@ -193,6 +201,29 @@ func setup(
 func _process(delta: float) -> void:
 	if _dead:
 		return
+
+	if _burn_timer > 0.0 and not _boss_dying:
+		_burn_timer -= delta
+		_burn_tick -= delta
+		if _burn_tick <= 0.0:
+			_burn_tick = 0.25
+			take_damage(_burn_dps * 0.25, true)
+			if _dead:
+				return
+		if _burn_timer <= 0.0:
+			_burn_dps = 0.0
+	if _chill_timer > 0.0:
+		_chill_timer -= delta
+		delta *= _chill_factor
+		if _chill_timer <= 0.0:
+			_chill_factor = 1.0
+	if (_burn_timer > 0.0 or _chill_timer > 0.0) and fx != null:
+		_status_fx_timer -= delta
+		if _status_fx_timer <= 0.0:
+			_status_fx_timer = 0.14
+			var jitter: Vector2 = Vector2(randf_range(-8.0, 8.0), randf_range(-6.0, 6.0))
+			fx.spawn_hit_sparks(global_position + jitter, Color("#ff6820") if _burn_timer > 0.0 else Color("#8cf4ff"), 1)
+
 	_age += delta
 
 	if _flash_timer > 0.0 and not boss_intro_active and not _boss_dying:
@@ -589,7 +620,25 @@ func take_contact_damage(dmg: float) -> void:
 		take_damage(dmg)
 
 
-func take_damage(dmg: float) -> void:
+func apply_chill(duration: float, factor: float) -> void:
+	if _dead or _boss_dying or boss_intro_active:
+		return
+	# Bosses shrug off most of the slow so fights don't stall.
+	var f: float = lerpf(1.0, factor, 0.35) if enemy_type == Type.BOSS else factor
+	_chill_timer = maxf(_chill_timer, duration)
+	_chill_factor = minf(_chill_factor, f)
+
+
+func apply_burn(dps: float, duration: float) -> void:
+	if _dead or _boss_dying or boss_intro_active:
+		return
+	if _burn_timer <= 0.0:
+		_burn_tick = 0.25
+	_burn_dps = maxf(_burn_dps, dps)
+	_burn_timer = maxf(_burn_timer, duration)
+
+
+func take_damage(dmg: float, silent: bool = false) -> void:
 	if _dead or _boss_dying:
 		return
 
@@ -624,7 +673,7 @@ func take_damage(dmg: float) -> void:
 			_start_boss_death_sequence()
 		else:
 			_die()
-	else:
+	elif not silent:
 		RetroSfx.play("hit", -14.0, 0.08)
 
 

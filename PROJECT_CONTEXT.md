@@ -11,7 +11,7 @@
 - **Core Roguelite Loop:**
   - **Automatic Scrap + Magnetized XP Gems (*BALL x PIT* Style):** Blowing up enemies automatically banks **Scrap** to your counter (zero coin clutter!) while bursting into tiered cyan/violet/gold **XP Gems** and occasional **Hull Heals**.
   - **Mid-Combat Level-Up Drafts:** Waves flow seamlessly without end-of-wave interruptions. Whenever your full-width glowing **XP Bar** fills up, combat briefly freezes for a **1-of-3 Powerup Draft** (`[BEAM]`, `[ADDON]`, or `[CORE]`, with optional **Rerolls**).
-  - **30-Node *Rogue Legacy* Skill Tree & 7 Unlockable Ships:** Between runs, spend Scrap in the pannable **Starforge Skill Tree** to unlock permanent stat boosts, pre-installed starter addons, keystones (like *Lazarus Supernova Revive*), and **6 secret Starships** selectable in the **Fleet Ship Loadout Bay**!
+  - **36-Node *Rogue Legacy* Skill Tree & 7 Unlockable Ships:** Between runs, spend Scrap in the pannable **Starforge Skill Tree** on starting hull & shields, keystones (like *Lazarus Supernova Revive*), economy perks, **18 new DRAFT CARD upgrades** that then show up in level-up drafts (Seeker Rounds, Chain Reaction, Orbital Strike, Cryo/Napalm Rounds and more), and **6 secret Starships** selectable in the **Fleet Ship Loadout Bay**! The tree no longer hands out combat bonuses at the start of a run.
 
 ---
 
@@ -48,7 +48,7 @@
 | File | Role |
 | :--- | :--- |
 | `project.godot` | Godot 4.7 config, `480×270` integer scaling, FF6 global font, 5 autoloads |
-| `scripts/skill_tree_data.gd` | 7 Playable Ship definitions + 30-node *Rogue Legacy* Starforge Skill Tree |
+| `scripts/skill_tree_data.gd` | 7 Playable Ship definitions + 36-node *Rogue Legacy* Starforge Skill Tree |
 | `scripts/main.gd` | State machine (`TITLE`, `STATS`, `OPTIONS`, `HANGAR`, `LOADOUT`, `INTRO_WARP`, `PLAYING`, `PAUSED`, `DRAFT`, `HYPERSPACE`, `GAME_OVER_DELAY`), XP leveling, Skill Tree & Loadout UIs, split Pause menu, `--smoke-test` |
 | `scripts/player.gd` | Multi-controller + Keyboard + Touch flight, 7 ship blasters, 5 Tech Beams, 7 visible Hull Addons, crits, Lazarus Revive |
 | `scripts/enemy.gd` | 4 regular enemy types + 8 animated 3-phase Stage Bosses (Mega Man intro, 28-pip HP fill, adaptive plating, death meltdown) |

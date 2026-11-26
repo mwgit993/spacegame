@@ -25,6 +25,21 @@ var keep_upright: bool = false
 var is_cat_shot: bool = false
 var is_crit: bool = false
 
+# DRAFT CARD on-hit modifiers (set by PlayerShip when the shot is spawned)
+var homing_trail: bool = true           # Seeker Rounds turn homing on without the missile spark trail
+var execute_frac: float = 0.0           # Execute Protocol: kill non-bosses left below this HP fraction
+var ambush_mult: float = 0.0            # Ambush Targeting: extra damage vs. enemies at full HP
+var chill_time: float = 0.0             # Cryo Rounds: seconds of slow applied on hit
+var chill_factor: float = 1.0           # Cryo Rounds: enemy time scale while chilled
+var burn_dps: float = 0.0               # Napalm Rounds: burn damage per second for 2 s
+var split_count: int = 0                # Shrapnel Burst: fragments spawned when the shot is spent on a hit
+var life_left: float = -1.0             # > 0: detonate/expire after this many seconds (Proximity Mines)
+# Enemy-bullet state driven by the player's Chrono Field / Graze Dynamo perks
+var grazed: bool = false
+var slow_timer: float = 0.0
+var slow_factor: float = 1.0
+
+var _base_speed: float = 0.0
 var _glow_sprite: Sprite2D = null
 var _sprite: Sprite2D
 var _shape_circle: CircleShape2D
@@ -50,6 +65,7 @@ func setup(
 	global_position = pos
 	_wave_base_pos = pos
 	velocity = vel
+	_base_speed = vel.length()
 	damage = dmg
 	is_player_bullet = player_owned
 	pierce_left = pierce
@@ -106,6 +122,18 @@ func _update_visual_orientation() -> void:
 
 
 func _process(delta: float) -> void:
+	if slow_timer > 0.0:
+		slow_timer -= delta
+		delta *= slow_factor
+
+	if life_left > 0.0:
+		life_left -= delta
+		if life_left <= 0.0:
+			if aoe_radius > 0.0:
+				_trigger_aoe_detonation(null)
+			queue_free()
+			return
+
 	if gravity_pull > 0.0:
 		velocity.y += gravity_pull * delta
 		_update_visual_orientation()
@@ -121,15 +149,17 @@ func _process(delta: float) -> void:
 				fx.spawn_hit_sparks(global_position - velocity.normalized() * 6.0, Color("#ff64b8"), 1)
 
 	if is_homing and is_player_bullet:
-		var target: Node2D = _find_nearest_enemy(null)
+		# Skip enemies this shot already hit (it can't damage them again), or piercing/bouncing
+		# homing shots would orbit them forever.
+		var target: Node2D = _find_nearest_enemy(null, true)
 		if target != null:
 			var desired: Vector2 = (target.global_position - global_position).normalized()
 			var speed: float = velocity.length()
 			var cur_dir: Vector2 = velocity.normalized()
 			var new_dir: Vector2 = cur_dir.lerp(desired, clampf(homing_turn_rate * delta, 0.0, 1.0)).normalized()
-			velocity = new_dir * minf(speed + 140.0 * delta, 315.0)
+			velocity = new_dir * minf(speed + 140.0 * delta, maxf(315.0, _base_speed))
 			_update_visual_orientation()
-		if not is_cat_shot:
+		if not is_cat_shot and homing_trail:
 			_trail_timer -= delta
 			if _trail_timer <= 0.0 and fx != null:
 				_trail_timer = 0.035
@@ -194,11 +224,13 @@ func _process(delta: float) -> void:
 		queue_free()
 
 
-func _find_nearest_enemy(exclude_node: Node) -> Node2D:
+func _find_nearest_enemy(exclude_node: Node, skip_already_hit: bool = false) -> Node2D:
 	var best: Node2D = null
 	var best_dist: float = 999999.0
 	for node: Node in get_tree().get_nodes_in_group("enemies"):
 		if node == exclude_node:
+			continue
+		if skip_already_hit and _hit_ids.has(node.get_instance_id()):
 			continue
 		if node is Node2D and is_instance_valid(node):
 			var enemy_node: Node2D = node as Node2D
@@ -217,7 +249,7 @@ func _on_area_entered(area: Area2D) -> void:
 			if _hit_ids.has(id):
 				return
 			_hit_ids[id] = true
-			area.call("take_damage", damage)
+			area.call("take_damage", _apply_hit_modifiers(area))
 
 			if aoe_radius > 0.0:
 				_trigger_aoe_detonation(area)
@@ -249,11 +281,49 @@ func _on_area_entered(area: Area2D) -> void:
 			elif pierce_left > 0:
 				pierce_left -= 1
 			else:
+				if split_count > 0:
+					_spawn_split_fragments()
 				queue_free()
 	else:
 		if area.has_method("take_player_hit"):
 			area.call("take_player_hit")
 			queue_free()
+
+
+# Applies Ambush/Execute damage changes and Cryo/Napalm status effects; returns the damage to deal.
+func _apply_hit_modifiers(area: Area2D) -> float:
+	var hit_dmg: float = damage
+	if not (area is GameEnemy):
+		return hit_dmg
+	var ge: GameEnemy = area as GameEnemy
+	if ambush_mult > 0.0 and ge.hp >= ge.max_hp:
+		hit_dmg *= 1.0 + ambush_mult
+	if chill_time > 0.0:
+		ge.apply_chill(chill_time, chill_factor)
+	if burn_dps > 0.0:
+		ge.apply_burn(burn_dps, 2.0)
+	if execute_frac > 0.0 and ge.enemy_type != GameEnemy.Type.BOSS and ge.hp - hit_dmg > 0.0 and ge.hp - hit_dmg <= ge.max_hp * execute_frac:
+		hit_dmg = ge.hp + 1.0
+		if fx != null:
+			fx.spawn_hit_sparks(ge.global_position, Color.WHITE, 6)
+	return hit_dmg
+
+
+# Shrapnel Burst: fan of small fragments continuing forward from the impact point.
+# Added with call_deferred because this runs inside a physics callback.
+func _spawn_split_fragments() -> void:
+	var parent_node: Node = get_parent()
+	if parent_node == null:
+		return
+	var base_dir: Vector2 = velocity.normalized() if velocity.length_squared() > 1.0 else Vector2.RIGHT
+	var spread: float = 0.9
+	for i: int in range(split_count):
+		var t: float = 0.5 if split_count == 1 else float(i) / float(split_count - 1)
+		var dir: Vector2 = base_dir.rotated(lerpf(-spread * 0.5, spread * 0.5, t))
+		var frag: GameBullet = GameBullet.new()
+		frag.setup(global_position + dir * 6.0, dir * 300.0, damage * 0.4, true, "bullet_shard", 0, false, 3.0, fx)
+		frag._hit_ids = _hit_ids.duplicate()
+		parent_node.call_deferred("add_child", frag)
 
 
 func _trigger_aoe_detonation(direct_hit: Node) -> void:

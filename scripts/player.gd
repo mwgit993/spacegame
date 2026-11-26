@@ -4,6 +4,7 @@ extends Area2D
 signal hp_changed(current_hp: int, max_hp: int, shield_charges: int, max_shield: int)
 signal player_died()
 signal touch_state_changed()
+signal grazed(xp: int)
 
 const MIN_X: float = 18.0
 const MAX_X: float = 462.0
@@ -58,6 +59,32 @@ var rapid_level: int = 0                # 0..5 Fire rate coil ranks
 var thruster_level: int = 0             # 0..4 Afterburner speed ranks
 var shield_charges: int = 0
 var shield_regen_timer: float = 0.0
+
+# In-run perks from DRAFT CARD upgrades (unlocked in the Skill Tree, then drafted on level-up)
+var crit_mult: float = 2.0              # Damage multiplier on a critical hit
+var homing_level: int = 0               # 0..2 Seeker Rounds: main gun shots curve into enemies
+var shrapnel_level: int = 0             # 0..2 Shrapnel Burst: main gun hits split into fragments
+var crit_level: int = 0                 # 0..3 Tachyon Optics: +crit chance & crit damage
+var berserk_level: int = 0              # 0..2 Berserker Core: +damage per missing hull
+var execute_level: int = 0              # 0..2 Execute Protocol: hits kill weakened non-bosses
+var ambush_level: int = 0               # 0..2 Ambush Targeting: bonus damage on unhurt enemies
+var cryo_level: int = 0                 # 0..2 Cryo Rounds: hits chill (slow) enemies
+var napalm_level: int = 0               # 0..2 Napalm Rounds: hits burn enemies over time
+var leech_level: int = 0                # 0..3 Vampire Salvage: repair 1 hull every N kills
+var reflect_level: int = 0              # 0..2 Mirror Shield: shield breaks fire enemy shots back
+var last_stand_level: int = 0           # 0..1 Last Stand: at 1 hull, invincibility + nova (once per stage)
+var last_stand_ready: bool = false
+var chrono_level: int = 0               # 0..2 Chrono Field: nearby enemy shots slow down
+var graze_level: int = 0                # 0..2 Graze Dynamo: near misses give XP
+var aura_level: int = 0                 # 0..3 Ion Storm Aura: damage field around the ship
+var chain_level: int = 0                # 0..3 Chain Reaction: kills explode
+var orbital_level: int = 0              # 0..3 Orbital Strike: sky laser hits the toughest enemy
+var mines_level: int = 0                # 0..3 Proximity Mines: drop mines behind the ship
+var salvage_level: int = 0              # 0..2 Salvage Claws: +Scrap from kills this run
+var _leech_kills: int = 0
+var _aura_timer: float = 0.0
+var _orbital_timer: float = 0.0
+var _mine_timer: float = 0.0
 
 # Touch & Gamepad state
 var touch_detected: bool = false
@@ -168,18 +195,44 @@ func reset_for_new_run() -> void:
 	rapid_level = 0
 	thruster_level = 0
 
+	# Only ship-hull perks pre-install addons now (Saucer blades, Titan flank gun); the tree adds none.
 	var starters: Dictionary = MetaSave.get_starter_addons()
-	option_count = mini(4, int(starters.get("option", 0)))
-	turret_level = mini(4, int(starters.get("turret", 0)))
-	missile_level = mini(4, int(starters.get("missile", 0)))
+	option_count = 0
+	turret_level = 0
+	missile_level = 0
+	nova_level = 0
+	bomb_level = 0
 	blade_level = mini(4, int(starters.get("blades", 0)))
-	nova_level = mini(3, int(starters.get("nova", 0)))
-	bomb_level = mini(3, int(starters.get("bomb", 0)))
 	flank_level = mini(3, int(starters.get("flank", 0)))
 
 	max_shield = mini(3, MetaSave.get_starting_shields())
 	shield_charges = max_shield
 	shield_regen_timer = 0.0
+
+	crit_mult = 2.0
+	homing_level = 0
+	shrapnel_level = 0
+	crit_level = 0
+	berserk_level = 0
+	execute_level = 0
+	ambush_level = 0
+	cryo_level = 0
+	napalm_level = 0
+	leech_level = 0
+	reflect_level = 0
+	last_stand_level = 0
+	last_stand_ready = false
+	chrono_level = 0
+	graze_level = 0
+	aura_level = 0
+	chain_level = 0
+	orbital_level = 0
+	mines_level = 0
+	salvage_level = 0
+	_leech_kills = 0
+	_aura_timer = 0.0
+	_orbital_timer = 2.0
+	_mine_timer = 0.0
 
 	_fire_cooldown = 0.0
 	_missile_cooldown = 0.0
@@ -290,6 +343,52 @@ func apply_run_upgrade(upgrade_id: String) -> void:
 			max_hp += 1
 			hp = mini(max_hp, hp + 2)
 			damage_bonus += 0.12
+		# --- DRAFT CARD upgrades (caps must match max_rank in main.RUN_UPGRADE_POOL) ---
+		"homing":
+			homing_level = mini(2, homing_level + 1)
+		"shrapnel":
+			shrapnel_level = mini(2, shrapnel_level + 1)
+		"crit":
+			if crit_level < 3:
+				crit_level += 1
+				crit_chance = minf(0.85, crit_chance + 0.12)
+				crit_mult = 2.0 + 0.25 * float(crit_level)
+		"berserk":
+			berserk_level = mini(2, berserk_level + 1)
+		"execute":
+			execute_level = mini(2, execute_level + 1)
+		"ambush":
+			ambush_level = mini(2, ambush_level + 1)
+		"cryo":
+			cryo_level = mini(2, cryo_level + 1)
+		"napalm":
+			napalm_level = mini(2, napalm_level + 1)
+		"leech":
+			leech_level = mini(3, leech_level + 1)
+		"reflect":
+			if reflect_level < 2:
+				reflect_level += 1
+				max_shield = mini(3, max_shield + 1)
+				shield_charges = max_shield
+				shield_regen_timer = 0.0
+		"last_stand":
+			last_stand_level = 1
+			last_stand_ready = true
+		"chrono":
+			chrono_level = mini(2, chrono_level + 1)
+		"graze":
+			graze_level = mini(2, graze_level + 1)
+		"aura":
+			aura_level = mini(3, aura_level + 1)
+		"chain":
+			chain_level = mini(3, chain_level + 1)
+		"orbital":
+			orbital_level = mini(3, orbital_level + 1)
+			_orbital_timer = minf(_orbital_timer, 1.0)
+		"mines":
+			mines_level = mini(3, mines_level + 1)
+		"salvage":
+			salvage_level = mini(2, salvage_level + 1)
 	hp_changed.emit(hp, max_hp, shield_charges, max_shield)
 
 
@@ -460,7 +559,173 @@ func _process(delta: float) -> void:
 			_trigger_nova_pulse(false)
 			_nova_cooldown = maxf(3.0, 5.4 - float(nova_level) * 0.75)
 
+	_update_run_perks(delta, fire_pressed)
+
 	queue_redraw()
+
+
+# Ticks the timed DRAFT CARD perks (aura, orbital strike, mines) and the enemy-bullet
+# perks (chrono field slow, graze XP). Called every frame while the ship is flying.
+func _update_run_perks(delta: float, fire_pressed: bool) -> void:
+	if aura_level > 0:
+		_aura_timer -= delta
+		if _aura_timer <= 0.0:
+			_aura_timer = 0.35
+			_pulse_ion_aura()
+
+	if orbital_level > 0:
+		_orbital_timer -= delta
+		if _orbital_timer <= 0.0:
+			_orbital_timer = 5.8 - 0.8 * float(orbital_level)
+			_fire_orbital_strike()
+
+	if mines_level > 0:
+		_mine_timer = maxf(0.0, _mine_timer - delta)
+		if fire_pressed and _mine_timer <= 0.0:
+			_drop_proximity_mine()
+			_mine_timer = 2.9 - 0.5 * float(mines_level)
+
+	if (chrono_level > 0 or graze_level > 0) and bullet_container != null:
+		var chrono_r: float = 40.0 + 16.0 * float(chrono_level)
+		var chrono_r2: float = chrono_r * chrono_r
+		var slow: float = 0.55 - 0.15 * float(chrono_level - 1)
+		for child: Node in bullet_container.get_children():
+			if not (child is GameBullet):
+				continue
+			var gb: GameBullet = child as GameBullet
+			if gb.is_player_bullet:
+				continue
+			var d2: float = global_position.distance_squared_to(gb.global_position)
+			if chrono_level > 0 and d2 <= chrono_r2:
+				gb.slow_timer = 0.12
+				gb.slow_factor = slow
+			if graze_level > 0 and not gb.grazed and d2 <= 256.0 and d2 > 20.0:
+				gb.grazed = true
+				grazed.emit(graze_level)
+				if graze_level >= 2 and shield_charges < max_shield:
+					shield_regen_timer += 0.5
+				if fx != null:
+					fx.spawn_hit_sparks(gb.global_position, Color("#ff9624"), 2)
+
+
+func _pulse_ion_aura() -> void:
+	var radius: float = 30.0 + 8.0 * float(aura_level)
+	var r2: float = radius * radius
+	var a_dmg: float = (0.8 + 0.55 * float(aura_level)) * damage_bonus
+	var zaps: int = 0
+	for node: Node in get_tree().get_nodes_in_group("enemies"):
+		if node is Node2D and is_instance_valid(node) and node.has_method("take_damage"):
+			var en: Node2D = node as Node2D
+			if global_position.distance_squared_to(en.global_position) <= r2:
+				if fx != null and zaps < 4:
+					fx.spawn_lightning(global_position, en.global_position, Color("#d44cff"))
+				zaps += 1
+				en.call("take_damage", a_dmg)
+	if zaps > 0:
+		RetroSfx.play("zap", -19.0, 0.1)
+
+
+func _fire_orbital_strike() -> void:
+	var target: Node2D = null
+	var best_hp: float = -1.0
+	for node: Node in get_tree().get_nodes_in_group("enemies"):
+		if node is GameEnemy and is_instance_valid(node):
+			var ge: GameEnemy = node as GameEnemy
+			if ge.global_position.x < 24.0 or ge.global_position.x > 470.0 or ge.boss_intro_active:
+				continue
+			if ge.hp > best_hp:
+				best_hp = ge.hp
+				target = ge
+	if target == null:
+		_orbital_timer = 0.5
+		return
+	var o_dmg: float = (8.0 + 5.0 * float(orbital_level)) * damage_bonus
+	var hit_pos: Vector2 = target.global_position
+	if fx != null:
+		fx.spawn_lightning(Vector2(hit_pos.x, 22.0), hit_pos, Color("#ffe854"))
+		fx.spawn_lightning(Vector2(hit_pos.x + 3.0, 22.0), hit_pos, Color.WHITE)
+		fx.spawn_ring_blast(hit_pos, 22.0, Color("#ffe854"))
+		fx.add_shake(1.5)
+	RetroSfx.play("boss_beam", -12.0, 0.06)
+	target.call("take_damage", o_dmg)
+
+
+func _drop_proximity_mine() -> void:
+	if bullet_container == null:
+		return
+	var m_dmg: float = (3.0 + 1.5 * float(mines_level)) * damage_bonus
+	var b: GameBullet = _spawn_player_bullet(global_position + Vector2(-8.0, 6.0), Vector2(-16.0, 0.0), m_dmg, "bullet_mine", 0, false, 9.0)
+	b.aoe_radius = 30.0 + 5.0 * float(mines_level)
+	b.aoe_color = Color("#ff4c68")
+	b.life_left = 7.0
+	b.keep_upright = true
+	b.rotation = 0.0
+
+
+# Called by main when the player destroys an enemy (handles leech healing and chain reactions).
+func on_enemy_killed(pos: Vector2, was_boss: bool) -> void:
+	if leech_level > 0 and visible and hp > 0:
+		_leech_kills += 1
+		var needed: int = int([0, 45, 32, 22][leech_level])
+		if _leech_kills >= needed:
+			_leech_kills = 0
+			if hp < max_hp:
+				heal(1)
+				if fx != null:
+					fx.spawn_popup(global_position + Vector2(-16.0, -16.0), "LEECH +1", Color("#3ce878"))
+	if chain_level > 0 and not was_boss:
+		call_deferred("_chain_blast", pos)
+
+
+func _chain_blast(pos: Vector2) -> void:
+	var radius: float = 22.0 + 8.0 * float(chain_level)
+	var r2: float = radius * radius
+	var c_dmg: float = (2.5 + 1.5 * float(chain_level)) * damage_bonus
+	if fx != null:
+		fx.spawn_ring_blast(pos, radius, Color("#ff9624"))
+	for node: Node in get_tree().get_nodes_in_group("enemies"):
+		if node is Node2D and is_instance_valid(node) and node.has_method("take_damage"):
+			var en: Node2D = node as Node2D
+			if pos.distance_squared_to(en.global_position) <= r2:
+				en.call("take_damage", c_dmg)
+
+
+# Called by main at each hyperspace jump.
+func on_stage_cleared() -> void:
+	if last_stand_level > 0:
+		last_stand_ready = true
+
+
+func get_run_scrap_mult() -> float:
+	return 1.0 + 0.4 * float(salvage_level)
+
+
+# Mirror Shield: turns enemy shots near the ship into player shots aimed at the nearest enemy.
+func _reflect_burst() -> void:
+	if bullet_container == null:
+		return
+	var radius: float = 64.0 + 32.0 * float(reflect_level - 1)
+	var r2: float = radius * radius
+	var r_dmg: float = 1.6 * damage_bonus
+	var reflected: int = 0
+	for child: Node in bullet_container.get_children():
+		if not (child is GameBullet):
+			continue
+		var gb: GameBullet = child as GameBullet
+		if gb.is_player_bullet or gb.is_queued_for_deletion():
+			continue
+		if global_position.distance_squared_to(gb.global_position) > r2:
+			continue
+		var from_pos: Vector2 = gb.global_position
+		gb.queue_free()
+		var target: Node2D = _find_closest_threat()
+		var dir: Vector2 = Vector2.RIGHT
+		if target != null:
+			dir = (target.global_position - from_pos).normalized()
+		_spawn_player_bullet(from_pos, dir * 330.0, r_dmg, "bullet_dart", 0, false, 3.5)
+		reflected += 1
+	if reflected > 0 and fx != null:
+		fx.spawn_ring_blast(global_position, radius, Color("#54f4ff"))
 
 
 func _update_orbiting_blades(delta: float) -> void:
@@ -703,6 +968,13 @@ func _spawn_mode_shot(mode: String, rank: int, pos: Vector2, vel: Vector2, dmg: 
 		b.homing_turn_rate = 2.8
 		b.keep_upright = true
 		b.chain_count = 1 + rank / 2
+	elif homing_level > 0:
+		b.is_homing = true
+		b.homing_trail = false
+		b.homing_turn_rate = 1.6 + 1.6 * float(homing_level - 1)
+		b.life_left = 2.2 # Curving shots could otherwise circle the screen indefinitely.
+	if shrapnel_level > 0:
+		b.split_count = 1 + shrapnel_level
 
 	match mode:
 		"wave":
@@ -840,11 +1112,23 @@ func _trigger_nova_pulse(reactive_burst: bool) -> void:
 
 func _spawn_player_bullet(pos: Vector2, vel: Vector2, dmg: float, tex_key: String, pierce: int, homing: bool, hit_r: float = 3.0) -> GameBullet:
 	var crit: bool = crit_chance > 0.0 and randf() < crit_chance
-	var final_dmg: float = dmg * (2.0 if crit else 1.0)
+	var final_dmg: float = dmg * (crit_mult if crit else 1.0)
+	if berserk_level > 0:
+		var missing: int = maxi(0, max_hp - hp)
+		final_dmg *= 1.0 + minf(1.0, float(missing) * (0.15 + 0.10 * float(berserk_level - 1)))
 	var b: GameBullet = GameBullet.new()
 	bullet_container.add_child(b)
 	b.setup(pos, vel, final_dmg, true, tex_key, pierce, homing, hit_r, fx)
 	b.apply_size_and_crit(proj_size_mult, crit)
+	if execute_level > 0:
+		b.execute_frac = 0.08 + 0.12 * float(execute_level)
+	if ambush_level > 0:
+		b.ambush_mult = 0.75 * float(ambush_level)
+	if cryo_level > 0:
+		b.chill_time = 0.6 + 0.6 * float(cryo_level)
+		b.chill_factor = 0.6 - 0.15 * float(cryo_level - 1)
+	if napalm_level > 0:
+		b.burn_dps = (1.6 + 1.2 * float(napalm_level - 1)) * damage_bonus
 	return b
 
 
@@ -871,6 +1155,9 @@ func take_player_hit() -> void:
 			fx.add_shake(3.0)
 			fx.spawn_hit_sparks(global_position, Color("#28e8ff"), 14)
 			fx.spawn_popup(global_position + Vector2(-14.0, -14.0), "SHIELD!", Color("#28e8ff"))
+		if reflect_level > 0:
+			# Deferred: this runs inside a physics callback, where new Area2Ds can't be added.
+			call_deferred("_reflect_burst")
 		hp_changed.emit(hp, max_hp, shield_charges, max_shield)
 		return
 
@@ -898,6 +1185,16 @@ func take_player_hit() -> void:
 					child.queue_free()
 		hp_changed.emit(hp, max_hp, shield_charges, max_shield)
 		return
+
+	# Last Stand draft perk: dropping to 1 hull triggers a nova, 3s invincibility and full shields.
+	if hp == 1 and last_stand_level > 0 and last_stand_ready:
+		last_stand_ready = false
+		invuln_timer = 3.0
+		shield_charges = max_shield
+		shield_regen_timer = 0.0
+		_trigger_nova_pulse(true)
+		if fx != null:
+			fx.spawn_popup(global_position + Vector2(-26.0, -18.0), "LAST STAND!", Color("#ffe854"))
 
 	hp_changed.emit(hp, max_hp, shield_charges, max_shield)
 
@@ -933,6 +1230,18 @@ func _get_beam_nose_color() -> Color:
 func _draw() -> void:
 	if not visible:
 		return
+
+	# --- DRAFT CARD perk fields (drawn under the hull) ---
+	if aura_level > 0:
+		var a_r: float = 30.0 + 8.0 * float(aura_level)
+		var a_pulse: float = 0.18 + 0.10 * sin(Time.get_ticks_msec() * 0.01)
+		draw_arc(Vector2.ZERO, a_r, 0.0, TAU, 40, Color(0.83, 0.30, 1.0, a_pulse), 1.0)
+	if chrono_level > 0:
+		var c_r: float = 40.0 + 16.0 * float(chrono_level)
+		var c_rot: float = Time.get_ticks_msec() * 0.0015
+		for seg: int in range(6):
+			var a0: float = c_rot + TAU * float(seg) / 6.0
+			draw_arc(Vector2.ZERO, c_r, a0, a0 + 0.5, 6, Color(0.16, 0.91, 1.0, 0.22), 1.0)
 
 	# --- Visibly Mounted Hull Addons & Active Beam Nose Barrel! ---
 	if active_beam != "vulcan" or aux_beam != "":

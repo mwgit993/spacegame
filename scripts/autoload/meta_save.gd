@@ -2,6 +2,29 @@ extends Node
 
 const SAVE_PATH: String = "user://star_viper_save.json"
 
+# Save format version. v1 = original 30-node tree with start-of-run combat bonuses.
+# v2 = reworked tree (DRAFT CARD unlocks, hull/shields/ships only at run start).
+const TREE_VERSION: int = 2
+
+# Purchase prices of v1 nodes that no longer exist ([base_cost, cost_step]).
+# Loading an older save refunds every level bought in these nodes.
+const LEGACY_NODE_COSTS: Dictionary = {
+	"damage_1": [25, 25],
+	"fire_rate_1": [25, 28],
+	"starter_turret": [70, 0],
+	"crit_optics": [40, 35],
+	"starter_missile": [80, 0],
+	"heavy_ordnance": [40, 35],
+	"thruster_1": [20, 22],
+	"starter_option": [85, 0],
+	"weird_science": [30, 30],
+	"starter_blades": [90, 0],
+	"bio_carapace": [45, 40],
+	"starter_nova": [75, 0],
+	"veteran_drop": [115, 0],
+	"starter_bomb": [80, 0],
+}
+
 var scrap: int = 0
 var lifetime_scrap: int = 0
 var best_wave: int = 0
@@ -21,6 +44,9 @@ var touch_mode: int = 0 # 0 = AUTO (shows on touch), 1 = ALWAYS ON (phone/mouse 
 # Rogue Legacy-style Skill Tree node levels & Fleet Loadout!
 var tree_levels: Dictionary = {"core_root": 1}
 var selected_ship: String = "viper"
+
+# Scrap refunded by the last save migration; the hangar shows it once, then clears it.
+var migration_refund_notice: int = 0
 
 
 func _ready() -> void:
@@ -123,6 +149,28 @@ func has_any_affordable_upgrade() -> bool:
 	return false
 
 
+# --- Draft Card Unlocks (tree nodes that add new upgrades to the level-up draft pool) ---
+func is_run_upgrade_unlocked(upgrade_id: String) -> bool:
+	var node_id: String = SkillTreeData.get_upgrade_unlock_node(upgrade_id)
+	return node_id == "" or get_level(node_id) > 0
+
+
+func get_unlocked_draft_card_count() -> int:
+	var c: int = 0
+	for def: Dictionary in SkillTreeData.NODES:
+		if String(def.get("unlocks_upgrade", "")) != "" and get_level(String(def["id"])) > 0:
+			c += 1
+	return c
+
+
+func get_total_draft_card_nodes() -> int:
+	var c: int = 0
+	for def: Dictionary in SkillTreeData.NODES:
+		if String(def.get("unlocks_upgrade", "")) != "":
+			c += 1
+	return c
+
+
 # --- Ship Unlock & Fleet Loadout Queries ---
 func is_ship_unlocked(ship_id: String) -> bool:
 	if ship_id == "viper":
@@ -155,38 +203,36 @@ func get_selected_ship_def() -> Dictionary:
 	return SkillTreeData.get_ship_def(selected_ship)
 
 
-# --- Aggregated Run Stat & Starter Perks from Skill Tree + Selected Ship! ---
+# --- Start-of-run stats. The tree only adds hull and shields here; everything else comes from the ship. ---
 func get_starting_max_hp() -> int:
 	var ship_def: Dictionary = get_selected_ship_def()
-	var base: int = 4 + int(ship_def["hp_mod"]) + get_level("hull_1") + get_level("bio_carapace")
+	var base: int = 4 + int(ship_def["hp_mod"]) + get_level("hull_1") + get_level("hull_2")
 	return maxi(2, base)
 
 
 func get_starting_speed() -> float:
 	var ship_def: Dictionary = get_selected_ship_def()
-	return float(ship_def["speed"]) * (1.0 + 0.07 * float(get_level("thruster_1")))
+	return float(ship_def["speed"])
 
 
 func get_base_fire_rate_mult() -> float:
-	return 1.0 + 0.10 * float(get_level("fire_rate_1"))
+	return 1.0
 
 
 func get_base_damage_mult() -> float:
-	var ship_bonus: float = 0.12 if selected_ship == "dread" else 0.0
-	return 1.0 + ship_bonus + 0.12 * float(get_level("damage_1")) + 0.10 * float(get_level("bio_carapace")) + 0.12 * float(get_level("heavy_ordnance"))
+	return 1.12 if selected_ship == "dread" else 1.0
 
 
 func get_crit_chance() -> float:
-	var ship_crit: float = 0.20 if selected_ship == "phantom" else 0.0
-	return clampf(ship_crit + 0.07 * float(get_level("crit_optics")), 0.0, 0.75)
+	return 0.20 if selected_ship == "phantom" else 0.0
 
 
 func get_aoe_scale_mult() -> float:
-	return 1.0 + 0.15 * float(get_level("heavy_ordnance")) + 0.10 * float(get_level("weird_science"))
+	return 1.0
 
 
 func get_projectile_size_mult() -> float:
-	return 1.0 + 0.10 * float(get_level("weird_science"))
+	return 1.0
 
 
 func get_magnet_radius() -> float:
@@ -218,7 +264,7 @@ func get_heal_drop_chance() -> float:
 
 
 func get_starting_shields() -> int:
-	return get_level("aegis_core")
+	return mini(3, get_level("aegis_core") + get_level("aegis_2"))
 
 
 func has_starter_shield() -> bool:
@@ -233,18 +279,10 @@ func has_lazarus_revive() -> bool:
 	return get_level("phoenix_cell") > 0
 
 
-func has_veteran_drop() -> bool:
-	return get_level("veteran_drop") > 0
-
-
+# Built-in addons that come with a ship's hull (not from the tree).
 func get_starter_addons() -> Dictionary:
 	return {
-		"option": get_level("starter_option"),
-		"turret": get_level("starter_turret"),
-		"missile": get_level("starter_missile"),
-		"blades": get_level("starter_blades") + (1 if selected_ship == "saucer" else 0),
-		"nova": get_level("starter_nova"),
-		"bomb": get_level("starter_bomb"),
+		"blades": 1 if selected_ship == "saucer" else 0,
 		"flank": 1 if selected_ship == "dread" else 0,
 	}
 
@@ -270,6 +308,7 @@ func reset_save() -> void:
 	total_runs = 0
 	total_kills = 0
 	bosses_defeated = 0
+	migration_refund_notice = 0
 	_init_default_tree()
 	save_game()
 
@@ -290,12 +329,47 @@ func save_game() -> void:
 		"fullscreen_enabled": fullscreen_enabled,
 		"touch_mode": touch_mode,
 		"selected_ship": selected_ship,
+		"tree_version": TREE_VERSION,
 		"tree_levels": tree_levels,
 	}
 	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file != null:
 		file.store_string(JSON.stringify(data, "\t"))
 		file.close()
+
+
+# Cost paid for levels [from_level, to_level) of a node priced base + level * step.
+static func _levels_cost(base_cost: int, cost_step: int, from_level: int, to_level: int) -> int:
+	var total: int = 0
+	for l: int in range(maxi(0, from_level), to_level):
+		total += base_cost + l * cost_step
+	return total
+
+
+# Copies saved node levels into tree_levels and returns the Scrap owed back:
+# - every level of a v1 node that no longer exists (LEGACY_NODE_COSTS),
+# - levels above a node's current max_level (e.g. NEURAL COMBAT LOG went from 5 ranks to 3).
+# Unknown keys with no recorded price are dropped without a refund.
+func migrate_tree_levels(saved: Dictionary) -> int:
+	var refund: int = 0
+	for key_v: Variant in saved.keys():
+		var key: String = String(key_v)
+		var lvl: int = maxi(0, int(saved[key_v]))
+		if key == "core_root" or lvl <= 0:
+			continue
+		var def: Dictionary = SkillTreeData.get_node_def(key)
+		if def.is_empty():
+			if LEGACY_NODE_COSTS.has(key):
+				var price: Array = LEGACY_NODE_COSTS[key]
+				refund += _levels_cost(int(price[0]), int(price[1]), 0, lvl)
+			continue
+		var max_lvl: int = int(def["max_level"])
+		if lvl > max_lvl:
+			refund += _levels_cost(int(def["base_cost"]), int(def["cost_step"]), max_lvl, lvl)
+			lvl = max_lvl
+		tree_levels[key] = lvl
+	tree_levels["core_root"] = 1
+	return refund
 
 
 func load_game() -> void:
@@ -323,25 +397,34 @@ func load_game() -> void:
 	default_autofire = bool(data.get("default_autofire", true))
 	fullscreen_enabled = bool(data.get("fullscreen_enabled", false))
 	touch_mode = int(data.get("touch_mode", 0))
-	selected_ship = String(data.get("selected_ship", "viper"))
 
 	_init_default_tree()
-	var saved_tree: Variant = data.get("tree_levels", {})
-	if typeof(saved_tree) == TYPE_DICTIONARY:
-		var td: Dictionary = saved_tree
-		for key: String in tree_levels.keys():
-			if td.has(key):
-				tree_levels[key] = int(td[key])
+	# _init_default_tree() resets the ship, so restore the saved choice afterwards.
+	selected_ship = String(data.get("selected_ship", "viper"))
+
+	var saved_tree: Dictionary = {}
+	var saved_tree_v: Variant = data.get("tree_levels", null)
+	if typeof(saved_tree_v) == TYPE_DICTIONARY:
+		saved_tree = saved_tree_v
 	else:
-		# Migrate legacy 5-row Hangar saves seamlessly into the new Starforge Skill Tree!
+		# Pre-tree saves used a 5-row hangar; map those rows onto their v1 node ids.
 		var legacy_upg: Variant = data.get("upgrades", {})
 		if typeof(legacy_upg) == TYPE_DICTIONARY:
 			var lu: Dictionary = legacy_upg
-			tree_levels["hull_1"] = int(lu.get("hull", 0))
-			tree_levels["fire_rate_1"] = int(lu.get("fire_rate", 0))
-			tree_levels["damage_1"] = int(lu.get("damage", 0))
-			tree_levels["magnet_1"] = int(lu.get("magnet", 0))
-			tree_levels["aegis_core"] = int(lu.get("starter_shield", 0))
-	tree_levels["core_root"] = 1
+			saved_tree = {
+				"hull_1": int(lu.get("hull", 0)),
+				"fire_rate_1": int(lu.get("fire_rate", 0)),
+				"damage_1": int(lu.get("damage", 0)),
+				"magnet_1": int(lu.get("magnet", 0)),
+				"aegis_core": int(lu.get("starter_shield", 0)),
+			}
+
+	var refund: int = migrate_tree_levels(saved_tree)
+	var old_version: int = int(data.get("tree_version", 1))
+	if refund > 0:
+		scrap += refund
+		migration_refund_notice = refund
 	if not is_ship_unlocked(selected_ship):
 		selected_ship = "viper"
+	if refund > 0 or old_version < TREE_VERSION:
+		save_game()
