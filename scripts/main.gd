@@ -236,7 +236,7 @@ var run_xp: int = 0
 var xp_to_next: int = 18
 var rerolls_left: int = 0
 var _pending_level_ups: int = 0
-var _draft_title_lbl: Label
+var _draft_title_lbl: PromptBar
 var _draft_reroll_btn: Button
 var _draft_pre_speed: float = 1.15
 var run_ranks: Dictionary = {}
@@ -305,6 +305,9 @@ func _ready() -> void:
 func _run_smoke_test() -> void:
 	_enter_stats()
 	_enter_options()
+	if not _smoke_check_input_prompts():
+		get_tree().quit(1)
+		return
 	# Exercise Rogue Legacy 30-node Skill Tree + unlocking Ships including S.S. Meow-zer (Flying Cats)!
 	MetaSave.scrap = 2500
 	_enter_hangar("SMOKE TEST SUMMARY")
@@ -313,15 +316,18 @@ func _run_smoke_test() -> void:
 		_on_buy_tree_node()
 	_move_tree_selection(Vector2.RIGHT)
 	_tree_canvas.queue_redraw()
+	InputPrompts.set_gamepad(not InputPrompts.is_gamepad)
 	# Exercise Fleet Ship Loadout Bay across all 7 ships!
 	_enter_loadout()
 	for s_idx: int in range(SkillTreeData.SHIPS.size()):
 		_select_loadout_slot(s_idx)
+		InputPrompts.set_gamepad(not InputPrompts.is_gamepad)
 	MetaSave.select_ship("neko")
 	_start_run()
 	_update_intro_warp(1.0)
 	_update_intro_warp(1.0)
 	_pause_game()
+	InputPrompts.set_gamepad(not InputPrompts.is_gamepad)
 	_options_from_pause = true
 	_enter_options()
 	_leave_options()
@@ -373,6 +379,9 @@ func _run_smoke_test() -> void:
 			boss_test._process(0.30)
 			break
 	_open_upgrade_draft()
+	InputPrompts.set_gamepad(not InputPrompts.is_gamepad)
+	_refresh_draft_card_glyphs()
+	InputPrompts.set_gamepad(not InputPrompts.is_gamepad)
 	_reroll_draft_cards()
 	_pick_draft_card(0)
 	_begin_hyperspace_jump()
@@ -383,6 +392,53 @@ func _run_smoke_test() -> void:
 	MetaSave.reset_save()
 	print("STAR_VIPER_SMOKE_TEST_PASSED")
 	get_tree().quit(0)
+
+
+# Device-aware prompts: a press on each device must swap the prompts, while stick drift, a
+# tiny mouse nudge and button releases must not. Also builds every glyph strip on both devices.
+func _smoke_check_input_prompts() -> bool:
+	var pad_btn: InputEventJoypadButton = InputEventJoypadButton.new()
+	pad_btn.button_index = JOY_BUTTON_A
+	pad_btn.pressed = true
+	var pad_release: InputEventJoypadButton = InputEventJoypadButton.new()
+	pad_release.button_index = JOY_BUTTON_B
+	pad_release.pressed = false
+	var key: InputEventKey = InputEventKey.new()
+	key.physical_keycode = KEY_SPACE
+	key.pressed = true
+	var drift: InputEventJoypadMotion = InputEventJoypadMotion.new()
+	drift.axis = JOY_AXIS_LEFT_X
+	drift.axis_value = 0.2
+	var stick: InputEventJoypadMotion = InputEventJoypadMotion.new()
+	stick.axis = JOY_AXIS_LEFT_Y
+	stick.axis_value = -0.9
+	var nudge: InputEventMouseMotion = InputEventMouseMotion.new()
+	nudge.relative = Vector2(1.0, 0.0)
+	var swipe: InputEventMouseMotion = InputEventMouseMotion.new()
+	swipe.relative = Vector2(12.0, 0.0)
+	var click: InputEventMouseButton = InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	# [event, expected InputPrompts.is_gamepad afterwards]
+	var steps: Array = [
+		[pad_btn, true], [key, false], [pad_release, false], [drift, false], [stick, true],
+		[nudge, true], [swipe, false], [pad_btn, true], [click, false],
+	]
+	for step: Array in steps:
+		var ev: InputEvent = step[0]
+		InputPrompts._input(ev)
+		if InputPrompts.is_gamepad != bool(step[1]):
+			push_error("InputPrompts: after %s, is_gamepad should be %s" % [ev.get_class(), str(step[1])])
+			return false
+	for on: bool in [false, true]:
+		InputPrompts.set_gamepad(on)
+		for act: String in InputPrompts.ACTIONS.keys():
+			if InputPrompts.glyph_ids_for(act).size() > 0 and InputPrompts.strip_for(act) == null:
+				push_error("InputPrompts: no glyph strip for %s" % act)
+				return false
+	for g_id: String in InputPrompts.all_glyph_ids():
+		InputPrompts.glyph(g_id)
+	return true
 
 
 func _build_world() -> void:
@@ -549,12 +605,15 @@ func _build_title_ui() -> void:
 		elif i == 2:
 			_title_loadout_btn = btn
 
-	var foot: Label = Label.new()
-	foot.position = Vector2(30.0, 232.0)
-	foot.size = Vector2(430.0, 14.0)
-	foot.text = "Keyboard / Controller / Touch Supported  |  Esc/Start: Pause"
-	foot.add_theme_font_size_override("font_size", FONT_SZ)
-	foot.add_theme_color_override("font_color", Color("#9ab6e8"))
+	# Controls legend: shows key caps or Xbox buttons for whichever device was used last.
+	var foot: PromptBar = PromptBar.new()
+	foot.position = Vector2(30.0, 230.0)
+	foot.size = Vector2(430.0, 16.0)
+	foot.text_color = Color("#9ab6e8")
+	foot.set_segments([
+		"MOVE ", {"act": "move"}, "   FIRE ", {"act": "fire"}, "   FOCUS ", {"act": "focus"},
+		"   AUTOFIRE ", {"act": "autofire"}, "   PAUSE ", {"act": "pause"},
+	])
 	title_panel.add_child(foot)
 
 
@@ -588,8 +647,9 @@ func _build_stats_ui() -> void:
 	_stats_back_btn = Button.new()
 	_stats_back_btn.position = Vector2(176.0, 204.0)
 	_stats_back_btn.size = Vector2(128.0, 26.0)
-	_stats_back_btn.text = "BACK [ESC/B]"
+	_stats_back_btn.text = "BACK"
 	_style_menu_btn(_stats_back_btn)
+	InputPrompts.bind_button(_stats_back_btn, "back")
 	_stats_back_btn.pressed.connect(func() -> void:
 		RetroSfx.play("ui", -7.0, 0.02)
 		_enter_title()
@@ -727,8 +787,9 @@ func _build_options_ui() -> void:
 	var back_btn: Button = Button.new()
 	back_btn.position = Vector2(284.0, 210.0)
 	back_btn.size = Vector2(136.0, 26.0)
-	back_btn.text = "BACK [ESC/B]"
+	back_btn.text = "BACK"
 	_style_menu_btn(back_btn)
+	InputPrompts.bind_button(back_btn, "back")
 	back_btn.pressed.connect(_leave_options)
 	options_panel.add_child(back_btn)
 
@@ -834,8 +895,9 @@ func _build_skill_tree_ui() -> void:
 	t_title_btn.position = Vector2(14.0, 239.0)
 	t_title_btn.size = Vector2(92.0, 22.0)
 	t_title_btn.focus_mode = Control.FOCUS_NONE
-	t_title_btn.text = "TITLE [ESC]"
+	t_title_btn.text = "TITLE"
 	_style_menu_btn(t_title_btn)
+	InputPrompts.bind_button(t_title_btn, "back")
 	t_title_btn.pressed.connect(func() -> void:
 		RetroSfx.play("ui", -7.0, 0.02)
 		_enter_title()
@@ -846,8 +908,9 @@ func _build_skill_tree_ui() -> void:
 	t_loadout_btn.position = Vector2(114.0, 239.0)
 	t_loadout_btn.size = Vector2(174.0, 22.0)
 	t_loadout_btn.focus_mode = Control.FOCUS_NONE
-	t_loadout_btn.text = "SHIP LOADOUT [TAB/X]"
+	t_loadout_btn.text = "SHIP LOADOUT"
 	_style_menu_btn(t_loadout_btn, Color("#ff64b8"))
+	InputPrompts.bind_button(t_loadout_btn, "swap_menu")
 	t_loadout_btn.pressed.connect(func() -> void:
 		RetroSfx.play("ui", -7.0, 0.02)
 		_enter_loadout()
@@ -858,8 +921,9 @@ func _build_skill_tree_ui() -> void:
 	t_launch_btn.position = Vector2(296.0, 239.0)
 	t_launch_btn.size = Vector2(172.0, 22.0)
 	t_launch_btn.focus_mode = Control.FOCUS_NONE
-	t_launch_btn.text = "LAUNCH RUN [START]"
+	t_launch_btn.text = "LAUNCH RUN"
 	_style_menu_btn(t_launch_btn, Color("#3ce878"))
+	InputPrompts.bind_button(t_launch_btn, "launch")
 	t_launch_btn.pressed.connect(_start_run)
 	hangar_panel.add_child(t_launch_btn)
 
@@ -1054,10 +1118,12 @@ func _refresh_skill_tree_ui() -> void:
 		if lvl >= max_lvl:
 			_tree_buy_btn.text = "UNLOCKED / MAX"
 			_tree_buy_btn.disabled = true
+			InputPrompts.bind_button(_tree_buy_btn, "")
 		else:
 			var cost: int = MetaSave.get_node_cost(id)
-			_tree_buy_btn.text = "UNLOCK %d [A/SPC]" % cost
+			_tree_buy_btn.text = "UNLOCK %d" % cost
 			_tree_buy_btn.disabled = not MetaSave.can_buy_node(id)
+			InputPrompts.bind_button(_tree_buy_btn, "buy")
 	else:
 		var p_def: Dictionary = SkillTreeData.get_node_def(String(def["parent"]))
 		var p_name: String = String(p_def.get("name", "PARENT NODE"))
@@ -1066,6 +1132,7 @@ func _refresh_skill_tree_ui() -> void:
 		_tree_node_desc_lbl.text = "Unlock [%s] first to reveal this branch!" % p_name
 		_tree_buy_btn.text = "LOCKED"
 		_tree_buy_btn.disabled = true
+		InputPrompts.bind_button(_tree_buy_btn, "")
 
 	_tree_canvas.queue_redraw()
 
@@ -1206,8 +1273,9 @@ func _build_loadout_ui() -> void:
 	var l_title_btn: Button = Button.new()
 	l_title_btn.position = Vector2(15.0, 229.0)
 	l_title_btn.size = Vector2(104.0, 26.0)
-	l_title_btn.text = "TITLE [ESC]"
+	l_title_btn.text = "TITLE"
 	_style_menu_btn(l_title_btn)
+	InputPrompts.bind_button(l_title_btn, "back")
 	l_title_btn.pressed.connect(func() -> void:
 		RetroSfx.play("ui", -7.0, 0.02)
 		_enter_title()
@@ -1217,8 +1285,9 @@ func _build_loadout_ui() -> void:
 	var l_tree_btn: Button = Button.new()
 	l_tree_btn.position = Vector2(128.0, 229.0)
 	l_tree_btn.size = Vector2(154.0, 26.0)
-	l_tree_btn.text = "SKILL TREE [TAB/X]"
+	l_tree_btn.text = "SKILL TREE"
 	_style_menu_btn(l_tree_btn, Color("#ffe854"))
+	InputPrompts.bind_button(l_tree_btn, "swap_menu")
 	l_tree_btn.pressed.connect(func() -> void:
 		RetroSfx.play("ui", -7.0, 0.02)
 		_enter_hangar("")
@@ -1229,6 +1298,7 @@ func _build_loadout_ui() -> void:
 	_loadout_action_btn.position = Vector2(290.0, 229.0)
 	_loadout_action_btn.size = Vector2(175.0, 26.0)
 	_style_menu_btn(_loadout_action_btn, Color("#3ce878"))
+	InputPrompts.bind_button(_loadout_action_btn, "confirm")
 	_loadout_action_btn.pressed.connect(func() -> void: _activate_loadout_slot(_loadout_cursor_idx))
 	loadout_panel.add_child(_loadout_action_btn)
 
@@ -1320,14 +1390,14 @@ func _refresh_loadout_ui() -> void:
 		_loadout_info_weapon.text = "BLASTER: %s" % String(cur["weapon_name"])
 		_loadout_info_desc.text = String(cur["weapon_desc"])
 		_loadout_info_perks.text = "SHIP PERK: %s\nTREE STARTERS: %s" % [String(cur["perk_desc"]), _format_active_starters()]
-		_loadout_action_btn.text = "LAUNCH RUN [A/START]" if cur_equipped else "EQUIP SHIP [A/ENTER]"
+		_loadout_action_btn.text = "LAUNCH RUN" if cur_equipped else "EQUIP SHIP"
 	else:
 		_loadout_info_title.text = "LOCKED CLASSIFIED HULL"
 		_loadout_info_title.add_theme_color_override("font_color", Color("#7c96c8"))
 		_loadout_info_weapon.text = "BLASTER: ???"
 		_loadout_info_desc.text = String(cur["unlock_hint"])
 		_loadout_info_perks.text = "Spend Scrap in the Starforge Skill Tree to unlock this spacecraft!"
-		_loadout_action_btn.text = "GO TO SKILL TREE [A]"
+		_loadout_action_btn.text = "GO TO SKILL TREE"
 
 
 func _format_active_starters() -> String:
@@ -1405,6 +1475,7 @@ func _build_pause_ui() -> void:
 		pause_panel.add_child(btn)
 		if i == 0:
 			_pause_resume_btn = btn
+			InputPrompts.bind_button(btn, "resume")
 
 	var ship_card: Panel = Panel.new()
 	ship_card.position = Vector2(12.0, 182.0)
@@ -1588,14 +1659,14 @@ func _build_draft_ui() -> void:
 	dim.color = Color(0.02, 0.03, 0.10, 0.78)
 	draft_panel.add_child(dim)
 
-	_draft_title_lbl = Label.new()
+	_draft_title_lbl = PromptBar.new()
 	_draft_title_lbl.position = Vector2(0.0, 27.0)
 	_draft_title_lbl.size = Vector2(VIEW_W, 16.0)
-	_draft_title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_draft_title_lbl.text = "LEVEL UP! SELECT UPGRADE  [1 / 2 / 3  or  D-PAD + A]"
-	_draft_title_lbl.add_theme_font_size_override("font_size", FONT_SZ)
-	_draft_title_lbl.add_theme_color_override("font_color", Color("#ffe854"))
+	_draft_title_lbl.align = HORIZONTAL_ALIGNMENT_CENTER
+	_draft_title_lbl.text_color = Color("#ffe854")
+	_draft_title_lbl.set_segments(["LEVEL UP! SELECT UPGRADE  ", {"act": "draft_pick"}])
 	draft_panel.add_child(_draft_title_lbl)
+	InputPrompts.device_changed.connect(func(_is_pad: bool) -> void: _refresh_draft_card_glyphs())
 
 	_draft_cards.clear()
 	for i: int in range(3):
@@ -1609,7 +1680,16 @@ func _build_draft_ui() -> void:
 		btn.size = Vector2(cw, ch)
 		var idx: int = i
 		btn.pressed.connect(func() -> void: _pick_draft_card(idx))
+		btn.focus_entered.connect(_refresh_draft_card_glyphs, CONNECT_DEFERRED)
+		btn.focus_exited.connect(_refresh_draft_card_glyphs, CONNECT_DEFERRED)
 		draft_panel.add_child(btn)
+
+		# What picks this card: key cap 1/2/3, or the A button on the focused card.
+		var pick_glyph: TextureRect = TextureRect.new()
+		pick_glyph.position = Vector2(4.0, 6.0)
+		pick_glyph.stretch_mode = TextureRect.STRETCH_KEEP
+		pick_glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(pick_glyph)
 
 		var key_lbl: Label = Label.new()
 		key_lbl.position = Vector2(0.0, 7.0)
@@ -1658,6 +1738,7 @@ func _build_draft_ui() -> void:
 			"pips_lbl": pips_lbl,
 			"icon_rect": icon_rect,
 			"short_lbl": short_lbl,
+			"pick_glyph": pick_glyph,
 		})
 
 	_draft_reroll_btn = Button.new()
@@ -1665,6 +1746,7 @@ func _build_draft_ui() -> void:
 	_draft_reroll_btn.size = Vector2(160.0, 24.0)
 	_draft_reroll_btn.focus_mode = Control.FOCUS_NONE
 	_style_menu_btn(_draft_reroll_btn, Color("#d46bff"))
+	InputPrompts.bind_button(_draft_reroll_btn, "reroll")
 	_draft_reroll_btn.pressed.connect(_reroll_draft_cards)
 	draft_panel.add_child(_draft_reroll_btn)
 
@@ -2514,10 +2596,10 @@ func _roll_draft_choices() -> void:
 
 func _populate_draft_cards_ui() -> void:
 	if _draft_title_lbl != null:
-		_draft_title_lbl.text = "LEVEL %d! CHOOSE POWERUP  [1 / 2 / 3  or  D-PAD + A]" % player_level
+		_draft_title_lbl.set_segments(["LEVEL %d! CHOOSE POWERUP  " % player_level, {"act": "draft_pick"}])
 	if _draft_reroll_btn != null:
 		_draft_reroll_btn.visible = rerolls_left > 0
-		_draft_reroll_btn.text = "REROLL [R / Y] (%d)" % rerolls_left
+		_draft_reroll_btn.text = "REROLL (%d)" % rerolls_left
 
 	for i: int in range(3):
 		var card: Dictionary = _draft_cards[i]
@@ -2536,7 +2618,7 @@ func _populate_draft_cards_ui() -> void:
 			btn.add_theme_stylebox_override("focus", _make_ff6_box(Color("#192c75"), Color.WHITE, 2))
 
 			var title_lbl: Label = card["title_lbl"]
-			title_lbl.text = "[%d] %s" % [i + 1, String(choice["title"])]
+			title_lbl.text = String(choice["title"])
 			title_lbl.add_theme_color_override("font_color", col)
 
 			var pips_lbl: Label = card["pips_lbl"]
@@ -2558,6 +2640,33 @@ func _populate_draft_cards_ui() -> void:
 	if not _draft_choices.is_empty():
 		var first_btn: Button = _draft_cards[focus_idx]["btn"]
 		first_btn.grab_focus()
+	_refresh_draft_card_glyphs()
+
+
+# Key caps 1/2/3 on every card for keyboard players; for gamepad players, the A button on
+# whichever card is focused. The glyph sits just left of the card title, centred as a pair.
+func _refresh_draft_card_glyphs() -> void:
+	var focus_owner: Control = get_viewport().gui_get_focus_owner()
+	for i: int in range(_draft_cards.size()):
+		var card: Dictionary = _draft_cards[i]
+		var btn: Button = card["btn"]
+		var pick_glyph: TextureRect = card["pick_glyph"]
+		var title_lbl: Label = card["title_lbl"]
+		if InputPrompts.is_gamepad:
+			pick_glyph.texture = InputPrompts.glyph("pad_a") if btn == focus_owner else null
+		else:
+			pick_glyph.texture = InputPrompts.glyph("key_%d" % (i + 1))
+		if pick_glyph.texture == null:
+			title_lbl.position.x = 0.0
+			title_lbl.size.x = btn.size.x
+			continue
+		var font: Font = title_lbl.get_theme_font("font")
+		var title_w: float = font.get_string_size(title_lbl.text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x
+		var glyph_w: float = float(pick_glyph.texture.get_width())
+		var x0: float = maxf(4.0, floorf((btn.size.x - glyph_w - 3.0 - title_w) * 0.5))
+		pick_glyph.position = Vector2(x0, 6.0)
+		title_lbl.position.x = x0 + glyph_w + 3.0
+		title_lbl.size.x = title_w + 2.0
 
 
 func _reroll_draft_cards() -> void:
