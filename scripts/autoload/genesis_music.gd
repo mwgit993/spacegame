@@ -74,7 +74,18 @@ const SONG_DEFAULTS: Dictionary = {
 	"snare_noise": 0.19,
 	"snare_lp": 0.22,
 	"hat_amp": 0.075,
+	# Fuller arrangement layers added on top of every groove (see _trigger_layers):
+	# crash cymbals at section changes, claps on the backbeat, ghost hi-hats, a build-up
+	# snare roll, a countermelody in the chorus, and a sub-octave under the bass.
+	"energy": -1,             # 0 calm / 1 normal / 2 intense; -1 = from the groove (GROOVE_ENERGY)
+	"bass_gain": 1.45,        # overall bass level
+	"sub_mix": -1.0,          # sub-octave sine under the bass; -1 = from the energy
+	"kick_gain": 1.25,
+	"counter": 1,             # 1 = play the chorus countermelody, 0 = off
 }
+
+# How busy the extra layers get for each groove (style 0-17).
+const GROOVE_ENERGY: Array[int] = [2, 1, 0, 1, 0, 2, 0, 2, 2, 1, 2, 1, 1, 0, 1, 0, 2, 1]
 
 var current_mode: Mode = Mode.NONE
 var current_stage_idx: int = 0
@@ -123,6 +134,23 @@ var _snare_body: float = 0.34
 var _snare_noise: float = 0.19
 var _snare_lp_k: float = 0.22
 var _hat_amp: float = 0.075
+var _energy: int = 1
+var _bass_gain: float = 1.45
+var _sub_mix: float = 0.3
+var _add_sub: bool = true
+var _kick_gain: float = 1.25
+var _counter_on: bool = true
+
+# Extra layers: crash cymbal, clap and the chorus countermelody voice.
+var _crash_env: float = 0.0
+var _crash_prev: float = 0.0
+var _clap_env: float = 0.0
+var _clap_t: float = 0.0
+var _clap_lp: float = 0.0
+var _ca_p: float = 0.0
+var _ca_freq: float = 440.0
+var _ca_env: float = 0.0
+var _ca_atk: float = 0.0
 
 # Chosen alternative per slot ("title", "stage_1".."stage_8", "boss", "hyperspace");
 # 0 or missing = the original track. Set from the save by MetaSave.
@@ -645,6 +673,9 @@ func _switch_state(new_mode: Mode, stage_idx: int, force: bool = false) -> void:
 	_master_lp_r = 0.0
 	_crush_count = 0
 	_crush_hold = 0.0
+	_crash_env = 0.0
+	_clap_env = 0.0
+	_ca_env = 0.0
 	_clear_delay()
 
 	if new_mode == Mode.NONE:
@@ -728,6 +759,18 @@ func _load_song_params() -> void:
 	_snare_noise = float(_song_param("snare_noise"))
 	_snare_lp_k = float(_song_param("snare_lp"))
 	_hat_amp = float(_song_param("hat_amp"))
+	_energy = int(_song_param("energy"))
+	if _energy < 0:
+		_energy = GROOVE_ENERGY[clampi(_style, 0, GROOVE_ENERGY.size() - 1)]
+	_bass_gain = float(_song_param("bass_gain"))
+	_sub_mix = float(_song_param("sub_mix"))
+	if _sub_mix < 0.0:
+		var sub_by_energy: Array[float] = [0.28, 0.34, 0.40]
+		_sub_mix = sub_by_energy[clampi(_energy, 0, 2)]
+	# Voices that already carry their own sub, or shouldn't get one (8-bit, 808), skip it.
+	_add_sub = not (_v_bass in [0, 5, 7, 8, 9, 10, 13])
+	_kick_gain = float(_song_param("kick_gain"))
+	_counter_on = int(_song_param("counter")) != 0
 
 
 func _get_current_bpm() -> float:
@@ -857,7 +900,10 @@ func _trigger_step() -> void:
 	var is_breakdown: bool = (section == 3 and bar8 < 4)
 
 	# --- STYLE-SPECIFIC RHYTHM, BASS, CHORD STABS, ARPEGGIOS & PERCUSSION! ---
+	var snare_before: float = maxf(_snare_body_env, _rim_env)
+	var hat_before: float = _hat_env
 	_trigger_style_rhythm(style, root, scale, chord_deg, s16, bar8, section, is_breakdown, pos)
+	_trigger_layers(root, scale, chord_deg, s16, bar8, section, is_breakdown, maxf(_snare_body_env, _rim_env) > snare_before + 0.05, _hat_env > hat_before + 0.02)
 
 	# --- MELODIC LEAD & PURE DIATONIC HARMONY ---
 	# Melodies are 4 bars long (64 steps in 4/4, 48 in 3/4) and repeat twice per section.
@@ -1176,6 +1222,40 @@ func _trigger_style_rhythm(style: int, root: int, scale: Array, chord_deg: int, 
 				elif is_boss or section >= 1:
 					_hat_env = 0.28
 					_hat_decay = 42.0
+
+
+# Fuller arrangement, layered on top of whatever the groove played this step.
+# snare_hit / hat_hit say whether the groove itself just hit a snare (or rim) / a hat.
+func _trigger_layers(root: int, scale: Array, cd: int, s16: int, bar8: int, section: int, brk: bool, snare_hit: bool, hat_hit: bool) -> void:
+	var bar_len: int = _bar_steps
+	var cho: bool = section == 2 or (section == 3 and bar8 >= 4)
+	# Crash cymbal into the verse, the chorus and the build after the breakdown.
+	if _energy >= 1 and s16 == 0 and ((bar8 == 0 and (section == 1 or section == 2)) or (section == 3 and bar8 == 4)):
+		_crash_env = 0.85 if _energy == 2 else 0.6
+	# Clap layered on the groove's backbeat.
+	if _energy >= 1 and snare_hit and not brk:
+		var backbeat: bool = (s16 == 4 or s16 == 12) if bar_len == 16 else (s16 == 6 if String(_song.get("meter", "")) == "68" else (s16 == 4 or s16 == 8))
+		if backbeat:
+			_clap_env = 0.9 if _energy == 2 else 0.6
+			_clap_t = 0.0
+	# Ghost 16th hi-hats where the groove leaves gaps (only when no hat is ringing).
+	if _energy >= 1 and section >= 1 and not brk and not hat_hit and _hat_env < 0.05 and s16 % 2 == 1:
+		_hat_env = 0.2 if _energy == 2 else 0.14
+		_hat_decay = 70.0
+	# Snare roll building into the chorus (intense songs, 4/4 only).
+	if _energy == 2 and bar_len == 16 and section == 1 and bar8 == 7 and s16 >= 8 and not snare_hit:
+		_snare_body_env = 0.3 + 0.07 * float(s16 - 8)
+		_snare_gate_time = 0.03
+		_snare_phase = 0.0
+	# Countermelody: long guide tones (the chord's 5th, then its 3rd) an octave above the lead's
+	# home, on each half bar of the chorus; calm songs also play it in the second verse.
+	if _counter_on and (s16 == 0 or s16 == bar_len / 2) and not brk and (cho or (_energy == 0 and section == 1 and bar8 >= 4)):
+		var tone: int = 4 if s16 == 0 else 2
+		if bar8 % 2 == 1:
+			tone += 3 if s16 == 0 else 2
+		_ca_freq = _midi_to_hz(_deg_to_midi(root + 36, scale, cd + tone))
+		_ca_env = 0.9
+		_ca_atk = 0.0
 
 
 # =========================================================================================
@@ -1866,6 +1946,9 @@ func _synth_ensemble_frame(dt: float, style: int) -> Vector2:
 			_bass_lp1 += b_cut * (dual_saw - _bass_lp1)
 			_bass_lp2 += b_cut * (_bass_lp1 - _bass_lp2)
 			bass_sig = (_bass_lp2 + sin(_bass_sub_p * TAU) * 0.50) * _bass_env * _bass_atk * (0.45 + 0.55 * _sidechain) * 0.34
+		if _add_sub:
+			bass_sig += sin(_bass_sub_p * TAU) * _sub_mix * _bass_env * _bass_atk * 0.32
+		bass_sig *= _bass_gain
 
 	# --- 2) STAGE-SPECIFIC CHORD / PAD / RHODES / CLAVINET INSTRUMENT ---
 	var pad_lr: Vector2 = _tick_stereo_pad(dt, 0.15 * _sidechain, _v_pad)
@@ -2006,10 +2089,34 @@ func _synth_ensemble_frame(dt: float, style: int) -> Vector2:
 	var tom: float = _tick_tom(dt)
 	var hat: float = _tick_hat(dt)
 
-	var dry_l: float = bass_sig + pad_lr.x + kick + snare_lr.x + rim + tom + hat
-	var dry_r: float = bass_sig + pad_lr.y + kick + snare_lr.y + rim + tom + hat
-	var send_l: float = arp_sig * 0.9 + lead_sig * 0.65 + harm_sig * 0.95
-	var send_r: float = arp_sig * 0.45 + lead_sig * 0.95 + harm_sig * 0.45
+	# --- 7) EXTRA LAYERS: crash, clap, countermelody ---
+	var crash: float = 0.0
+	if _crash_env > 0.002:
+		_crash_env = maxf(0.0, _crash_env - dt * 1.5)
+		var cn: float = _rng.randf_range(-1.0, 1.0)
+		crash = (cn - _crash_prev) * _crash_env * _crash_env * 0.085
+		_crash_prev = cn
+	var clap: float = 0.0
+	if _clap_env > 0.002:
+		_clap_t += dt
+		_clap_env = maxf(0.0, _clap_env - dt * 10.0)
+		# Three quick bursts then a tail, like hands slightly out of sync.
+		var burst: float = 1.0 if (_clap_t < 0.006 or (_clap_t > 0.010 and _clap_t < 0.016) or _clap_t > 0.020) else 0.2
+		var pn: float = _rng.randf_range(-1.0, 1.0)
+		_clap_lp += 0.35 * (pn - _clap_lp)
+		clap = (pn - _clap_lp * 0.6) * _clap_env * burst * 0.13
+	var ca_sig: float = 0.0
+	if _ca_env > 0.002:
+		_ca_atk = minf(1.0, _ca_atk + dt * 24.0)
+		_ca_env = maxf(0.0, _ca_env - dt * 0.85)
+		_ca_p = fmod(_ca_p + _ca_freq * (1.0 + 0.003 * sin(_lfo_phase * 1.2)) * dt, 1.0)
+		var ca_tri: float = 4.0 * absf(_ca_p - 0.5) - 1.0
+		ca_sig = (ca_tri * 0.65 + sin(_ca_p * TAU) * 0.35) * _ca_env * _ca_atk * 0.085
+
+	var dry_l: float = bass_sig + pad_lr.x + kick + snare_lr.x + rim + tom + hat + crash * 0.85 + clap
+	var dry_r: float = bass_sig + pad_lr.y + kick + snare_lr.y + rim + tom + hat + crash + clap * 0.9
+	var send_l: float = arp_sig * 0.9 + lead_sig * 0.65 + harm_sig * 0.95 + ca_sig * 0.45
+	var send_r: float = arp_sig * 0.45 + lead_sig * 0.95 + harm_sig * 0.45 + ca_sig
 
 	return _apply_stereo_delay(dry_l, dry_r, send_l, send_r)
 
@@ -2136,7 +2243,9 @@ func _tick_kick(dt: float) -> float:
 	var e3: float = _kick_env * _kick_env * _kick_env
 	var k_freq: float = _kick_base + _kick_sweep * e3
 	_kick_phase = fmod(_kick_phase + k_freq * dt, 1.0)
-	return sin(_kick_phase * TAU) * _kick_env * 0.45
+	# Body plus a short beater click at the start for punch.
+	var click: float = sin(_kick_phase * 5.0 * TAU) * e3 * e3 * 0.18
+	return (sin(_kick_phase * TAU) * _kick_env * 0.45 + click) * _kick_gain
 
 
 func _tick_gated_snare(dt: float) -> Vector2:
