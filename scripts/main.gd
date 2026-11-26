@@ -469,6 +469,7 @@ var run_kills: int = 0
 var run_bosses: int = 0
 var player_level: int = 1
 var run_xp: int = 0
+var run_xp_dropped: int = 0  # XP put on the field this run (kills, squads, boss phases)
 var xp_to_next: int = 18
 var rerolls_left: int = 0
 var _pending_level_ups: int = 0
@@ -615,6 +616,8 @@ func _run_smoke_test() -> void:
 	_enter_options()
 	_leave_options()
 	_resume_game()
+	if not _smoke_check_themed_enemies():
+		smoke_ok = false
 	# Exercise all 7 ship signature blasters, beams, addons, rerolls, and Lazarus revive!
 	for ship_d: Dictionary in SkillTreeData.SHIPS:
 		MetaSave.tree_levels["ship_" + String(ship_d["id"])] = 1
@@ -687,6 +690,10 @@ func _run_smoke_test() -> void:
 		GenesisMusic._process(0.02)
 		for t: GameEnemy.Type in [GameEnemy.Type.SCOUT_SINE, GameEnemy.Type.SWOOPER, GameEnemy.Type.SNIPER, GameEnemy.Type.CRUISER, GameEnemy.Type.BOSS]:
 			_spawn_enemy_now({"type": t, "pos": Vector2(360.0, 130.0), "hp_mult": 1.0, "phase": 0.0, "squad": 1, "stage": st_i})
+		# The stage's own enemies too, so the draft-card effects below also hit them.
+		for t_key: int in GameEnemy.THEMED.keys():
+			if int((GameEnemy.THEMED[t_key] as Dictionary)["stage"]) == st_i:
+				_spawn_enemy_now({"type": t_key as GameEnemy.Type, "pos": Vector2(330.0, 120.0), "hp_mult": 1.0, "phase": 0.0, "squad": -1, "stage": st_i})
 	GenesisMusic.play_boss(2)
 	GenesisMusic._step = 150
 	GenesisMusic._process(0.02)
@@ -759,6 +766,225 @@ func _run_smoke_test() -> void:
 		return
 	print("STAR_VIPER_SMOKE_TEST_PASSED")
 	get_tree().quit(0)
+
+
+# Stage-signature enemies: every sprite exists, every type runs its behaviour for a few seconds
+# (home stage and first loop, both variants), kills award once, children are capped and give no
+# Scrap, and the difficulty table only ever gets harder.
+func _smoke_check_themed_enemies() -> bool:
+	var ok: bool = true
+	for key: String in EnemyArt.KEYS:
+		if not PixelArt._cache.has(key):
+			push_error("SMOKE: missing enemy sprite " + key)
+			ok = false
+	for t_key: int in GameEnemy.THEMED.keys():
+		var def: Dictionary = GameEnemy.THEMED[t_key]
+		if not PixelArt._cache.has(String(def["tex"])):
+			push_error("SMOKE: missing sprite for themed enemy %d" % t_key)
+			ok = false
+
+	var prev: Dictionary = StageData.get_difficulty(0)
+	if float(prev["hp"]) != 1.0 or float(prev["shot_speed"]) != 1.0 or float(prev["fire_rate"]) != 1.0 or float(prev["pace"]) != 1.0:
+		push_error("SMOKE: stage 1 must stay the 1.0 difficulty baseline")
+		ok = false
+	for st_i: int in range(1, 9):
+		var row: Dictionary = StageData.get_difficulty(st_i)
+		for k: String in ["hp", "shot_speed", "fire_rate", "groups"]:
+			if float(row[k]) < float(prev[k]):
+				push_error("SMOKE: difficulty '%s' drops at stage %d" % [k, st_i + 1])
+				ok = false
+		if float(row["pace"]) > float(prev["pace"]):
+			push_error("SMOKE: difficulty pace eases off at stage %d" % (st_i + 1))
+			ok = false
+		prev = row
+
+	# Run every type through its behaviour: telegraphs, shots, children, leaving the screen.
+	for t_key: int in GameEnemy.THEMED.keys():
+		var home: int = int((GameEnemy.THEMED[t_key] as Dictionary)["stage"])
+		for loop_i: int in range(2):
+			for v: int in range(2):
+				var e: GameEnemy = _smoke_spawn(t_key as GameEnemy.Type, Vector2(330.0, 110.0 + 40.0 * float(v)), home + loop_i * 8, v)
+				for step: int in range(70):
+					if e._dead:
+						break
+					e._process(0.05)
+					if e.global_position.x < 140.0 and e.global_position.x > -20.0:
+						e.global_position.x = 330.0
+		_update_wave_director(0.0)
+	for b_node: Node in bullet_layer.get_children():
+		if b_node is GameBullet and not (b_node as GameBullet).is_player_bullet:
+			(b_node as GameBullet)._process(0.6)
+	_smoke_clear_enemies()
+
+	# A kill awards score, Scrap and XP exactly once; an asteroid's chunks give XP but no Scrap
+	# and don't split again.
+	var kills_0: int = run_kills
+	var scrap_0: int = run_scrap
+	var xp_0: int = run_xp_dropped
+	var rock: GameEnemy = _smoke_spawn(GameEnemy.Type.ASTEROID, Vector2(300.0, 130.0), 0, 0)
+	var queued_0: int = _spawn_queue.size()
+	rock.take_damage(9999.0)
+	rock.take_damage(9999.0)
+	if run_kills != kills_0 + 1 or run_xp_dropped != xp_0 + rock.xp_drop or run_scrap <= scrap_0:
+		push_error("SMOKE: asteroid kill rewards wrong (kills %d, xp %d)" % [run_kills - kills_0, run_xp_dropped - xp_0])
+		ok = false
+	if _spawn_queue.size() != queued_0 + GameEnemy.ROCK_CHUNKS:
+		push_error("SMOKE: asteroid queued %d chunks" % (_spawn_queue.size() - queued_0))
+		ok = false
+	_update_wave_director(0.0)
+	var chunks: Array[GameEnemy] = _smoke_live_enemies(GameEnemy.Type.ROCK_CHUNK)
+	if chunks.size() != GameEnemy.ROCK_CHUNKS:
+		push_error("SMOKE: %d rock chunks spawned" % chunks.size())
+		ok = false
+	var scrap_1: int = run_scrap
+	var xp_1: int = run_xp_dropped
+	var queued_1: int = _spawn_queue.size()
+	for c: GameEnemy in chunks:
+		c.take_damage(9999.0)
+	if run_scrap != scrap_1 or run_xp_dropped != xp_1 + chunks.size() or _spawn_queue.size() != queued_1:
+		push_error("SMOKE: rock chunks must give 1 XP, no Scrap, and not split")
+		ok = false
+
+	# A mine layer drops exactly MINES_PER_LAYER mines; a mine that bursts on its own isn't a kill.
+	_smoke_clear_enemies()
+	var layer: GameEnemy = _smoke_spawn(GameEnemy.Type.MINE_LAYER, Vector2(300.0, 100.0), 0, 0)
+	var queued_2: int = _spawn_queue.size()
+	for i: int in range(80):
+		layer.global_position.x = 300.0
+		layer._process(0.2)
+	if _spawn_queue.size() - queued_2 != GameEnemy.MINES_PER_LAYER:
+		push_error("SMOKE: mine layer dropped %d mines" % (_spawn_queue.size() - queued_2))
+		ok = false
+	_update_wave_director(0.0)
+	var kills_2: int = run_kills
+	for m: GameEnemy in _smoke_live_enemies(GameEnemy.Type.SPACE_MINE):
+		for i: int in range(20):
+			if not m._dead:
+				m._process(0.2)
+	if run_kills != kills_2 or not _smoke_live_enemies(GameEnemy.Type.SPACE_MINE).is_empty():
+		push_error("SMOKE: unshot mines must burst on their own without counting as kills")
+		ok = false
+
+	# Viruses replicate, but never past VIRUS_MAX_GEN generations or VIRUS_CAP alive, and copies
+	# give no Scrap.
+	_smoke_clear_enemies()
+	for i: int in range(6):
+		_smoke_spawn(GameEnemy.Type.VIRUS, Vector2(300.0 + float(i) * 12.0, 60.0 + float(i) * 30.0), 7, 0)
+	for round_i: int in range(4):
+		for vir: GameEnemy in _smoke_live_enemies(GameEnemy.Type.VIRUS):
+			vir._aux_timer = 0.0
+			vir._process(0.01)
+		_update_wave_director(0.0)
+	var viruses: Array[GameEnemy] = _smoke_live_enemies(GameEnemy.Type.VIRUS)
+	if viruses.size() > GameEnemy.VIRUS_CAP or viruses.size() <= 6:
+		push_error("SMOKE: %d viruses after replicating (cap %d)" % [viruses.size(), GameEnemy.VIRUS_CAP])
+		ok = false
+	for vir: GameEnemy in viruses:
+		if vir.gen > GameEnemy.VIRUS_MAX_GEN or (vir.gen > 0 and vir.scrap_drop != 0):
+			push_error("SMOKE: virus copy gen %d gives %d Scrap" % [vir.gen, vir.scrap_drop])
+			ok = false
+
+	# Golem shield: 20% damage while closed, 150% while open.
+	_smoke_clear_enemies()
+	var golem: GameEnemy = _smoke_spawn(GameEnemy.Type.GOLEM, Vector2(380.0, 130.0), 5, 0)
+	golem._state = 0
+	var hp_a: float = golem.hp
+	golem.take_damage(10.0)
+	golem._state = 1
+	var hp_b: float = golem.hp
+	golem.take_damage(10.0)
+	if not is_equal_approx(hp_a - hp_b, 2.0) or not is_equal_approx(hp_b - golem.hp, 15.0):
+		push_error("SMOKE: golem shield took %.1f / %.1f" % [hp_a - hp_b, hp_b - golem.hp])
+		ok = false
+
+	# Leaving the screen is not a kill; a lava blob can't be hit while it's still bubbling.
+	var kills_3: int = run_kills
+	var score_3: int = score
+	var drifter: GameEnemy = _smoke_spawn(GameEnemy.Type.ASTEROID, Vector2(-60.0, 130.0), 0, 0)
+	drifter._process(0.05)
+	if not drifter._dead or run_kills != kills_3 or score != score_3:
+		push_error("SMOKE: an enemy leaving the screen must not count as a kill")
+		ok = false
+	var blob: GameEnemy = _smoke_spawn(GameEnemy.Type.LAVA_BLOB, Vector2(300.0, 266.0), 5, 0)
+	var blob_hp: float = blob.hp
+	blob.take_damage(999.0)
+	if blob._dead or blob.hp != blob_hp or blob.collision_layer != 0 or blob.is_in_group("enemies"):
+		push_error("SMOKE: a bubbling lava blob must be untouchable")
+		ok = false
+	blob._process(1.0)
+	if blob.collision_layer != 4 or not blob.is_in_group("enemies"):
+		push_error("SMOKE: lava blob did not leap out")
+		ok = false
+	var eel: GameEnemy = _smoke_spawn(GameEnemy.Type.EEL, Vector2(400.0, 130.0), 6, 0)
+	var eel_shapes: int = 0
+	for c_node: Node in eel.get_children():
+		if c_node is CollisionShape2D:
+			eel_shapes += 1
+	if eel_shapes != 1 + GameEnemy.EEL_SEGMENTS:
+		push_error("SMOKE: eel has %d hit shapes" % eel_shapes)
+		ok = false
+
+	# Frost puffs slow the ship without hurting it; bombs burst on the floor; spores home in.
+	var hp_before: int = player.hp
+	player.frost_timer = 0.0
+	var puff: GameBullet = GameBullet.new()
+	bullet_layer.add_child(puff)
+	puff.setup(player.global_position, Vector2(-10.0, 0.0), 1.0, false, "bullet_frost_0", 0, false, 5.0, fx_layer)
+	puff.make_frost(1.5, 2.6, "bullet_frost_1")
+	puff._on_area_entered(player)
+	if player.frost_timer <= 0.0 or player.hp != hp_before:
+		push_error("SMOKE: frost puff should slow, not damage")
+		ok = false
+	player.frost_timer = 0.0
+	var bomb: GameBullet = GameBullet.new()
+	bullet_layer.add_child(bomb)
+	bomb.setup(Vector2(200.0, 245.0), Vector2(0.0, 40.0), 1.0, false, "bullet_enemy_bomb", 0, false, 3.5, fx_layer)
+	bomb.floor_burst = 3
+	var shots_before: int = bullet_layer.get_child_count()
+	bomb._process(0.1)
+	if bullet_layer.get_child_count() < shots_before + 3:
+		push_error("SMOKE: blimp bomb did not burst on the floor")
+		ok = false
+	var spore: GameBullet = GameBullet.new()
+	bullet_layer.add_child(spore)
+	spore.setup(player.global_position + Vector2(60.0, -60.0), Vector2(0.0, -60.0), 1.0, false, "bullet_enemy_spore", 0, false, 3.0, fx_layer)
+	spore.home_target = player
+	spore.home_time = 1.0
+	spore.home_rate = 3.0
+	var dir_before: float = spore.velocity.angle()
+	spore._process(0.2)
+	if is_equal_approx(spore.velocity.angle(), dir_before):
+		push_error("SMOKE: spore did not turn toward the ship")
+		ok = false
+	_smoke_clear_enemies()
+	return ok
+
+
+func _smoke_spawn(t: GameEnemy.Type, pos: Vector2, stage: int, variant: int) -> GameEnemy:
+	return _spawn_enemy_now({"type": t, "pos": pos, "hp_mult": 1.0, "phase": 0.0, "squad": -1, "stage": stage, "variant": variant})
+
+
+func _smoke_live_enemies(t: GameEnemy.Type) -> Array[GameEnemy]:
+	var found: Array[GameEnemy] = []
+	for node: Node in enemy_layer.get_children():
+		if node is GameEnemy:
+			var ge: GameEnemy = node as GameEnemy
+			if ge.enemy_type == t and not ge._dead and not ge.is_queued_for_deletion():
+				found.append(ge)
+	return found
+
+
+# Removes every enemy right away (the smoke test runs inside one frame, so queue_free alone
+# would leave them in the tree) and drops pending child spawns, keeping the wave's own queue.
+func _smoke_clear_enemies() -> void:
+	for node: Node in enemy_layer.get_children():
+		enemy_layer.remove_child(node)
+		node.queue_free()
+	var keep: Array[Dictionary] = []
+	for item: Dictionary in _spawn_queue:
+		if not item.has("gen"):
+			keep.append(item)
+	_spawn_queue = keep
 
 
 # Device-aware prompts: a press on each device must swap the prompts, while stick drift, a
@@ -3001,6 +3227,7 @@ func _start_run() -> void:
 	run_bosses = 0
 	player_level = 1
 	run_xp = 0
+	run_xp_dropped = 0
 	xp_to_next = _calc_xp_for_level(1)
 	rerolls_left = MetaSave.get_starting_rerolls()
 	_pending_level_ups = 0
@@ -3101,62 +3328,274 @@ func _begin_next_wave() -> void:
 		else:
 			_show_banner("STAGE %d-%d  //  %s" % [stage_display_num, sub_wave, String(st["name"])], Color("#ffe854"), 1.5)
 
+		# Groups alternate between the stage's own enemies (share = "themed") and the generic
+		# fodder patterns; later stages have more groups, packed closer together ("pace").
+		var diff: Dictionary = StageData.get_difficulty(current_stage_idx)
+		var pace: float = float(diff["pace"])
+		var share: float = float(diff["themed"])
 		var t: float = 0.65
-		var num_groups: int = mini(14, 10 + current_stage_idx / 2 + sub_wave - 1)
+		var num_groups: int = mini(15, int(diff["groups"]) + sub_wave - 1)
+		var themed_acc: float = 1.0 - share  # the first group of every wave is a themed one
+		var themed_idx: int = 0
 		for g: int in range(num_groups):
-			var roll: int = (wave * 3 + g * 2) % 6
-			if roll == 0:
-				var sq_id: int = _next_squad_id
-				_next_squad_id += 1
-				_squad_counts[sq_id] = 6
-				var lane_y: float = randf_range(62.0, 196.0)
-				for k: int in range(6):
-					_queue_enemy(t + float(k) * 0.24, GameEnemy.Type.SCOUT_SINE, Vector2(500.0, lane_y), hp_mult, float(k) * 0.52, sq_id)
-				t += 2.5
-			elif roll == 1:
-				var count: int = 4 if wave < 3 else 5
-				var sq_id: int = _next_squad_id
-				_next_squad_id += 1
-				_squad_counts[sq_id] = count
-				for k: int in range(count):
-					var sy: float = 56.0 if k % 2 == 0 else 206.0
-					_queue_enemy(t + float(k) * 0.30, GameEnemy.Type.SWOOPER, Vector2(504.0, sy), hp_mult, float(k), sq_id)
-				t += 2.4
-			elif roll == 2:
-				var s_count: int = 2 if wave < 3 else 3
-				for k: int in range(s_count):
-					var py: float = lerpf(58.0, 204.0, float(k) / float(maxi(1, s_count - 1)))
-					_queue_enemy(t + float(k) * 0.22, GameEnemy.Type.SNIPER, Vector2(504.0, py), hp_mult, float(k) * 1.1, -1)
-				_queue_enemy(t + 0.5, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 134.0), hp_mult, 0.0, -1)
-				_queue_enemy(t + 0.8, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 134.0), hp_mult, 0.8, -1)
-				t += 2.7
-			elif roll == 3:
-				var cy: float = randf_range(74.0, 188.0)
-				_queue_enemy(t, GameEnemy.Type.CRUISER, Vector2(512.0, cy), hp_mult, 0.0, -1)
-				_queue_enemy(t + 0.35, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, clampf(cy - 34.0, 48.0, 214.0)), hp_mult, 0.0, -1)
-				_queue_enemy(t + 0.55, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, clampf(cy + 34.0, 48.0, 214.0)), hp_mult, 1.0, -1)
-				t += 2.9
-			elif roll == 4:
-				var sq_id: int = _next_squad_id
-				_next_squad_id += 1
-				_squad_counts[sq_id] = 7
-				var center_y: float = randf_range(96.0, 168.0)
-				for k: int in range(7):
-					var wing_off: float = float(absi(k - 3)) * 16.0 * (-1.0 if k < 3 else 1.0)
-					_queue_enemy(t + float(absi(k - 3)) * 0.22, GameEnemy.Type.SCOUT_SINE, Vector2(502.0, clampf(center_y + wing_off, 48.0, 214.0)), hp_mult, float(k) * 0.4, sq_id)
-				t += 2.6
+			themed_acc += share
+			var gap: float = 0.0
+			if themed_acc >= 0.999:
+				themed_acc -= 1.0
+				gap = _queue_themed_group(themed_idx, sub_wave, t, hp_mult)
+				themed_idx += 1
 			else:
-				_queue_enemy(t, GameEnemy.Type.CRUISER, Vector2(512.0, randf_range(72.0, 120.0)), hp_mult, 0.0, -1)
-				if current_stage_idx >= 1 or sub_wave >= 2:
-					_queue_enemy(t + 0.7, GameEnemy.Type.CRUISER, Vector2(518.0, randf_range(148.0, 196.0)), hp_mult, 1.5, -1)
-				_queue_enemy(t + 0.4, GameEnemy.Type.SWOOPER, Vector2(504.0, 62.0), hp_mult, 0.0, -1)
-				_queue_enemy(t + 0.8, GameEnemy.Type.SWOOPER, Vector2(504.0, 202.0), hp_mult, 1.2, -1)
-				t += 3.1
+				gap = _queue_generic_group((wave * 3 + g * 2) % 6, sub_wave, t, hp_mult)
+			t += gap * pace
 
 	hud_bar.queue_redraw()
 
 
-func _queue_enemy(spawn_time: float, e_type: GameEnemy.Type, pos: Vector2, hp_mult: float, phase: float, sq_id: int) -> void:
+# The original six patterns of re-skinned generic enemies. Returns the time until the next group.
+func _queue_generic_group(roll: int, sub_wave: int, t: float, hp_mult: float) -> float:
+	if roll == 0:
+		var sq_id: int = _new_squad(6)
+		var lane_y: float = randf_range(62.0, 196.0)
+		for k: int in range(6):
+			_queue_enemy(t + float(k) * 0.24, GameEnemy.Type.SCOUT_SINE, Vector2(500.0, lane_y), hp_mult, float(k) * 0.52, sq_id)
+		return 2.5
+	elif roll == 1:
+		var count: int = 4 if wave < 3 else 5
+		var sq_id: int = _new_squad(count)
+		for k: int in range(count):
+			var sy: float = 56.0 if k % 2 == 0 else 206.0
+			_queue_enemy(t + float(k) * 0.30, GameEnemy.Type.SWOOPER, Vector2(504.0, sy), hp_mult, float(k), sq_id)
+		return 2.4
+	elif roll == 2:
+		var s_count: int = 2 if wave < 3 else 3
+		for k: int in range(s_count):
+			var py: float = lerpf(58.0, 204.0, float(k) / float(maxi(1, s_count - 1)))
+			_queue_enemy(t + float(k) * 0.22, GameEnemy.Type.SNIPER, Vector2(504.0, py), hp_mult, float(k) * 1.1, -1)
+		_queue_enemy(t + 0.5, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 134.0), hp_mult, 0.0, -1)
+		_queue_enemy(t + 0.8, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 134.0), hp_mult, 0.8, -1)
+		return 2.7
+	elif roll == 3:
+		var cy: float = randf_range(74.0, 188.0)
+		_queue_enemy(t, GameEnemy.Type.CRUISER, Vector2(512.0, cy), hp_mult, 0.0, -1)
+		_queue_enemy(t + 0.35, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, clampf(cy - 34.0, 48.0, 214.0)), hp_mult, 0.0, -1)
+		_queue_enemy(t + 0.55, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, clampf(cy + 34.0, 48.0, 214.0)), hp_mult, 1.0, -1)
+		return 2.9
+	elif roll == 4:
+		var sq_id: int = _new_squad(7)
+		var center_y: float = randf_range(96.0, 168.0)
+		for k: int in range(7):
+			var wing_off: float = float(absi(k - 3)) * 16.0 * (-1.0 if k < 3 else 1.0)
+			_queue_enemy(t + float(absi(k - 3)) * 0.22, GameEnemy.Type.SCOUT_SINE, Vector2(502.0, clampf(center_y + wing_off, 48.0, 214.0)), hp_mult, float(k) * 0.4, sq_id)
+		return 2.6
+	_queue_enemy(t, GameEnemy.Type.CRUISER, Vector2(512.0, randf_range(72.0, 120.0)), hp_mult, 0.0, -1)
+	if current_stage_idx >= 1 or sub_wave >= 2:
+		_queue_enemy(t + 0.7, GameEnemy.Type.CRUISER, Vector2(518.0, randf_range(148.0, 196.0)), hp_mult, 1.5, -1)
+	_queue_enemy(t + 0.4, GameEnemy.Type.SWOOPER, Vector2(504.0, 62.0), hp_mult, 0.0, -1)
+	_queue_enemy(t + 0.8, GameEnemy.Type.SWOOPER, Vector2(504.0, 202.0), hp_mult, 1.2, -1)
+	return 3.1
+
+
+func _new_squad(count: int) -> int:
+	var sq_id: int = _next_squad_id
+	_next_squad_id += 1
+	_squad_counts[sq_id] = count
+	return sq_id
+
+
+# One group of the current stage's signature enemies, usually with some generic fodder.
+# Recipe C unlocks from the stage's second wave, and the third wave adds an extra unit to
+# most recipes. Returns the time until the next group.
+func _queue_themed_group(idx: int, sub_wave: int, t: float, hp_mult: float) -> float:
+	var recipes: int = 3 if sub_wave >= 2 else 2
+	var r: int = (idx + sub_wave - 1) % recipes
+	var extra: int = 1 if sub_wave >= 3 else 0
+	var top: bool = idx % 2 == 0
+	match posmod(current_stage_idx, 8):
+		0: # OUTER ORBIT: drifting asteroids that split, mine layers
+			if r == 0:
+				var n: int = 3 + extra
+				for k: int in range(n):
+					var y: float = lerpf(64.0, 200.0, (float(k) + randf_range(-0.25, 0.25)) / float(maxi(1, n - 1)))
+					_queue_enemy(t + float(k) * 0.9, GameEnemy.Type.ASTEROID, Vector2(504.0, y), hp_mult, 0.0, -1, k % 2)
+				return 3.0
+			elif r == 1:
+				var ly: float = 70.0 if top else 196.0
+				_queue_enemy(t, GameEnemy.Type.MINE_LAYER, Vector2(510.0, ly), hp_mult, 0.0, -1)
+				for k: int in range(2 + extra):
+					_queue_enemy(t + 0.6 + float(k) * 0.3, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 268.0 - ly), hp_mult, float(k) * 0.6, -1)
+				return 3.4
+			_queue_enemy(t, GameEnemy.Type.ASTEROID, Vector2(504.0, 92.0), hp_mult, 0.0, -1, 0)
+			_queue_enemy(t + 0.8, GameEnemy.Type.ASTEROID, Vector2(504.0, 176.0), hp_mult, 0.0, -1, 1)
+			_queue_enemy(t + 0.4, GameEnemy.Type.MINE_LAYER, Vector2(510.0, 134.0), hp_mult, 0.0, -1)
+			return 3.4
+		1: # STARCRUISER: floor/ceiling turrets, patrolling security drones
+			if r == 0:
+				_queue_enemy(t, GameEnemy.Type.TURRET, Vector2(500.0, 0.0), hp_mult, 0.0, -1, 0)
+				_queue_enemy(t + 1.4, GameEnemy.Type.TURRET, Vector2(500.0, 0.0), hp_mult, 0.0, -1, 1)
+				var sq_id: int = _new_squad(3 + extra)
+				var lane: float = randf_range(90.0, 180.0)
+				for k: int in range(3 + extra):
+					_queue_enemy(t + 0.5 + float(k) * 0.26, GameEnemy.Type.SCOUT_SINE, Vector2(500.0, lane), hp_mult, float(k) * 0.52, sq_id)
+				return 3.0
+			elif r == 1:
+				_queue_enemy(t, GameEnemy.Type.SEC_DRONE, Vector2(504.0, 92.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.5, GameEnemy.Type.SEC_DRONE, Vector2(504.0, 178.0), hp_mult, 1.0, -1)
+				if extra > 0:
+					_queue_enemy(t + 1.0, GameEnemy.Type.SEC_DRONE, Vector2(504.0, 135.0), hp_mult, 0.5, -1)
+				_queue_enemy(t + 0.8, GameEnemy.Type.SWOOPER, Vector2(504.0, 60.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 1.1, GameEnemy.Type.SWOOPER, Vector2(504.0, 210.0), hp_mult, 1.0, -1)
+				return 3.0
+			_queue_enemy(t, GameEnemy.Type.TURRET, Vector2(500.0, 0.0), hp_mult, 0.0, -1, 0)
+			_queue_enemy(t + 0.2, GameEnemy.Type.TURRET, Vector2(520.0, 0.0), hp_mult, 0.0, -1, 1)
+			_queue_enemy(t + 0.6, GameEnemy.Type.SEC_DRONE, Vector2(504.0, 135.0), hp_mult, 0.0, -1)
+			return 3.3
+		2: # CLOUD BASE: bomber blimps, jet formations (some from behind)
+			if r == 0:
+				_queue_enemy(t, GameEnemy.Type.BLIMP, Vector2(520.0, randf_range(54.0, 76.0)), hp_mult, 0.0, -1)
+				_queue_jet_vee(t + 0.9, 3 + extra * 2, randf_range(150.0, 200.0), hp_mult)
+				return 3.4
+			elif r == 1:
+				_queue_jet_vee(t, 5, randf_range(80.0, 190.0), hp_mult)
+				return 2.6
+			for k: int in range(3):
+				_queue_enemy(t + float(k) * 0.35, GameEnemy.Type.JET, Vector2(-26.0, 70.0 + float(k) * 62.0), hp_mult, float(k - 1), -1, 1)
+			_queue_enemy(t + 1.2, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 100.0), hp_mult, 0.0, -1)
+			_queue_enemy(t + 1.5, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 170.0), hp_mult, 1.0, -1)
+			if extra > 0:
+				_queue_enemy(t + 0.6, GameEnemy.Type.BLIMP, Vector2(520.0, 62.0), hp_mult, 0.0, -1)
+			return 3.2
+		3: # XENO FOREST: spore pods on floor and ceiling, charging beetles
+			if r == 0:
+				_queue_enemy(t, GameEnemy.Type.SPORE_POD, Vector2(500.0, 0.0), hp_mult, 0.0, -1, 0)
+				_queue_enemy(t + 1.0, GameEnemy.Type.SPORE_POD, Vector2(500.0, 0.0), hp_mult, 0.0, -1, 1)
+				var sq_id: int = _new_squad(4 + extra)
+				var lane: float = randf_range(96.0, 172.0)
+				for k: int in range(4 + extra):
+					_queue_enemy(t + 0.4 + float(k) * 0.24, GameEnemy.Type.SCOUT_SINE, Vector2(500.0, lane), hp_mult, float(k) * 0.52, sq_id)
+				return 3.2
+			elif r == 1:
+				_queue_enemy(t, GameEnemy.Type.BEETLE, Vector2(504.0, 80.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.9, GameEnemy.Type.BEETLE, Vector2(504.0, 190.0), hp_mult, 0.0, -1)
+				if extra > 0:
+					_queue_enemy(t + 1.8, GameEnemy.Type.BEETLE, Vector2(504.0, 135.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.4, GameEnemy.Type.SNIPER, Vector2(504.0, 135.0), hp_mult, 0.0, -1)
+				return 3.2
+			_queue_enemy(t, GameEnemy.Type.SPORE_POD, Vector2(500.0, 0.0), hp_mult, 0.0, -1, 0)
+			_queue_enemy(t + 0.5, GameEnemy.Type.SPORE_POD, Vector2(500.0, 0.0), hp_mult, 0.0, -1, 1)
+			_queue_enemy(t + 1.0, GameEnemy.Type.BEETLE, Vector2(504.0, 135.0), hp_mult, 0.0, -1)
+			_queue_enemy(t + 0.6, GameEnemy.Type.SWOOPER, Vector2(504.0, 64.0), hp_mult, 0.0, -1)
+			_queue_enemy(t + 0.9, GameEnemy.Type.SWOOPER, Vector2(504.0, 206.0), hp_mult, 1.0, -1)
+			return 3.6
+		4: # CRYO GLACIER: ice crystals that shatter, snow drones trailing frost
+			if r == 0:
+				var cy: float = randf_range(90.0, 180.0)
+				_queue_enemy(t, GameEnemy.Type.ICE_CRYSTAL, Vector2(504.0, cy), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.4, GameEnemy.Type.ICE_CRYSTAL, Vector2(504.0, cy - 46.0), hp_mult, 1.2, -1)
+				_queue_enemy(t + 0.8, GameEnemy.Type.ICE_CRYSTAL, Vector2(504.0, cy + 46.0), hp_mult, 2.4, -1)
+				if extra > 0:
+					_queue_enemy(t + 1.2, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, cy), hp_mult, 0.0, -1)
+				return 3.2
+			elif r == 1:
+				_queue_enemy(t, GameEnemy.Type.SNOW_DRONE, Vector2(504.0, 100.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.7, GameEnemy.Type.SNOW_DRONE, Vector2(504.0, 170.0), hp_mult, PI, -1)
+				_queue_enemy(t + 0.5, GameEnemy.Type.SWOOPER, Vector2(504.0, 58.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.8, GameEnemy.Type.SWOOPER, Vector2(504.0, 212.0), hp_mult, 1.0, -1)
+				if extra > 0:
+					_queue_enemy(t + 1.3, GameEnemy.Type.SNOW_DRONE, Vector2(504.0, 135.0), hp_mult, 1.5, -1)
+				return 3.0
+			_queue_enemy(t, GameEnemy.Type.ICE_CRYSTAL, Vector2(504.0, 80.0), hp_mult, 0.0, -1)
+			_queue_enemy(t + 0.5, GameEnemy.Type.ICE_CRYSTAL, Vector2(504.0, 190.0), hp_mult, 1.0, -1)
+			_queue_enemy(t + 0.9, GameEnemy.Type.SNOW_DRONE, Vector2(504.0, 135.0), hp_mult, 0.0, -1)
+			_queue_enemy(t + 0.3, GameEnemy.Type.SNIPER, Vector2(504.0, 135.0), hp_mult, 0.0, -1)
+			return 3.4
+		5: # MAGMA CORE: lava blobs leaping from the floor, shielded rock golems
+			if r == 0:
+				var xs: Array[float] = [392.0, 300.0, 432.0, 340.0, 250.0]
+				for k: int in range(4 + extra):
+					_queue_enemy(t + float(k) * 0.45, GameEnemy.Type.LAVA_BLOB, Vector2(xs[k], 266.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.6, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 90.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.9, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 150.0), hp_mult, 1.0, -1)
+				return 3.2
+			elif r == 1:
+				_queue_enemy(t, GameEnemy.Type.GOLEM, Vector2(512.0, randf_range(100.0, 170.0)), hp_mult, 0.0, -1)
+				_queue_enemy(t + 1.0, GameEnemy.Type.LAVA_BLOB, Vector2(330.0, 266.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 1.6, GameEnemy.Type.LAVA_BLOB, Vector2(260.0, 266.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.5, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 70.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.8, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 200.0), hp_mult, 1.0, -1)
+				return 3.6
+			_queue_enemy(t, GameEnemy.Type.GOLEM, Vector2(512.0, 135.0), hp_mult, 0.0, -1)
+			var xs2: Array[float] = [410.0, 350.0, 290.0, 380.0, 320.0]
+			for k: int in range(4 + extra):
+				_queue_enemy(t + 0.8 + float(k) * 0.5, GameEnemy.Type.LAVA_BLOB, Vector2(xs2[k], 266.0), hp_mult, 0.0, -1)
+			_queue_enemy(t + 0.4, GameEnemy.Type.SWOOPER, Vector2(504.0, 60.0), hp_mult, 0.0, -1)
+			_queue_enemy(t + 0.7, GameEnemy.Type.SWOOPER, Vector2(504.0, 210.0), hp_mult, 1.0, -1)
+			return 4.0
+		6: # ABYSSAL TRENCH: jellyfish rings, weaving eels, the anglerfish
+			if r == 0:
+				_queue_enemy(t, GameEnemy.Type.JELLYFISH, Vector2(504.0, 84.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.8, GameEnemy.Type.JELLYFISH, Vector2(504.0, 186.0), hp_mult, 0.0, -1)
+				var sq_id: int = _new_squad(3 + extra)
+				for k: int in range(3 + extra):
+					_queue_enemy(t + 0.4 + float(k) * 0.26, GameEnemy.Type.SCOUT_SINE, Vector2(500.0, 135.0), hp_mult, float(k) * 0.52, sq_id)
+				return 3.2
+			elif r == 1:
+				_queue_enemy(t, GameEnemy.Type.EEL, Vector2(510.0, 96.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 1.0, GameEnemy.Type.EEL, Vector2(510.0, 174.0), hp_mult, PI, -1)
+				_queue_enemy(t + 0.5, GameEnemy.Type.JELLYFISH, Vector2(504.0, 135.0), hp_mult, 0.0, -1)
+				if extra > 0:
+					_queue_enemy(t + 1.8, GameEnemy.Type.EEL, Vector2(510.0, 135.0), hp_mult, 1.5, -1)
+				return 3.4
+			_queue_enemy(t, GameEnemy.Type.ANGLER, Vector2(516.0, randf_range(110.0, 160.0)), hp_mult, 0.0, -1)
+			_queue_enemy(t + 0.6, GameEnemy.Type.JELLYFISH, Vector2(504.0, 70.0), hp_mult, 0.0, -1)
+			_queue_enemy(t + 1.0, GameEnemy.Type.JELLYFISH, Vector2(504.0, 200.0), hp_mult, 0.0, -1)
+			_queue_enemy(t + 1.6, GameEnemy.Type.EEL, Vector2(510.0, 135.0), hp_mult, 0.0, -1)
+			return 4.0
+		_: # CYBER NEXUS: replicating viruses, teleporting glitches, firewalls
+			if r == 0:
+				for k: int in range(3 + extra):
+					_queue_enemy(t + float(k) * 0.3, GameEnemy.Type.VIRUS, Vector2(504.0, randf_range(60.0, 210.0)), hp_mult, float(k), -1)
+				_queue_enemy(t + 0.5, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 100.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.8, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 170.0), hp_mult, 1.0, -1)
+				return 3.0
+			elif r == 1:
+				_queue_enemy(t, GameEnemy.Type.GLITCH, Vector2(504.0, 90.0), hp_mult, 0.0, -1)
+				_queue_enemy(t + 0.7, GameEnemy.Type.GLITCH, Vector2(504.0, 180.0), hp_mult, 0.0, -1)
+				for k: int in range(2 + extra):
+					_queue_enemy(t + 0.4 + float(k) * 0.4, GameEnemy.Type.VIRUS, Vector2(504.0, randf_range(60.0, 210.0)), hp_mult, float(k), -1)
+				return 3.2
+			_queue_firewall(t, hp_mult)
+			_queue_enemy(t + 1.6, GameEnemy.Type.GLITCH, Vector2(504.0, 135.0), hp_mult, 0.0, -1)
+			_queue_enemy(t + 0.5, GameEnemy.Type.SWOOPER, Vector2(504.0, 60.0), hp_mult, 0.0, -1)
+			_queue_enemy(t + 0.8, GameEnemy.Type.SWOOPER, Vector2(504.0, 210.0), hp_mult, 1.0, -1)
+			return 4.2
+
+
+# A V of jets with the leader in front; each jet breaks toward the player on its own.
+func _queue_jet_vee(t: float, count: int, center_y: float, hp_mult: float) -> void:
+	var sq_id: int = _new_squad(count)
+	for k: int in range(count):
+		var slot: int = (k + 1) / 2 * (1 if k % 2 == 1 else -1)  # 0, 1, -1, 2, -2
+		var y: float = clampf(center_y + float(slot) * 16.0, 44.0, 232.0)
+		_queue_enemy(t, GameEnemy.Type.JET, Vector2(500.0 + float(absi(slot)) * 20.0, y), hp_mult, float(slot), sq_id)
+
+
+# A column of firewall blocks with a two-block gap to fly through, as one squad.
+func _queue_firewall(t: float, hp_mult: float) -> void:
+	var slots: int = 9
+	var gap: int = randi_range(1, slots - 3)
+	var sq_id: int = _new_squad(slots - 2)
+	for k: int in range(slots):
+		if k == gap or k == gap + 1:
+			continue
+		var links: int = 0
+		if k > 0 and k - 1 != gap + 1:
+			links |= 1
+		if k < slots - 1 and k + 1 != gap:
+			links |= 2
+		var y: float = 40.0 + float(k) * 24.5
+		_queue_enemy(t, GameEnemy.Type.FIREWALL, Vector2(500.0, y), hp_mult, float(k), sq_id, links)
+
+func _queue_enemy(spawn_time: float, e_type: GameEnemy.Type, pos: Vector2, hp_mult: float, phase: float, sq_id: int, variant: int = 0) -> void:
 	_spawn_queue.append({
 		"time": spawn_time,
 		"type": e_type,
@@ -3165,6 +3604,7 @@ func _queue_enemy(spawn_time: float, e_type: GameEnemy.Type, pos: Vector2, hp_mu
 		"phase": phase,
 		"squad": sq_id,
 		"stage": current_stage_idx,
+		"variant": variant,
 	})
 
 
@@ -3544,6 +3984,7 @@ func _gain_xp(raw_amount: int) -> void:
 func _spawn_xp_burst(origin: Vector2, total_xp: int) -> void:
 	if total_xp <= 0:
 		return
+	run_xp_dropped += total_xp
 	var remaining: int = total_xp
 	while remaining > 0:
 		var chunk: int = remaining
@@ -3585,7 +4026,7 @@ func _update_wave_director(delta: float) -> void:
 				_begin_next_wave()
 
 
-func _spawn_enemy_now(item: Dictionary) -> void:
+func _spawn_enemy_now(item: Dictionary) -> GameEnemy:
 	var e: GameEnemy = GameEnemy.new()
 	enemy_layer.add_child(e)
 	var e_type: GameEnemy.Type = item["type"]
@@ -3598,10 +4039,23 @@ func _spawn_enemy_now(item: Dictionary) -> void:
 		fx_layer,
 		float(item["phase"]),
 		int(item["squad"]),
-		int(item.get("stage", current_stage_idx))
+		int(item.get("stage", current_stage_idx)),
+		int(item.get("variant", 0)),
+		int(item.get("gen", 0))
 	)
+	if item.has("vel"):
+		e.set_launch_velocity(Vector2(item["vel"]))
 	e.destroyed.connect(_on_enemy_destroyed)
 	e.boss_phase_broken.connect(_on_boss_phase_broken)
+	e.spawn_requested.connect(_on_enemy_spawn_requested)
+	return e
+
+
+# A child enemy (rock chunk, mine, virus copy) spawns on the next director update. Going through
+# the spawn queue keeps the wave from ending while it's pending and connects its signals.
+func _on_enemy_spawn_requested(item: Dictionary) -> void:
+	item["time"] = _wave_clock
+	_spawn_queue.append(item)
 
 
 func _on_boss_phase_broken(enemy: GameEnemy, bonus_xp: int) -> void:
@@ -3623,9 +4077,11 @@ func _on_enemy_destroyed(enemy: GameEnemy, killed_by_player: bool) -> void:
 	score += enemy.score_value
 	var e_pos: Vector2 = enemy.global_position
 
-	# Automatic Scrap banking on kill!
+	# Automatic Scrap banking on kill! Child enemies (rock chunks, mines, virus copies) give none.
 	var bounty_mult: float = MetaSave.get_boss_bounty_mult() if is_boss_kill else 1.0
-	var auto_scrap: int = maxi(1, int(round(float(enemy.scrap_drop) * MetaSave.get_scrap_mult() * player.get_run_scrap_mult() * bounty_mult)))
+	var auto_scrap: int = 0
+	if enemy.scrap_drop > 0:
+		auto_scrap = maxi(1, int(round(float(enemy.scrap_drop) * MetaSave.get_scrap_mult() * player.get_run_scrap_mult() * bounty_mult)))
 	run_scrap += auto_scrap
 	player.on_enemy_killed(e_pos, is_boss_kill)
 

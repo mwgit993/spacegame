@@ -14,6 +14,7 @@ const TRAIL_STEP_DIST: float = 2.0
 const TRAIL_MAX_POINTS: int = 96
 const OPTION_TRAIL_SPACING: int = 12
 const MAX_BLADES: int = 5
+const FROST_SPEED_MULT: float = 0.55
 
 var bullet_container: Node2D = null
 var fx: FxLayer = null
@@ -82,6 +83,7 @@ var orbital_level: int = 0              # 0..3 Orbital Strike: sky laser hits th
 var mines_level: int = 0                # 0..3 Proximity Mines: drop mines behind the ship
 var salvage_level: int = 0              # 0..2 Salvage Claws: +Scrap from kills this run
 var _leech_kills: int = 0
+var frost_timer: float = 0.0            # Cryo Glacier snow drones' frost: ship flies at FROST_SPEED_MULT
 var _aura_timer: float = 0.0
 var _orbital_timer: float = 0.0
 var _mine_timer: float = 0.0
@@ -230,6 +232,8 @@ func reset_for_new_run() -> void:
 	mines_level = 0
 	salvage_level = 0
 	_leech_kills = 0
+	frost_timer = 0.0
+	_sprite.self_modulate = Color.WHITE
 	_aura_timer = 0.0
 	_orbital_timer = 2.0
 	_mine_timer = 0.0
@@ -422,6 +426,10 @@ func _process(delta: float) -> void:
 		_flame_alt = not _flame_alt
 		_sprite.texture = PixelArt.tex(_ship_tex_1 if _flame_alt else _ship_tex_0)
 
+	if frost_timer > 0.0:
+		frost_timer = maxf(0.0, frost_timer - delta)
+		_sprite.self_modulate = Color(0.62, 0.9, 1.0) if frost_timer > 0.0 else Color.WHITE
+
 	if invuln_timer > 0.0:
 		invuln_timer = maxf(0.0, invuln_timer - delta)
 		_sprite.modulate.a = 0.35 if int(invuln_timer * 24.0) % 2 == 0 else 1.0
@@ -498,6 +506,8 @@ func _process(delta: float) -> void:
 
 	_focus_held = Input.is_physical_key_pressed(KEY_SHIFT) or joy_focus or touch_focus_held
 	var spd: float = move_speed * (0.52 if _focus_held else 1.0)
+	if frost_timer > 0.0:
+		spd *= FROST_SPEED_MULT
 	var prev_pos: Vector2 = global_position
 	global_position += move_vec * spd * delta
 	global_position.x = clampf(global_position.x, MIN_X, MAX_X)
@@ -1134,6 +1144,16 @@ func _on_area_entered(area: Area2D) -> void:
 		if area.has_method("take_contact_damage"):
 			area.call("take_contact_damage", 4.0)
 		take_player_hit()
+
+
+# Frost puffs from Cryo Glacier snow drones: no damage, the ship flies slower for a moment.
+func apply_frost(duration: float) -> void:
+	if not visible or not controls_enabled:
+		return
+	if frost_timer <= 0.0 and fx != null:
+		fx.spawn_hit_sparks(global_position, Color("#c8f4ff"), 4)
+	frost_timer = maxf(frost_timer, duration)
+	_sprite.self_modulate = Color(0.62, 0.9, 1.0)
 
 
 func take_player_hit() -> void:

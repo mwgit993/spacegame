@@ -38,6 +38,14 @@ var life_left: float = -1.0             # > 0: detonate/expire after this many s
 var grazed: bool = false
 var slow_timer: float = 0.0
 var slow_factor: float = 1.0
+# Themed-enemy shot behaviours (set by GameEnemy after setup)
+var home_target: Node2D = null          # spores: turn toward this node...
+var home_time: float = 0.0              # ...for this many seconds...
+var home_rate: float = 0.0              # ...at up to this many radians per second
+var floor_burst: int = 0                # bombs: burst into this many shots on reaching the ground
+var burst_tex: String = "bullet_enemy_orange"
+var burst_speed: float = 88.0
+var frost_slow: float = 0.0             # frost puffs: slow the ship for this long instead of hurting it
 
 var _base_speed: float = 0.0
 var _glow_sprite: Sprite2D = null
@@ -103,6 +111,19 @@ func setup(
 	add_child(shape_node)
 
 	area_entered.connect(_on_area_entered)
+
+
+# Snow drone frost puff: harmless but slows the ship. No danger glow, drawn under real shots,
+# fades out, and never counts as a graze.
+func make_frost(slow_seconds: float, lifetime: float, alt_tex: String) -> void:
+	frost_slow = slow_seconds
+	life_left = lifetime
+	grazed = true
+	anim_tex_b = alt_tex
+	z_index = 4
+	if _glow_sprite != null:
+		_glow_sprite.queue_free()
+		_glow_sprite = null
 
 
 func apply_size_and_crit(size_mult: float, crit: bool) -> void:
@@ -175,6 +196,18 @@ func _process(delta: float) -> void:
 		_glow_sprite.texture = PixelArt.tex("bullet_enemy_glow_1" if expand else "bullet_enemy_glow_0")
 		_glow_sprite.modulate.a = 0.82 + 0.18 * sin(_glow_timer * 14.0)
 
+	if not is_player_bullet:
+		if home_time > 0.0:
+			home_time -= delta
+			if home_target != null and is_instance_valid(home_target) and home_target.visible:
+				var want: float = (home_target.global_position - global_position).angle()
+				var cur: float = velocity.angle()
+				var turn: float = clampf(angle_difference(cur, want), -home_rate * delta, home_rate * delta)
+				velocity = velocity.rotated(turn)
+		# Frost puffs and spores fade out over their last half second.
+		if life_left > 0.0 and life_left < 0.5:
+			modulate.a = life_left / 0.5
+
 	if is_player_bullet and wave_amp > 0.0:
 		_wave_time += delta
 		_wave_base_pos += velocity * delta
@@ -222,6 +255,12 @@ func _process(delta: float) -> void:
 	# Gravity Bomb floor detonation!
 	if is_player_bullet and explode_on_floor and global_position.y >= 254.0:
 		_trigger_aoe_detonation(null)
+		queue_free()
+		return
+
+	# Blimp bombs burst into an upward spray when they hit the ground.
+	if not is_player_bullet and floor_burst > 0 and global_position.y >= 247.0 and velocity.y > 0.0:
+		_burst_on_floor()
 		queue_free()
 		return
 
@@ -324,9 +363,28 @@ func _on_area_entered(area: Area2D) -> void:
 					_spawn_split_fragments()
 				queue_free()
 	else:
-		if area.has_method("take_player_hit"):
+		if frost_slow > 0.0:
+			if area.has_method("apply_frost"):
+				area.call("apply_frost", frost_slow)
+				queue_free()
+		elif area.has_method("take_player_hit"):
 			area.call("take_player_hit")
 			queue_free()
+
+
+func _burst_on_floor() -> void:
+	var parent_node: Node = get_parent()
+	if parent_node == null:
+		return
+	var pos: Vector2 = Vector2(global_position.x, 247.0)
+	if fx != null:
+		fx.spawn_ring_blast(pos, 12.0, Color("#ff9624"))
+	for i: int in range(floor_burst):
+		var t: float = 0.5 if floor_burst == 1 else float(i) / float(floor_burst - 1)
+		var dir: Vector2 = Vector2.UP.rotated(lerpf(-0.55, 0.55, t))
+		var b: GameBullet = GameBullet.new()
+		parent_node.add_child(b)
+		b.setup(pos + dir * 3.0, dir * burst_speed, 1.0, false, burst_tex, 0, false, 2.5, fx)
 
 
 # Applies Ambush/Execute damage changes and Cryo/Napalm status effects; returns the damage to deal.
