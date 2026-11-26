@@ -4,7 +4,7 @@ extends Node
 # Each stage is scored for its environment. Besides its own instruments, every stage has
 # its own tempo, groove (meter + swing), mode, chord voicing, lead register and acoustic
 # space (echo time, echo feedback, master filter):
-#   Stage 1 (Outer Orbit):     118 BPM  A Aeolian   straight 4/4   80s synthwave: dual-saw bass, Juno pad, gated snare
+#   Stage 1 (Outer Orbit):     136 BPM  E Mixolydian straight 4/4  heroic launch anthem: galloping picked bass, brass stabs, square lead, rock kit
 #   Stage 2 (Starcruiser):     124 BPM  D Dorian    swung funk     FM slap bass, clavinet stabs, m7 chords, dry slapback room
 #   Stage 3 (Cloud Base):      116 BPM  F Lydian    3/4 waltz      harp arpeggios, airy organ maj7 chords, long soaring flute
 #   Stage 4 (Xeno Forest):     100 BPM  G Dorian    heavy shuffle  marimba, congas & shakers, pentatonic pan-flute call & response
@@ -25,6 +25,7 @@ const SCALE_DORIAN: Array[int] = [0, 2, 3, 5, 7, 9, 10]
 const SCALE_MAJOR: Array[int] = [0, 2, 4, 5, 7, 9, 11]
 const SCALE_LYDIAN: Array[int] = [0, 2, 4, 6, 7, 9, 11]
 const SCALE_PHRYGIAN: Array[int] = [0, 1, 3, 5, 7, 8, 10]
+const SCALE_MIXOLYDIAN: Array[int] = [0, 2, 4, 5, 7, 9, 10]
 
 # Per-song arrangement settings. A song dictionary may override any of these;
 # the title and hyperspace jingles always use the defaults.
@@ -36,6 +37,8 @@ const SONG_DEFAULTS: Dictionary = {
 	"lead_attack": 165.0,     # lead envelope attack rate (higher = sharper)
 	"lead_decay": 1.65,       # lead envelope decay rate (lower = longer notes)
 	"harm_int": -2,           # harmony line, in scale degrees relative to the lead
+	"glide": 32.0,            # lead portamento speed between notes; 0 = notes start on pitch (no slide)
+	"vib": 0.004,             # lead vibrato depth (fraction of pitch)
 	"delay_beats": 0.75,      # echo time in beats
 	"delay_fb": 0.34,         # echo feedback
 	"master_lp": 1.0,         # one-pole low-pass coefficient on the whole mix; 1.0 = bypass
@@ -64,6 +67,8 @@ var _lead_oct: int = 24
 var _lead_attack: float = 165.0
 var _lead_decay: float = 1.65
 var _harm_int: int = -2
+var _glide: float = 32.0
+var _vib: float = 0.004
 var _delay_fb: float = 0.34
 var _master_lp: float = 1.0
 var _master_lp_l: float = 0.0
@@ -150,28 +155,49 @@ var _delay_wet: float = 0.32
 # 8 DISTINCT STAGE COMPOSITIONS + INSTRUMENT ENSEMBLE PRESETS ("style" 0..7)
 # =========================================================================================
 const STAGE_SONGS: Array[Dictionary] = [
-	# 0: OUTER ORBIT - Lush 80s Midnight Synthwave (118 BPM, A Minor)
+	# 0: OUTER ORBIT - Heroic Launch Anthem (136 BPM, E Mixolydian)
+	# Galloping picked bass, brass-section stabs, a hollow square lead doubled an octave
+	# below, and a straight rock kit. The lead starts every note on pitch (no portamento)
+	# and stays between E4 and G#5. Section 3 plays its own bridge ("mel_c") instead of
+	# the generic high climb.
+	# Chords (scale degrees): 0 = I (E), -1 = bVII (D), 3 = IV (A), 4 = v (Bm), -2 = vi (C#m).
 	{
-		"style": 0, "root": 45, "bpm": 118.0, "scale": SCALE_MINOR, "delay_wet": 0.32,
-		"prog_a": [0, -2, 2, -1,  0, -2, 2, 4],
-		"prog_b": [-2, -1, 4, 0,  -2, -1, 2, 4],
+		"style": 0, "root": 40, "bpm": 136.0, "scale": SCALE_MIXOLYDIAN, "delay_wet": 0.22,
+		"lead_attack": 120.0, "lead_decay": 1.3, "harm_int": -7, "glide": 0.0, "vib": 0.0025,
+		"delay_beats": 0.75, "delay_fb": 0.30,
+		"prog_a": [0, -1, 3, 0,  0, -1, 3, 4],
+		"prog_b": [3, 0, -1, 0,  -2, 3, -1, -1],
+		# Verse: a rising call (E-B-E') answered by a falling line over D and A.
 		"mel_a": [
-			4,-99,-99,5, 4,-99,2,-99,  0,-99,-99,2, 3,-99,2,-99,
-			2,-99,-99,4, 6,-99,4,-99,  4,-99,3,2,   1,-99,-99,-99,
-			4,-99,-99,7, 6,-99,4,-99,  5,-99,-99,4, 2,-99,0,-99,
-			2,-99,3,4,   6,-99,5,4,    4,-99,-99,-99,-99,-99,-99,-99,
+			0,-99,-99,4, -99,-99,7,-99,  6,-99,4,-99,  2,-99,4,-99,
+			6,-99,-99,-99, 5,-99,3,-99,  1,-99,-99,3,  -99,-99,-99,-99,
+			3,-99,-99,5, -99,-99,7,-99,  8,-99,7,-99,  5,-99,3,-99,
+			4,-99,-99,-99, -99,-99,-99,-99, 2,-99,3,-99, 4,-99,-99,-99,
 		],
+		# Chorus: held E' and G#' up top, landing on F#'-D'-F#' over the bVII.
 		"mel_b": [
-			7,-99,-99,6, 4,-99,7,-99,  6,-99,-99,4, 2,-99,4,-99,
-			5,-99,6,7,   9,-99,7,6,    7,-99,-99,-99,6,-99,4,-99,
-			7,-99,-99,9, 10,-99,9,7,   6,-99,-99,7, 9,-99,7,-99,
-			6,-99,5,4,   6,-99,7,-99,  7,-99,-99,-99,-99,-99,-99,-99,
+			7,-99,-99,-99, 7,-99,8,-99,  9,-99,-99,8,  -99,-99,7,-99,
+			7,-99,-99,-99, -99,-99,4,-99, 5,-99,7,-99, -99,-99,-99,-99,
+			8,-99,-99,-99, 6,-99,-99,-99, 5,-99,6,-99, 8,-99,-99,-99,
+			7,-99,-99,-99, -99,-99,-99,-99, -99,-99,-99,-99, 3,-99,4,-99,
+		],
+		# Bridge (8 bars): 4 calm bars over the drum-less breakdown, then a rising
+		# arpeggiated build back into the verse.
+		"mel_c": [
+			4,-99,-99,-99, -99,-99,-99,-99, 2,-99,-99,-99, 4,-99,-99,-99,
+			3,-99,-99,-99, -99,-99,-99,-99, 5,-99,-99,-99, -99,-99,-99,-99,
+			7,-99,-99,-99, -99,-99,6,-99,   5,-99,-99,-99, 3,-99,-99,-99,
+			4,-99,-99,-99, -99,-99,-99,-99, -99,-99,-99,-99, -99,-99,-99,-99,
+			5,-99,7,-99, 9,-99,7,-99,  5,-99,7,-99,  9,-99,-99,-99,
+			3,-99,5,-99, 7,-99,5,-99,  3,-99,5,-99,  7,-99,-99,-99,
+			6,-99,8,-99, 6,-99,5,-99,  3,-99,5,-99,  6,-99,8,-99,
+			6,-99,-99,-99, 5,-99,-99,-99, 4,-99,-99,-99, 3,-99,4,5,
 		],
 	},
 	# 1: STARCRUISER - Swung Slap-FM Funk & Clavinet Stabs in a dry metal hull (124 BPM, D Dorian)
 	{
 		"style": 1, "root": 38, "bpm": 124.0, "scale": SCALE_DORIAN, "delay_wet": 0.16,
-		"swing": 0.10, "voicing": [0, 2, 4, 6], "delay_beats": 0.25, "delay_fb": 0.22,
+		"swing": 0.10, "voicing": [0, 2, 4, 6], "delay_beats": 0.25, "delay_fb": 0.22, "glide": 55.0,
 		"prog_a": [0, 0, 3, 2,  0, 0, -1, 3],
 		"prog_b": [2, 3, 0, -1, 2, 3, 4, 4],
 		"mel_a": [
@@ -469,6 +495,8 @@ func _load_song_params() -> void:
 	_lead_attack = float(_song_param("lead_attack"))
 	_lead_decay = float(_song_param("lead_decay"))
 	_harm_int = int(_song_param("harm_int"))
+	_glide = float(_song_param("glide"))
+	_vib = float(_song_param("vib"))
 	_delay_fb = float(_song_param("delay_fb"))
 	_master_lp = float(_song_param("master_lp"))
 	_crush = maxi(1, int(_song_param("crush")))
@@ -536,7 +564,7 @@ func _render_block(frames: int) -> PackedVector2Array:
 func _set_pad_chord(root_midi: int, scale: Array, chord_deg: int) -> void:
 	for k: int in range(4):
 		_pad_target_freqs[k] = _midi_to_hz(_deg_to_midi(root_midi + 12, scale, chord_deg + int(_voicing[k])))
-	if _pad_swell < 0.05:
+	if _pad_swell < 0.05 or _glide <= 0.0:
 		for k: int in range(4):
 			_pad_freqs[k] = _pad_target_freqs[k]
 
@@ -618,6 +646,11 @@ func _trigger_step() -> void:
 		var mb: Array = song["mel_b"]
 		m_deg = int(mb[sec_step % mb.size()])
 		use_harmony = true
+	elif song.has("mel_c"):
+		# Song-specific bridge for the last section (over the breakdown, then the build).
+		var mc: Array = song["mel_c"]
+		m_deg = int(mc[sec_step % mc.size()])
+		use_harmony = (bar8 >= 4)
 	else:
 		if bar8 >= 4:
 			var climb: Array[int] = [0,-99,2,4, 6,-99,4,2, 4,-99,6,7, 9,-99,7,6]
@@ -630,14 +663,14 @@ func _trigger_step() -> void:
 
 	if m_deg != -99:
 		_lead_target_freq = _midi_to_hz(_deg_to_midi(root + _lead_oct, scale, m_deg))
-		if _lead_env < 0.15:
+		if _lead_env < 0.15 or _glide <= 0.0:
 			_lead_freq = _lead_target_freq
 		_lead_env = 0.96
 		_lead_atk = 0.0
 
 		if use_harmony:
 			_harm_target_freq = _midi_to_hz(_deg_to_midi(root + _lead_oct, scale, m_deg + _harm_int))
-			if _harm_env < 0.15:
+			if _harm_env < 0.15 or _glide <= 0.0:
 				_harm_freq = _harm_target_freq
 			_harm_env = 0.75
 			_harm_atk = 0.0
@@ -823,7 +856,55 @@ func _trigger_style_rhythm(style: int, root: int, scale: Array, chord_deg: int, 
 					_hat_env = 0.72
 					_hat_decay = 15.0
 
-		_: # STYLE 0 (STAGE 1 OUTER ORBIT) & STYLE 8 (UNIVERSAL NEON MEDUSA BOSS THEME):
+		0: # STAGE 1 (OUTER ORBIT): Heroic rock. Galloping 8th-note picked bass (octave pops on the
+			# "and" of 2 and 4), brass stabs (on-beat in the verse, syncopated in the chorus),
+			# a sparkling arpeggio from section 1 on, and a straight rock kit with a crash on each section.
+			var is_chorus: bool = (section == 2 or (section == 3 and bar8 >= 4))
+			if is_breakdown:
+				if s16 == 0 or s16 == 8:
+					_bass_freq = _midi_to_hz(_deg_to_midi(root, scale, chord_deg))
+					_bass_env = 0.85
+					_bass_atk = 0.0
+			elif s16 % 2 == 0:
+				var gallop: Array[int] = [0, 0, 0, 7, 0, 0, 4, 7]
+				_bass_freq = _midi_to_hz(_deg_to_midi(root, scale, chord_deg + gallop[s16 / 2]))
+				_bass_env = 1.0 if (s16 % 4 == 0) else 0.78
+				_bass_atk = 0.0
+			if is_chorus:
+				if s16 == 0 or s16 == 3 or s16 == 6 or s16 == 10 or s16 == 12:
+					_stab_env = 1.0
+			elif not is_breakdown and (s16 == 0 or s16 == 8) and (section >= 1 or bar8 >= 2):
+				_stab_env = 0.8
+			elif is_breakdown and s16 == 0:
+				_stab_env = 0.55
+			if section >= 1 and not is_breakdown:
+				var sparkle: Array[int] = [0, 2, 4, 7]
+				if is_chorus or s16 % 2 == 0:
+					_arp_freq = _midi_to_hz(_deg_to_midi(root + 24, scale, chord_deg + sparkle[(pos / (1 if is_chorus else 2)) % 4]))
+					_arp_env = (0.55 if s16 % 2 == 0 else 0.32) if is_chorus else 0.42
+					_arp_atk = 0.0
+			if bar8 == 7 and s16 >= 12:
+				var fill: Array[float] = [190.0, 150.0, 118.0, 92.0]
+				_tom_freq = fill[s16 - 12]
+				_tom_env = 0.95
+				_tom_phase = 0.0
+			elif not is_breakdown:
+				if s16 == 0 or s16 == 8 or s16 == 10:
+					_kick_env = 1.0
+					_kick_phase = 0.0
+				if s16 == 4 or s16 == 12:
+					_snare_body_env = 0.95
+					_snare_gate_time = 0.09
+					_snare_phase = 0.0
+				if bar8 == 0 and s16 == 0:
+					_hat_env = 1.0 # crash at the top of each section
+					_hat_decay = 3.5
+				elif s16 % 2 == 0 and not (bar8 == 0 and s16 < 6): # 8th hats once the crash has rung
+					var open_hat: bool = is_chorus and s16 % 4 == 2
+					_hat_env = 0.62 if open_hat else 0.42
+					_hat_decay = 16.0 if open_hat else 40.0
+
+		_: # STYLE 8 (UNIVERSAL NEON MEDUSA BOSS THEME):
 			var is_boss: bool = (style == 8)
 			if is_breakdown:
 				if s16 == 0 or s16 == 8:
@@ -872,7 +953,7 @@ func _synth_title_frame(dt: float) -> Vector2:
 	_bass_p1 = fmod(_bass_p1 + _bass_freq * dt, 1.0)
 	var sub: float = sin(_bass_p1 * TAU) * _bass_env * _bass_atk * 0.24
 
-	var pad_lr: Vector2 = _tick_stereo_pad(dt, 0.14, 0)
+	var pad_lr: Vector2 = _tick_stereo_pad(dt, 0.14, 8)
 
 	_arp_atk = minf(1.0, _arp_atk + dt * 220.0)
 	_arp_env = maxf(0.0, _arp_env - dt * 3.2)
@@ -896,7 +977,7 @@ func _synth_title_frame(dt: float) -> Vector2:
 func _synth_hyperspace_frame(dt: float) -> Vector2:
 	_hyper_sweep = minf(1.0, _hyper_sweep + dt * 0.55)
 	_pad_swell = minf(1.0, _pad_swell + dt * 2.0)
-	var pad_lr: Vector2 = _tick_stereo_pad(dt, 0.16, 0)
+	var pad_lr: Vector2 = _tick_stereo_pad(dt, 0.16, 8)
 
 	_arp_atk = minf(1.0, _arp_atk + dt * 280.0)
 	_arp_env = maxf(0.0, _arp_env - dt * 6.0)
@@ -913,13 +994,13 @@ func _synth_ensemble_frame(dt: float, style: int) -> Vector2:
 	_lfo_phase += 5.0 * dt
 	_pad_swell = minf(1.0, _pad_swell + dt * 1.6)
 	_sidechain = minf(1.0, _sidechain + dt * 6.5)
-	_stab_env = maxf(0.0, _stab_env - dt * (5.5 if style == 6 else 11.0))
+	_stab_env = maxf(0.0, _stab_env - dt * (5.5 if style == 6 else (7.0 if style == 0 else 11.0)))
 
 	# --- 1) STAGE-SPECIFIC BASS INSTRUMENT ---
 	var bass_sig: float = 0.0
 	if _bass_env > 0.001:
 		_bass_atk = minf(1.0, _bass_atk + dt * 420.0)
-		var b_decay: float = 7.5 if style == 1 else (1.1 if (style == 4 or style == 6) else 5.6)
+		var b_decay: float = 7.5 if style == 1 else (1.1 if (style == 4 or style == 6) else (6.5 if style == 0 else 5.6))
 		_bass_env = maxf(0.0, _bass_env - dt * b_decay)
 		_bass_p1 = fmod(_bass_p1 + _bass_freq * dt, 1.0)
 		_bass_p2 = fmod(_bass_p2 + _bass_freq * 1.006 * dt, 1.0)
@@ -943,8 +1024,15 @@ func _synth_ensemble_frame(dt: float, style: int) -> Vector2:
 			_bass_lp1 += cut_f * (saw_f - _bass_lp1)
 			var over: float = (_bass_lp1 * 1.7) / (1.0 + absf(_bass_lp1 * 1.7))
 			bass_sig = (over * 0.8 + sin(_bass_sub_p * TAU) * 0.4) * _bass_env * _bass_atk * 0.36
+		elif style == 0:
+			# Picked Rock Bass: saw + square through an envelope-swept 2-pole low-pass, plus a sub
+			var pick: float = (2.0 * _bass_p1 - 1.0) * 0.6 + (0.5 if _bass_p1 < 0.5 else -0.5)
+			var p_cut: float = clampf(0.06 + 0.30 * (_bass_env * _bass_env * _bass_env), 0.04, 0.45)
+			_bass_lp1 += p_cut * (pick - _bass_lp1)
+			_bass_lp2 += p_cut * (_bass_lp1 - _bass_lp2)
+			bass_sig = (_bass_lp2 * 0.9 + sin(_bass_sub_p * TAU) * 0.35) * _bass_env * _bass_atk * 0.36
 		else:
-			# Dual-Saw Synthwave / Trance Pumping Bass (Style 0, 7, 8)
+			# Dual-Saw Synthwave / Trance Pumping Bass (Style 7, 8)
 			var dual_saw: float = (2.0 * _bass_p1 - 1.0) * 0.55 + (2.0 * _bass_p2 - 1.0) * 0.55
 			var b_cut: float = clampf(0.045 + 0.22 * (_bass_env * _bass_env), 0.025, 0.44)
 			_bass_lp1 += b_cut * (dual_saw - _bass_lp1)
@@ -989,11 +1077,13 @@ func _synth_ensemble_frame(dt: float, style: int) -> Vector2:
 	# --- 4) STAGE-SPECIFIC SOLO LEAD INSTRUMENT ---
 	var lead_sig: float = 0.0
 	if _lead_env > 0.002:
-		var glide_spd: float = 55.0 if style == 1 else 32.0
-		_lead_freq = lerpf(_lead_freq, _lead_target_freq, clampf(dt * glide_spd, 0.0, 1.0))
+		if _glide > 0.0:
+			_lead_freq = lerpf(_lead_freq, _lead_target_freq, clampf(dt * _glide, 0.0, 1.0))
+		else:
+			_lead_freq = _lead_target_freq
 		_lead_atk = minf(1.0, _lead_atk + dt * _lead_attack)
 		_lead_env = maxf(0.0, _lead_env - dt * _lead_decay)
-		var vib_depth: float = 0.0065 if style == 5 else 0.0040
+		var vib_depth: float = 0.0065 if style == 5 else _vib
 		var vib: float = 1.0 + vib_depth * sin(_lfo_phase * TAU)
 		_lead_p1 = fmod(_lead_p1 + _lead_freq * vib * dt, 1.0)
 		_lead_p2 = fmod(_lead_p2 + _lead_freq * vib * 1.006 * dt, 1.0)
@@ -1018,10 +1108,11 @@ func _synth_ensemble_frame(dt: float, style: int) -> Vector2:
 			7: # Cyber Nexus: Detuned Euphoric Trance Supersaw Lead!
 				var p3: float = fmod(_lead_p1 * 0.993, 1.0)
 				raw_lead = ((2.0 * _lead_p1 - 1.0) + (2.0 * _lead_p2 - 1.0) + (2.0 * p3 - 1.0)) * 0.45
-			_: # Stage 1: Classic Midnight Lush Dual-Saw Lead
-				raw_lead = (2.0 * _lead_p1 - 1.0) * 0.55 + (2.0 * _lead_p2 - 1.0) * 0.55 + sin(_lead_p1 * TAU) * 0.35
+			_: # Stage 1: Hollow Square "Brass" Lead (square + soft octave saw + sine body, one oscillator, no detune)
+				var oct_p: float = fmod(_lead_p1 * 2.0, 1.0)
+				raw_lead = (0.62 if _lead_p1 < 0.5 else -0.62) + (2.0 * oct_p - 1.0) * 0.18 + sin(_lead_p1 * TAU) * 0.30
 
-		var l_cut: float = 0.28 if (style == 3 or style == 4 or style == 6) else (0.15 + 0.28 * _lead_env)
+		var l_cut: float = 0.28 if (style == 3 or style == 4 or style == 6) else ((0.10 + 0.20 * _lead_env) if style == 0 else (0.15 + 0.28 * _lead_env))
 		_lead_lp += l_cut * (raw_lead - _lead_lp)
 		lead_sig = _lead_lp * _lead_env * _lead_atk * 0.23
 
@@ -1093,18 +1184,25 @@ func _tick_stereo_pad(dt: float, gain: float, style: int) -> Vector2:
 			var pan_r: float = 0.55 - 0.40 * sin(_lfo_phase * 0.8 * TAU)
 			sum_l += ep * pan_l
 			sum_r += ep * pan_r
+		elif style == 0:
+			# Outer Orbit: Brass Section (saw + square) that swells on each stab over a soft sustain
+			var brass_g: float = 0.30 + 0.90 * _stab_env
+			var br_a: float = (2.0 * _pad_phases_a[i] - 1.0) * 0.7 + (0.6 if _pad_phases_a[i] < 0.5 else -0.6) * 0.3
+			var br_b: float = (2.0 * _pad_phases_b[i] - 1.0) * 0.7 + (0.6 if _pad_phases_b[i] < 0.5 else -0.6) * 0.3
+			sum_l += br_a * brass_g
+			sum_r += br_b * brass_g
 		elif style == 7:
 			# Cyber Nexus: Rhythmic Trance Gate Hypersaws!
 			var gate_mul: float = 0.30 + 0.70 * _stab_env
 			sum_l += (2.0 * _pad_phases_a[i] - 1.0) * gate_mul
 			sum_r += (2.0 * _pad_phases_b[i] - 1.0) * gate_mul
 		else:
-			# Lush Analog Juno/OB-X Sawtooth Pad (Stage 1, Volcano Brass, Boss)
+			# Lush Analog Juno/OB-X Sawtooth Pad (Volcano Brass, Boss, title & hyperspace)
 			var boost: float = (1.0 + _stab_env * 0.6) if style == 5 else 1.0
 			sum_l += (2.0 * _pad_phases_a[i] - 1.0) * boost
 			sum_r += (2.0 * _pad_phases_b[i] - 1.0) * boost
 
-	var cut: float = 0.14 if (style == 1 or style == 7) else 0.065
+	var cut: float = 0.14 if (style == 1 or style == 7) else (0.10 if style == 0 else 0.065)
 	_pad_lp_l += cut * (sum_l * 0.28 - _pad_lp_l)
 	_pad_lp_r += cut * (sum_r * 0.28 - _pad_lp_r)
 	return Vector2(_pad_lp_l * gain * _pad_swell, _pad_lp_r * gain * _pad_swell)
