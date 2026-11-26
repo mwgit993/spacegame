@@ -110,12 +110,6 @@ jobs:
           $stamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'")
           $notes = "**Latest Change:** $changeDesc`n**Commit:** ``$shortSha`` ($stamp)`n`n### How to Play`n1. Download **StarViper-Windows.zip** below.`n2. Extract the folder anywhere (keep ``StarViper.exe`` and ``StarViper.pck`` together in the same folder!).`n3. Double-click **StarViper.exe**!"
 
-          $exists = $true
-          gh release view latest -R $repo 2>$null | Out-Null
-          if ($LASTEXITCODE -ne 0) { $exists = $false }
-          if (-not $exists) {
-            gh release create latest "StarViper-Windows.zip" -R $repo --title "Star Viper — Latest Playable Build ($shortSha)" --notes $notes
-          } else {
-            gh release upload latest "StarViper-Windows.zip" -R $repo --clobber
-            gh release edit latest -R $repo --title "Star Viper — Latest Playable Build ($shortSha)" --notes $notes
-          }
+          # Delete & recreate the 'latest' Release + Git tag so the Release timestamp AND Source code zip both update to right now!
+          gh release delete latest -R $repo --cleanup-tag --yes 2>$null
+          gh release create latest "StarViper-Windows.zip" -R $repo --target $mainInfo.sha --title "Star Viper — Latest Playable Build ($shortSha)" --notes $notes
