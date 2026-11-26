@@ -429,6 +429,7 @@ var _opt_fullscreen_btn: Button
 var _opt_speed_btn: Button
 var _opt_soundtrack_btn: Button
 var _opt_reset_btn: Button
+var _reset_armed_until_ms: int = 0
 var _opt_back_btn: Button
 
 # Soundtrack picker (Options > SOUNDTRACK): one row per place music plays
@@ -740,6 +741,15 @@ func _run_smoke_test() -> void:
 	_update_hyperspace(1.5)
 	player.invuln_timer = 0.0
 	player.take_player_hit()
+	MetaSave.scrap = 777
+	_opt_reset_btn.pressed.emit()
+	if MetaSave.scrap != 777 or _opt_reset_btn.text != "PRESS AGAIN":
+		push_error("SMOKE: one press of RESET SAVE should only ask for confirmation")
+		smoke_ok = false
+	_opt_reset_btn.pressed.emit()
+	if MetaSave.scrap != 0 or _opt_reset_btn.text != "RESET SAVE":
+		push_error("SMOKE: a second press of RESET SAVE should wipe the save")
+		smoke_ok = false
 	MetaSave.reset_save()
 	if not _smoke_speed_is(false, "at the end of the smoke test"):
 		smoke_ok = false
@@ -1457,11 +1467,23 @@ func _build_options_ui() -> void:
 	reset_btn.size = Vector2(116.0, 26.0)
 	reset_btn.text = "RESET SAVE"
 	_style_menu_btn(reset_btn, Color("#ff4c68"))
+	# Wiping the save takes two presses within 3 s (a controller can land on this button by accident).
 	reset_btn.pressed.connect(func() -> void:
-		MetaSave.reset_save()
-		RetroSfx.play("explode", -8.0, 0.02)
-		_refresh_options_ui()
+		if Time.get_ticks_msec() < _reset_armed_until_ms:
+			_disarm_reset()
+			MetaSave.reset_save()
+			RetroSfx.play("explode", -8.0, 0.02)
+			_refresh_options_ui()
+		else:
+			_reset_armed_until_ms = Time.get_ticks_msec() + 3000
+			reset_btn.text = "PRESS AGAIN"
+			RetroSfx.play("ui", -4.0, 0.0)
+			get_tree().create_timer(3.0).timeout.connect(func() -> void:
+				if Time.get_ticks_msec() >= _reset_armed_until_ms:
+					_disarm_reset()
+			)
 	)
+	reset_btn.focus_exited.connect(_disarm_reset)
 	options_panel.add_child(reset_btn)
 
 	_opt_soundtrack_btn = Button.new()
@@ -1699,6 +1721,12 @@ func _on_snd_row_clicked(i: int) -> void:
 		RetroSfx.play("ui", -11.0, 0.03)
 		_refresh_soundtrack_ui()
 		_snd_preview_current()
+
+
+func _disarm_reset() -> void:
+	_reset_armed_until_ms = 0
+	if _opt_reset_btn != null:
+		_opt_reset_btn.text = "RESET SAVE"
 
 
 func _leave_options() -> void:
