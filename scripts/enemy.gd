@@ -13,6 +13,9 @@ enum Type {
 	LAVA_BLOB, GOLEM,                              # 6 Magma Core
 	JELLYFISH, EEL, ANGLER,                        # 7 Abyssal Trench
 	VIRUS, GLITCH, FIREWALL,                       # 8 Cyber Nexus
+	# Any enemy of a stage module (stages 9+): module_kind names it in the module's
+	# get_enemy_defs(), and a behaviour object (scripts/stages/stage_enemy.gd) runs it.
+	MODULE,
 }
 
 signal destroyed(enemy: GameEnemy, killed_by_player: bool)
@@ -144,6 +147,13 @@ var _seg_shapes: Array[CollisionShape2D] = []
 var _barrel: Sprite2D = null
 var _shield: Sprite2D = null
 
+# Stage modules (stages 9+): set module_kind before setup() for Type.MODULE.
+var module_kind: String = ""
+var _behaviour: RefCounted = null       # Type.MODULE: scripts/stages/stage_enemy.gd subclass
+var _boss_ai: RefCounted = null         # a module stage's boss: scripts/stages/stage_boss.gd subclass
+var _module_big: bool = false
+var _exit_left: float = -40.0
+
 # Status effects from the player's Cryo Rounds / Napalm Rounds draft perks
 var _chill_timer: float = 0.0
 var _chill_factor: float = 1.0          # Time scale while chilled (slows movement and firing)
@@ -153,6 +163,7 @@ var _burn_tick: float = 0.0
 var _status_fx_timer: float = 0.0
 
 # Stage-by-stage exponential Boss HP curve (accounts for Option orbs, Spread, Laser & Rapid upgrades!)
+# Built-in stages only: stage modules (9+) give theirs in get_boss_hp().
 const STAGE_BOSS_HP: Array[float] = [
 	360.0,   # Stage 1: Outer Orbit
 	820.0,   # Stage 2: Starcruiser
@@ -180,9 +191,11 @@ func setup(
 ) -> void:
 	add_to_group("enemies")
 	enemy_type = t
-	stage_idx = posmod(st_idx, 8)
-	var loop_count: int = maxi(0, st_idx / 8)
+	stage_idx = StageData.wrap_stage(st_idx)
+	var loop_count: int = StageData.loop_of(st_idx)
 	var loop_mult: float = pow(2.2, float(loop_count))
+	# A module stage's sprites are normally prefetched; this builds them now if not.
+	StageData.prepare_stage(stage_idx)
 	_raw_stage = st_idx
 	_hp_scale = hp_scale
 	variant = p_variant
@@ -267,12 +280,19 @@ func setup(
 		Type.BOSS:
 			_boss_tex_base = String(st["boss_tex"])
 			_sprite.texture = PixelArt.tex(_boss_tex_base + "_0")
-			max_hp = STAGE_BOSS_HP[stage_idx] * loop_mult
+			# Stages 9+ are modules: their boss HP and attack patterns come from the module.
+			var boss_module: RefCounted = StageData.get_module(stage_idx)
+			var base_hp: float = STAGE_BOSS_HP[stage_idx] if boss_module == null else float(boss_module.call("get_boss_hp"))
+			max_hp = base_hp * loop_mult
 			score_value = 5000 + stage_idx * 1500
 			scrap_drop = 28 + stage_idx * 4
 			xp_drop = 48 + stage_idx * 12
-			_target_x = 424.0 if stage_idx == 0 else 414.0
+			_target_x = 424.0 if stage_idx == 0 else float(st.get("boss_x", 414.0))
 			_fire_timer = 1.20
+			if boss_module != null:
+				_boss_ai = boss_module.call("create_boss")
+				_boss_ai.set("boss", self)
+				_boss_ai.call("setup")
 
 			# Launch Mega Man-style Boss Teleport Arrival -> Signature Pose -> 28-Pip HP Bar Fill!
 			boss_intro_active = true
@@ -287,7 +307,7 @@ func setup(
 			RetroSfx.play("boss_beam", -5.0, 0.02)
 
 			var box: RectangleShape2D = RectangleShape2D.new()
-			box.size = Vector2(88.0, 176.0) if stage_idx == 0 else Vector2(82.0, 146.0)
+			box.size = Vector2(88.0, 176.0) if stage_idx == 0 else Vector2(st.get("boss_box", Vector2(82.0, 146.0)))
 			col.shape = box
 
 		_:
@@ -417,7 +437,14 @@ func set_launch_velocity(v: Vector2) -> void:
 
 
 func _setup_themed(hp_scale: float, loop_mult: float, col: CollisionShape2D) -> void:
-	var d: Dictionary = THEMED[enemy_type]
+	var d: Dictionary = {}
+	if enemy_type == Type.MODULE:
+		d = StageData.get_enemy_def(stage_idx, module_kind)
+		if d.is_empty():
+			push_error("GameEnemy: stage %d has no enemy kind '%s'" % [stage_idx + 1, module_kind])
+			d = {"hp": 1.0, "score": 0, "scrap": 0, "xp": 0, "r": 6.0, "tex": "scout_space", "behaviour": load("res://scripts/stages/stage_enemy.gd")}
+	else:
+		d = THEMED[enemy_type]
 	_sprite.texture = PixelArt.tex(String(d["tex"]))
 	# Telegraphs and HP bars from _draw_themed go on top of the sprite.
 	_sprite.show_behind_parent = true
@@ -438,6 +465,8 @@ func _setup_themed(hp_scale: float, loop_mult: float, col: CollisionShape2D) -> 
 		col.position = Vector2(0.0, 3.0 if variant == 1 else -3.0)
 	elif enemy_type == Type.JELLYFISH:
 		col.position = Vector2(0.0, -3.0)
+	elif enemy_type == Type.MODULE:
+		col.position = Vector2(d.get("col_offset", Vector2.ZERO))
 	if gen > 0:
 		_apply_child_rewards()
 	_fire_timer = randf_range(1.0, 1.6) / _fire_mult
@@ -527,6 +556,14 @@ func _setup_themed(hp_scale: float, loop_mult: float, col: CollisionShape2D) -> 
 		Type.FIREWALL:
 			# The wall fires as a rolling cascade: each slot is a little later than the one above.
 			_fire_timer = 1.4 + _phase_offset * 0.2
+		Type.MODULE:
+			_module_big = bool(d.get("big", false))
+			_exit_left = float(d.get("exit_left", -40.0))
+			var behaviour_script: Script = d["behaviour"]
+			_behaviour = behaviour_script.new() as RefCounted
+			_behaviour.set("enemy", self)
+			_behaviour.set("def", d)
+			_behaviour.call("setup")
 
 
 # Children (gen > 0) give no Scrap and at most 1 XP.
@@ -557,6 +594,8 @@ func _wake() -> void:
 		Type.JET:
 			_lock_y = clampf(_player_pos().y + _phase_offset * 16.0, 40.0, 238.0)
 			RetroSfx.play("laser", -14.0, 0.05)
+		Type.MODULE:
+			_behaviour.call("on_wake")
 
 
 func _process_themed(delta: float) -> void:
@@ -610,6 +649,8 @@ func _process_themed(delta: float) -> void:
 			_tick_glitch(delta)
 		Type.FIREWALL:
 			_tick_firewall(delta)
+		Type.MODULE:
+			_behaviour.call("tick", delta)
 	if _dead:
 		return
 	queue_redraw()
@@ -618,7 +659,7 @@ func _process_themed(delta: float) -> void:
 
 func _check_exit() -> void:
 	var p: Vector2 = global_position
-	var left_edge: float = -40.0
+	var left_edge: float = _exit_left
 	if enemy_type == Type.EEL:
 		left_edge = -40.0 - float(EEL_SEGMENTS) * EEL_SPACING
 	elif enemy_type == Type.BLIMP:
@@ -637,8 +678,8 @@ func _on_screen(margin_left: float = 70.0, margin_right: float = 462.0) -> bool:
 	return global_position.x > margin_left and global_position.x < margin_right
 
 
-func _request_child(t: Type, pos: Vector2, vel: Vector2, child_gen: int) -> void:
-	spawn_requested.emit({
+func _request_child(t: Type, pos: Vector2, vel: Vector2, child_gen: int, kind: String = "") -> void:
+	var item: Dictionary = {
 		"type": t,
 		"pos": pos,
 		"hp_mult": _hp_scale,
@@ -648,7 +689,10 @@ func _request_child(t: Type, pos: Vector2, vel: Vector2, child_gen: int) -> void
 		"variant": 0,
 		"gen": child_gen,
 		"vel": vel,
-	})
+	}
+	if kind != "":
+		item["kind"] = kind
+	spawn_requested.emit(item)
 
 
 # --- 1 OUTER ORBIT ---------------------------------------------------------------------------
@@ -1236,6 +1280,8 @@ func _on_themed_death() -> void:
 		Type.VIRUS, Type.GLITCH, Type.FIREWALL:
 			if fx != null:
 				fx.spawn_hit_sparks(global_position, Color("#ff38d4"), 6)
+		Type.MODULE:
+			_behaviour.call("on_death")
 
 
 func _process_boss(delta: float) -> void:
@@ -1382,7 +1428,8 @@ func _update_boss_intro(delta: float) -> void:
 func _boss_attack() -> void:
 	# Faster cooldowns & higher bullet velocity in Phase 2 (<=66% HP) and Phase 3 (<=33% HP)!
 	var rate_mult: float = 1.0 if boss_phase == 1 else (0.78 if boss_phase == 2 else 0.62)
-	var spd_bonus: float = float(boss_phase - 1) * 18.0 + float(stage_idx) * 5.0
+	# +5 per stage through stage 8, then +2 per stage, so stage 28 bosses aren't absurdly fast.
+	var spd_bonus: float = float(boss_phase - 1) * 18.0 + float(mini(stage_idx, 7)) * 5.0 + float(maxi(0, stage_idx - 7)) * 2.0
 
 	_boss_substep += 1
 	if _boss_substep >= 4:
@@ -1391,6 +1438,11 @@ func _boss_attack() -> void:
 		# In Phase 2 & 3 on Stages 2+, summon a pair of escort fighters to keep pressure high!
 		if boss_phase >= 2 and stage_idx >= 1 and get_parent() != null:
 			_spawn_boss_escort()
+
+	# Stages 9+: the module's boss AI picks the attack (scripts/stages/stage_boss.gd).
+	if _boss_ai != null:
+		_boss_ai.call("attack", rate_mult, spd_bonus)
+		return
 
 	match stage_idx:
 		0: # STAGE 1: NEMESIS DREADNOUGHT WALL
@@ -1504,7 +1556,7 @@ func _spawn_boss_escort() -> void:
 	for offset_y: float in [-62.0, 62.0]:
 		var esc: GameEnemy = GameEnemy.new()
 		get_parent().add_child(esc)
-		var esc_hp_scale: float = pow(1.32, float(stage_idx))
+		var esc_hp_scale: float = StageData.stage_hp_growth(stage_idx, 1.32)
 		esc.setup(
 			Type.SWOOPER,
 			Vector2(492.0, clampf(global_position.y + offset_y, 38.0, 226.0)),
@@ -1613,6 +1665,8 @@ func take_damage(dmg: float, silent: bool = false) -> void:
 				fx.spawn_hit_sparks(global_position + Vector2(-13.0, randf_range(-10.0, 10.0)), Color("#c8b8a8"), 2)
 		else:
 			dmg *= 1.5
+	elif enemy_type == Type.MODULE:
+		dmg = float(_behaviour.call("modify_damage", dmg))
 
 	if enemy_type == Type.BOSS:
 		if boss_intro_active or boss_shield_timer > 0.0:
@@ -1702,7 +1756,7 @@ func _finish_boss_death() -> void:
 
 func _die() -> void:
 	_dead = true
-	var is_big: bool = (enemy_type == Type.CRUISER or enemy_type == Type.BOSS or enemy_type == Type.BLIMP or enemy_type == Type.GOLEM or enemy_type == Type.ANGLER)
+	var is_big: bool = (enemy_type == Type.CRUISER or enemy_type == Type.BOSS or enemy_type == Type.BLIMP or enemy_type == Type.GOLEM or enemy_type == Type.ANGLER or _module_big)
 	if fx != null:
 		fx.spawn_explosion(global_position, is_big)
 		if is_big:
@@ -1749,6 +1803,8 @@ func _draw() -> void:
 			var r_glint: float = lerpf(3.0, 8.5, ct)
 			draw_circle(Vector2(-36.0, 0.0), r_glint, Color(1.0, 0.16, 0.28, 0.55))
 			draw_circle(Vector2(-36.0, 0.0), r_glint * 0.48, Color(1.0, 0.95, 0.75, 0.92))
+		if _boss_ai != null and not boss_intro_active and not _boss_dying:
+			_boss_ai.call("draw")
 
 
 # Telegraphs (charge glints, warning markers, lock-on lines) and HP bars of themed enemies.
@@ -1815,10 +1871,14 @@ func _draw_themed() -> void:
 			if variant & 2:
 				draw_rect(Rect2(-2.0, 9.0, 4.0, 3.5), link)
 			_draw_glint(Vector2(-8.0, 0.0), _fire_timer, 0.3, Color(1.0, 0.3, 0.85))
+		Type.MODULE:
+			_behaviour.call("draw")
 
 
 func _draw_entrance_warning() -> void:
-	if enemy_type == Type.LAVA_BLOB:
+	if enemy_type == Type.MODULE:
+		_behaviour.call("draw_warning")
+	elif enemy_type == Type.LAVA_BLOB:
 		# Bubbling, brightening glow on the lava where it will leap out.
 		var k: float = clampf(1.0 - _warn_timer / 0.85, 0.0, 1.0)
 		var pulse: float = 0.5 + 0.5 * sin(_age * 30.0)

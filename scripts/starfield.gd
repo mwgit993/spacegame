@@ -1,9 +1,12 @@
 class_name StarfieldBg
 extends Node2D
 
-# Renders all 8 themed 16-bit parallax stage environments + the Hyperspace Warp Tunnel.
-# 0: Outer Orbit, 1: Starcruiser Interior, 2: Planetary Cloud Base, 3: Xeno Forest,
-# 4: Cryo Glacier, 5: Magma Core, 6: Abyssal Trench, 7: Cyber Nexus.
+# Renders the themed 16-bit parallax stage environments + the Hyperspace Warp Tunnel.
+# Built in: 0: Outer Orbit, 1: Starcruiser Interior, 2: Planetary Cloud Base, 3: Xeno Forest,
+# 4: Cryo Glacier, 5: Magma Core, 6: Abyssal Trench, 7: Cyber Nexus. Stages 9+ are stage
+# modules: their theme key is the stage id, the module paints the still layers
+# (paint_background) and a background object (scripts/stages/stage_background.gd) animates
+# and draws them through the same cache, prebuild and helpers.
 #
 # Static layers (sky, skylines, trees, pipes...) are pre-rendered once per stage by
 # stage_bg_painter.gd into textures and scrolled at different parallax speeds. Only the animated
@@ -44,6 +47,9 @@ var _meta: Dictionary = {}
 var _pending_theme: String = ""
 var _pending_task: int = -1
 var _pending_result: Dictionary = {}
+
+# The active stage module's background animator (null on stages 1-8).
+var _module_bg: RefCounted = null
 
 # Drifting particle sets (snow, embers, spores, bubbles...).
 var _drift_a: Drift = Drift.new()
@@ -200,7 +206,7 @@ func _exit_tree() -> void:
 
 
 func set_stage(new_stage_idx: int) -> void:
-	stage_idx = posmod(new_stage_idx, 8)
+	stage_idx = StageData.wrap_stage(new_stage_idx)
 	var theme: String = _theme_for(stage_idx)
 	if theme != _theme:
 		_activate_theme(theme)
@@ -208,9 +214,24 @@ func set_stage(new_stage_idx: int) -> void:
 
 func _theme_for(idx: int) -> String:
 	var id: String = String(StageData.get_stage(idx).get("id", ""))
-	if THEMES.has(id):
+	if THEMES.has(id) or StageData.is_module_stage(idx):
 		return id
 	return THEMES[posmod(idx, THEMES.size())]
+
+
+# Paints a theme's still layers: the built-in painter, or the stage module's. Pure, so it runs
+# on the prebuild worker thread too (the module is looked up on the main thread first).
+static func _paint_theme(theme: String, module: RefCounted) -> Dictionary:
+	if module != null:
+		return module.call("paint_background")
+	return Painter.build(theme)
+
+
+# The stage module behind a theme (null for the built-in themes, without asking StageData).
+func _theme_module(theme: String) -> RefCounted:
+	if THEMES.has(theme):
+		return null
+	return StageData.get_module_by_id(theme)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -225,11 +246,16 @@ func _activate_theme(theme: String) -> void:
 			_store_theme(_pending_theme, _pending_result)
 			_pending_result = {}
 		if not _cache.has(theme):
-			_store_theme(theme, Painter.build(theme))
+			_store_theme(theme, _paint_theme(theme, _theme_module(theme)))
 	var entry: Dictionary = _cache[theme]
 	_tex = entry["tex"]
 	_meta = entry["meta"]
 	_theme = theme
+	_module_bg = null
+	var module: RefCounted = _theme_module(theme)
+	if module != null:
+		_module_bg = module.call("create_background")
+		_module_bg.set("bg", self)
 	_evict_cache()
 	_reset_theme_state()
 
@@ -254,8 +280,8 @@ func _evict_cache() -> void:
 			_cache.erase(key)
 
 
-func _thread_build(theme: String) -> void:
-	_pending_result = Painter.build(theme)
+func _thread_build(theme: String, module: RefCounted) -> void:
+	_pending_result = _paint_theme(theme, module)
 
 
 func _poll_prebuild() -> void:
@@ -269,7 +295,7 @@ func _poll_prebuild() -> void:
 	var next_theme: String = _theme_for(stage_idx + 1)
 	if not _cache.has(next_theme):
 		_pending_theme = next_theme
-		_pending_task = WorkerThreadPool.add_task(_thread_build.bind(next_theme), false, "Stage background prebuild")
+		_pending_task = WorkerThreadPool.add_task(_thread_build.bind(next_theme, _theme_module(next_theme)), false, "Stage background prebuild")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -403,6 +429,9 @@ func _reset_theme_state() -> void:
 				_props.p[i4] = _rng.randf_range(0.0, 256.0)
 			_ev_a.arm(_rng, 5.0, 11.0, 3.0, 6.0)     # glitch
 			_ev_b.arm(_rng, 13.0, 22.0, 6.0, 10.0)   # scan sweep
+		_:
+			if _module_bg != null:
+				_module_bg.call("reset")
 
 
 func _respawn_asteroid(i: int, x: float) -> void:
@@ -460,6 +489,9 @@ func _process(delta: float) -> void:
 			_update_abyss()
 		"cyber":
 			_update_cyber()
+		_:
+			if _module_bg != null:
+				_module_bg.call("update")
 	_poll_prebuild()
 	queue_redraw()
 
@@ -892,6 +924,9 @@ func _draw() -> void:
 				_draw_abyss()
 			"cyber":
 				_draw_cyber()
+			_:
+				if _module_bg != null:
+					_module_bg.call("draw")
 
 	_draw_stage_decks(st, _theme)
 

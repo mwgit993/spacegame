@@ -23,6 +23,10 @@ extends Node
 # "bass"/"pad"/"arp"/"lead" borrow any instrument voice (extra voices are 9+), and
 # melodies are composed from a seed by compose_melody(). Originals are untouched: a song
 # without those keys renders exactly as before.
+#
+# STAGE MODULES (stages 9+, scripts/stages/): each module's get_song() is built the same way
+# as an alternative and plays as that stage's original; its slot ("stage_9" ...) joins the
+# picker automatically, with the module's get_song_alternatives() as its alternatives.
 
 enum Mode { NONE, TITLE, STAGE, BOSS, HYPERSPACE }
 
@@ -152,7 +156,7 @@ var _ca_freq: float = 440.0
 var _ca_env: float = 0.0
 var _ca_atk: float = 0.0
 
-# Chosen alternative per slot ("title", "stage_1".."stage_8", "boss", "hyperspace");
+# Chosen alternative per slot ("title", "stage_1".."stage_<N>", "boss", "hyperspace");
 # 0 or missing = the original track. Set from the save by MetaSave.
 var picks: Dictionary = {}
 var _preview_slot: String = ""
@@ -518,9 +522,41 @@ func stop_music() -> void:
 
 # --- Soundtrack slots and alternative tracks -------------------------------------------
 
-const SLOT_KEYS: Array[String] = [
-	"title", "stage_1", "stage_2", "stage_3", "stage_4", "stage_5", "stage_6", "stage_7", "stage_8", "boss", "hyperspace",
-]
+# Every slot in picker order: title, one per stage (stage_1 .. stage_<N>, so stage modules get
+# theirs automatically), boss, hyperspace.
+func get_slot_keys() -> Array[String]:
+	var keys: Array[String] = ["title"]
+	for i: int in range(StageData.stage_count()):
+		keys.append("stage_%d" % (i + 1))
+	keys.append("boss")
+	keys.append("hyperspace")
+	return keys
+
+
+# The stage module behind a "stage_<N>" slot, or null (stages 1-8 and the other slots).
+func _slot_module(slot: String) -> RefCounted:
+	if not slot.begins_with("stage_"):
+		return null
+	var idx: int = int(slot.substr(6)) - 1
+	if idx < StageData.BUILTIN_STAGES or idx >= StageData.stage_count():
+		return null
+	return StageData.get_module(idx)
+
+
+func is_module_slot(slot: String) -> bool:
+	return _slot_module(slot) != null
+
+
+# A slot's alternatives: music_candidates.gd for the built-in slots, the module's own list for a
+# stage module's slot.
+func _slot_candidates(slot: String) -> Array:
+	var slots: Dictionary = Candidates.SLOTS
+	if slots.has(slot):
+		return slots[slot]
+	var m: RefCounted = _slot_module(slot)
+	if m != null:
+		return m.call("get_song_alternatives")
+	return []
 
 
 func set_picks(new_picks: Dictionary) -> void:
@@ -538,18 +574,15 @@ func get_pick(slot: String) -> int:
 
 
 func candidate_count(slot: String) -> int:
-	var slots: Dictionary = Candidates.SLOTS
-	if not slots.has(slot):
-		return 0
-	var arr: Array = slots[slot]
-	return arr.size()
+	return _slot_candidates(slot).size()
 
 
-# Index 0 is the original track; 1.. are the alternatives in music_candidates.gd.
+# Index 0 is the original track; 1.. are the alternatives (music_candidates.gd, or a stage
+# module's get_song_alternatives()).
 func candidate_name(slot: String, idx: int) -> String:
 	if idx <= 0:
 		return "ORIGINAL"
-	var arr: Array = Candidates.SLOTS[slot]
+	var arr: Array = _slot_candidates(slot)
 	var c: Dictionary = arr[idx - 1]
 	return String(c["name"])
 
@@ -557,7 +590,7 @@ func candidate_name(slot: String, idx: int) -> String:
 func candidate_info(slot: String, idx: int) -> String:
 	if idx <= 0:
 		return "THE TRACK THE GAME SHIPPED WITH"
-	var arr: Array = Candidates.SLOTS[slot]
+	var arr: Array = _slot_candidates(slot)
 	var c: Dictionary = arr[idx - 1]
 	return String(c.get("info", ""))
 
@@ -567,7 +600,7 @@ func slot_key(mode: Mode, stage_idx: int) -> String:
 		Mode.TITLE:
 			return "title"
 		Mode.STAGE:
-			return "stage_%d" % (posmod(stage_idx, 8) + 1)
+			return "stage_%d" % (StageData.wrap_stage(stage_idx) + 1)
 		Mode.BOSS:
 			return "boss"
 		Mode.HYPERSPACE:
@@ -617,20 +650,39 @@ func _resolve_song(mode: Mode, stage_idx: int) -> Dictionary:
 		return _candidate_song(slot, idx)
 	match mode:
 		Mode.STAGE:
-			return STAGE_SONGS[stage_idx]
+			if stage_idx < STAGE_SONGS.size():
+				return STAGE_SONGS[stage_idx]
+			return _module_song(stage_idx)
 		Mode.BOSS:
 			return BOSS_SONG
 	return {}
 
 
-# Builds the playable song for an alternative: the shared base settings, the candidate's
-# own settings, and melodies composed from its seed when it doesn't spell them out.
+# A stage module's own song (stages 9+), built like an alternative track.
+func _module_song(stage_idx: int) -> Dictionary:
+	var m: RefCounted = StageData.get_module(stage_idx)
+	if m == null:
+		return STAGE_SONGS[posmod(stage_idx, STAGE_SONGS.size())]
+	var key: String = "module:" + String(StageData.get_stage(stage_idx)["id"])
+	if not _cand_cache.has(key):
+		_cand_cache[key] = _build_song(m.call("get_song"))
+	return _cand_cache[key]
+
+
+# Builds the playable song for an alternative.
 func _candidate_song(slot: String, idx: int) -> Dictionary:
 	var key: String = "%s:%d" % [slot, idx]
 	if _cand_cache.has(key):
 		return _cand_cache[key]
-	var arr: Array = Candidates.SLOTS[slot]
-	var c: Dictionary = arr[idx - 1]
+	var arr: Array = _slot_candidates(slot)
+	var song: Dictionary = _build_song(arr[idx - 1])
+	_cand_cache[key] = song
+	return song
+
+
+# The shared base settings, the song's own settings, and melodies composed from its seed when
+# it doesn't spell them out.
+func _build_song(c: Dictionary) -> Dictionary:
 	var song: Dictionary = Candidates.BASE.duplicate(true)
 	song.merge(c.duplicate(true), true)
 	if song.has("kit"):
@@ -642,13 +694,12 @@ func _candidate_song(slot: String, idx: int) -> Dictionary:
 			song["mel_a"] = compose_melody(song, false)
 		if not song.has("mel_b"):
 			song["mel_b"] = compose_melody(song, true)
-	_cand_cache[key] = song
 	return song
 
 
 func _switch_state(new_mode: Mode, stage_idx: int, force: bool = false) -> void:
 	_apply_volume_db()
-	var wrapped_stage: int = posmod(stage_idx, 8)
+	var wrapped_stage: int = StageData.wrap_stage(stage_idx)
 	if not force and current_mode == new_mode and (new_mode == Mode.BOSS or current_stage_idx == wrapped_stage) and _player != null and _player.playing:
 		return
 	current_mode = new_mode

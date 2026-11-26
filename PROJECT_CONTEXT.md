@@ -61,7 +61,8 @@
 | `scripts/autoload/pixel_art.gd` | Caches all ship, enemy, bullet, XP gem, upgrade diagram, and badge pixel textures |
 | `scripts/autoload/retro_sfx.gd` | Synthesizes 16-bit WAV SFX (`shoot`, `laser`, `zap`, `bounce`, `meow`, `xp`, `level_up`, `boss_beam`, `boss_pose`, `boss_hp_tick`, etc.) |
 | `scripts/autoload/genesis_music.gd` | Real-time 44.1 kHz stereo diatonic music synthesizer (8 stage ensembles + universal Boss darksynth anthem), plus the alternative-track engine (extra grooves, voices and a melody composer) |
-| `scripts/music_candidates.gd` | 5 alternative tracks per music slot (title, 8 stages, boss, hyperspace), picked in Options → SOUNDTRACK |
+| `scripts/music_candidates.gd` | 5 alternative tracks per built-in music slot (title, stages 1–8, boss, hyperspace), picked in Options → SOUNDTRACK |
+| `scripts/stages/` | Stage modules: every stage after the 8 built-in ones is one self-contained folder (`<NN>_<id>/`), listed in `registry.gd`. Base classes for the module, its enemies, boss and background; `09_example/` is the template. See "Adding a stage" in `CLAUDE.md` |
 
 ---
 
