@@ -1,6 +1,6 @@
 # Star Viper: 16-Bit Galactic Roguelite
 
-A horizontal 16-bit style roguelite space shooter built in **Godot 4.7** (`480x270` integer-scaled widescreen pixel art), combining *Gradius*-style modular ship upgrades and *BALL x PIT*-style XP gem leveling with a 30-node *Rogue Legacy*-style Starforge Skill Tree, **7 unlockable starships** (including bio-cruisers, alien UFOs, cosmic eyeballs, and the **S.S. Meow-zer** firing Flying Space Cats!), 8 themed worlds, animated Mega Man-style boss intros, and a real-time 44.1 kHz multi-instrument synth soundtrack.
+A horizontal 16-bit style roguelite space shooter built in **Godot 4.7** (`480x270` integer-scaled widescreen pixel art), combining *Gradius*-style modular ship upgrades and *BALL x PIT*-style XP gem leveling with a 36-node *Rogue Legacy*-style Starforge Skill Tree that unlocks 18 new level-up draft cards, **7 unlockable starships** (including bio-cruisers, alien UFOs, cosmic eyeballs, and the **S.S. Meow-zer** firing Flying Space Cats!), 8 themed worlds, animated Mega Man-style boss intros, and a real-time 44.1 kHz multi-instrument synth soundtrack.
 
 ## Controls
 - **Move:** `WASD` / `Arrow Keys` / Any Connected Controller Left Stick or D-Pad / Touch Drag

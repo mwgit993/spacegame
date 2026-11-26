@@ -14,7 +14,7 @@ godot --headless --path . --quit-after 30 -- --smoke-test  # must print STAR_VIP
 godot --path .                                             # play the game
 ```
 
-- There is no unit-test framework or linter. The smoke test is the only automated check. It is `_run_smoke_test()` in `scripts/main.gd`, and it drives every menu, ship, upgrade, stage and boss by calling private methods directly. It checks for crashes and script errors, not behavior. If you rename a method it calls, update it there. If you add a ship, upgrade or stage, add it to the smoke test.
+- There is no unit-test framework or linter. The smoke test is the only automated check. It is `_run_smoke_test()` in `scripts/main.gd`, and it drives every menu, ship, upgrade, stage and boss by calling private methods directly. It mostly checks for crashes and script errors, not behavior; the skill-tree checks (save migration refund, locked draft cards, every node buyable, draft-card perk effects) instead push an error and exit 1 without printing the PASSED line. If you rename a method it calls, update it there. If you add a ship, upgrade or stage, add it to the smoke test.
 - **The smoke test overwrites the real save file.** It buys skill-tree nodes and finally calls `MetaSave.reset_save()`, all against `user://star_viper_save.json`, the same file normal play uses. Back that file up before running the test on a machine where someone has progress.
 - `build_releases.bat` (Windows only) copies the Godot editor binary next to an exported `.pck`. It has the original author's Godot install paths hardcoded. `export_presets.cfg` has `Windows` and `SteamDeck` (Linux) presets.
 
@@ -62,8 +62,10 @@ World layering is `world_root` → `pickup_layer`, `enemy_layer`, `player`, `bul
 
 **Two progression layers:**
 
-1. **Meta (between runs).** Skill-tree nodes live in `SkillTreeData.NODES`. Each node has an `id`, a `parent` (a node is revealed once its parent has level 1 or more), `max_level`, `base_cost` plus `cost_step`, a tree `pos`, and optionally `unlocks_ship`. `MetaSave.tree_levels[id]` stores the rank. Effects are applied only through `MetaSave.get_*()` getters, such as `get_starting_max_hp()` or `get_crit_chance()`. `PlayerShip.reset_for_new_run()` and `main._start_run()` read those getters. Some ship perks are hardcoded by ship id inside the getters, for example `selected_ship == "phantom"` adds +20% crit. Save loading only copies keys that exist in `NODES`, so adding or removing a node doesn't break old saves.
-2. **Run (in-run drafts).** `main.RUN_UPGRADE_POOL` defines draft cards (`id`, `cat` set to BEAM, ADDON or CORE, `max_rank`, `icon`). Choosing a card increments `main.run_ranks[id]` and calls `player.apply_run_upgrade(id)`. That function's `match` has **its own hardcoded rank caps**, which must stay in sync with `max_rank`. Once a non-vulcan ship drafts a beam, it is mounted as `aux_beam` while the signature weapon stays. On the vulcan ship (`viper`) the beam replaces `active_beam`. Either way, `_roll_draft_choices` then only offers that one beam.
+1. **Meta (between runs).** Skill-tree nodes live in `SkillTreeData.NODES`. Each node has an `id`, a `parent` (a node is revealed once its parent has level 1 or more), `max_level`, `base_cost` plus `cost_step`, a tree `pos`, `unlocks_ship` and `unlocks_upgrade`. `MetaSave.tree_levels[id]` stores the rank. **The tree deliberately gives no combat bonuses at run start** (Matthew's design call): nodes only add starting hull and shields, Lazarus revive, ships, economy perks (magnet, Scrap, XP, boss bounty, rerolls), and "DRAFT CARD" nodes whose `unlocks_upgrade` adds a `RUN_UPGRADE_POOL` id to the level-up drafts. Effects are applied only through `MetaSave.get_*()` getters, such as `get_starting_max_hp()`, read by `PlayerShip.reset_for_new_run()` and `main._start_run()`. Ship perks are hardcoded by ship id inside the getters, for example `selected_ship == "phantom"` adds +20% crit.
+   - **Saves:** `MetaSave.migrate_tree_levels()` runs on every load. It refunds Scrap for levels in nodes that no longer exist (priced from `LEGACY_NODE_COSTS`) and for levels above a node's current `max_level`, then drops unknown keys. If you remove or shrink a node, add its old price to `LEGACY_NODE_COSTS` so players get their Scrap back. `TREE_VERSION` is written to the save.
+2. **Run (in-run drafts).** `main.RUN_UPGRADE_POOL` defines draft cards (`id`, `cat`, `max_rank`, `icon`). The base cards (BEAM, ADDON, CORE) are always offered. The 18 DRAFT CARD entries (cat MOD, GUARD, TECH or LOOT, plus `short` and `badge` for the pause screen) are skipped by `_roll_draft_choices` until `MetaSave.is_run_upgrade_unlocked(id)`. Choosing a card increments `main.run_ranks[id]` and calls `player.apply_run_upgrade(id)`. That function's `match` has **its own hardcoded rank caps**, which must stay in sync with `max_rank`. Once a non-vulcan ship drafts a beam, it is mounted as `aux_beam` while the signature weapon stays. On the vulcan ship (`viper`) the beam replaces `active_beam`. Either way, `_roll_draft_choices` then only offers that one beam.
+   - DRAFT CARD effects live in `player.gd` (`_update_run_perks` for timed/aura effects, `_spawn_player_bullet` / `_spawn_mode_shot` for per-shot flags, `on_enemy_killed` and `on_stage_cleared` hooks called from `main`), `bullet.gd` (`_apply_hit_modifiers`, shrapnel fragments, mine lifetime, chrono slow) and `enemy.gd` (`apply_chill`, `apply_burn`). Anything that adds an `Area2D` from inside a collision callback goes through `call_deferred`.
 
 **Content touchpoints.** Adding content means editing several files:
 
@@ -76,8 +78,9 @@ World layering is `world_root` → `pickup_layer`, `enemy_layer`, `player`, `bul
 - **Draft upgrade:**
   - `RUN_UPGRADE_POOL`
   - `player.apply_run_upgrade`
-  - an icon texture
-  - the badge list in `main._collect_installed_modules`, which feeds the pause screen
+  - an icon texture (`upg_<id>`; DRAFT CARD art is built from the badge in `PixelArt._build_draft_card_icons`)
+  - for base cards, the badge list in `main._collect_installed_modules`, which feeds the pause screen (DRAFT CARD entries are listed automatically from `short`/`badge`)
+  - for a tree-unlocked card, a `NODES` entry with `unlocks_upgrade` set to the card id
 - **Stage:** the stage count is hardcoded as 8 in several places (`posmod(..., 8)` in `enemy.gd` and `starfield.gd`). A stage needs:
   - a `StageData.STAGES` entry
   - `GameEnemy.STAGE_BOSS_HP`

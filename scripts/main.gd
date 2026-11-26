@@ -174,6 +174,207 @@ const RUN_UPGRADE_POOL: Array[Dictionary] = [
 		"max_rank": 6,
 		"desc": "+1 Max HP, Heal 2 & +12% Damage",
 	},
+
+	# --- 18 DRAFT CARD upgrades: only offered once their Skill Tree node is bought ---
+	# (SkillTreeData node with matching "unlocks_upgrade"). "short"/"badge" feed the pause screen.
+	{
+		"id": "homing",
+		"cat": "MOD",
+		"title": "SEEKER ROUNDS",
+		"icon": "upg_homing",
+		"color": Color("#ff4c68"),
+		"max_rank": 2,
+		"desc": "Main gun shots curve into enemies",
+		"short": "Seeker",
+		"badge": "badge_seek",
+	},
+	{
+		"id": "shrapnel",
+		"cat": "MOD",
+		"title": "SHRAPNEL BURST",
+		"icon": "upg_shrapnel",
+		"color": Color("#ff9624"),
+		"max_rank": 2,
+		"desc": "Main gun hits burst into fragments",
+		"short": "Shrapnel",
+		"badge": "badge_shrapnel",
+	},
+	{
+		"id": "crit",
+		"cat": "MOD",
+		"title": "TACHYON OPTICS",
+		"icon": "upg_crit",
+		"color": Color("#ffe854"),
+		"max_rank": 3,
+		"desc": "+12% Crit chance & harder crits",
+		"short": "Tachyon",
+		"badge": "badge_crit",
+	},
+	{
+		"id": "berserk",
+		"cat": "MOD",
+		"title": "BERSERKER CORE",
+		"icon": "upg_berserk",
+		"color": Color("#f03c4e"),
+		"max_rank": 2,
+		"desc": "+Damage for each missing Hull point",
+		"short": "Berserker",
+		"badge": "badge_berserk",
+	},
+	{
+		"id": "execute",
+		"cat": "MOD",
+		"title": "EXECUTE PROTOCOL",
+		"icon": "upg_execute",
+		"color": Color("#dce8ff"),
+		"max_rank": 2,
+		"desc": "Hits finish off badly hurt foes",
+		"short": "Execute",
+		"badge": "badge_execute",
+	},
+	{
+		"id": "ambush",
+		"cat": "MOD",
+		"title": "AMBUSH TARGETING",
+		"icon": "upg_ambush",
+		"color": Color("#f03c4e"),
+		"max_rank": 2,
+		"desc": "+75% Damage vs unhurt enemies",
+		"short": "Ambush",
+		"badge": "badge_ambush",
+	},
+	{
+		"id": "cryo",
+		"cat": "MOD",
+		"title": "CRYO ROUNDS",
+		"icon": "upg_cryo",
+		"color": Color("#8cf4ff"),
+		"max_rank": 2,
+		"desc": "Hits chill foes, slowing moves & fire",
+		"short": "Cryo",
+		"badge": "badge_cryo",
+	},
+	{
+		"id": "napalm",
+		"cat": "MOD",
+		"title": "NAPALM ROUNDS",
+		"icon": "upg_napalm",
+		"color": Color("#ff6820"),
+		"max_rank": 2,
+		"desc": "Hits set foes on fire",
+		"short": "Napalm",
+		"badge": "badge_napalm",
+	},
+	{
+		"id": "leech",
+		"cat": "GUARD",
+		"title": "VAMPIRE SALVAGE",
+		"icon": "upg_leech",
+		"color": Color("#3ce878"),
+		"max_rank": 3,
+		"desc": "Repair 1 Hull every few dozen kills",
+		"short": "Vampire",
+		"badge": "badge_leech",
+	},
+	{
+		"id": "reflect",
+		"cat": "GUARD",
+		"title": "MIRROR SHIELD",
+		"icon": "upg_reflect",
+		"color": Color("#54f4ff"),
+		"max_rank": 2,
+		"desc": "+1 Shield. Breaking it fires shots back",
+		"short": "Mirror",
+		"badge": "badge_reflect",
+	},
+	{
+		"id": "last_stand",
+		"cat": "GUARD",
+		"title": "LAST STAND",
+		"icon": "upg_last_stand",
+		"color": Color("#ffe854"),
+		"max_rank": 1,
+		"desc": "At 1 Hull: nova, 3s invincible & shields",
+		"short": "Last Stand",
+		"badge": "badge_last_stand",
+	},
+	{
+		"id": "chrono",
+		"cat": "GUARD",
+		"title": "CHRONO FIELD",
+		"icon": "upg_chrono",
+		"color": Color("#28e8ff"),
+		"max_rank": 2,
+		"desc": "Enemy shots slow down near you",
+		"short": "Chrono",
+		"badge": "badge_chrono",
+	},
+	{
+		"id": "graze",
+		"cat": "GUARD",
+		"title": "GRAZE DYNAMO",
+		"icon": "upg_graze",
+		"color": Color("#ff9624"),
+		"max_rank": 2,
+		"desc": "Near-miss enemy shots give XP",
+		"short": "Graze",
+		"badge": "badge_graze",
+	},
+	{
+		"id": "aura",
+		"cat": "TECH",
+		"title": "ION STORM AURA",
+		"icon": "upg_aura",
+		"color": Color("#d44cff"),
+		"max_rank": 3,
+		"desc": "Crackling field zaps nearby foes",
+		"short": "Ion Aura",
+		"badge": "badge_aura",
+	},
+	{
+		"id": "chain",
+		"cat": "TECH",
+		"title": "CHAIN REACTION",
+		"icon": "upg_chain",
+		"color": Color("#ff9624"),
+		"max_rank": 3,
+		"desc": "Destroyed foes explode on neighbors",
+		"short": "Chain",
+		"badge": "badge_chain",
+	},
+	{
+		"id": "orbital",
+		"cat": "TECH",
+		"title": "ORBITAL STRIKE",
+		"icon": "upg_orbital",
+		"color": Color("#ffe854"),
+		"max_rank": 3,
+		"desc": "Sky laser smites the toughest foe",
+		"short": "Orbital",
+		"badge": "badge_orbital",
+	},
+	{
+		"id": "mines",
+		"cat": "TECH",
+		"title": "PROXIMITY MINES",
+		"icon": "upg_mines",
+		"color": Color("#ff4c68"),
+		"max_rank": 3,
+		"desc": "Drops mines that blast passing foes",
+		"short": "Mines",
+		"badge": "badge_mines",
+	},
+	{
+		"id": "salvage",
+		"cat": "LOOT",
+		"title": "SALVAGE CLAWS",
+		"icon": "upg_salvage",
+		"color": Color("#ffd84c"),
+		"max_rank": 2,
+		"desc": "+40% Scrap from kills this run",
+		"short": "Salvage",
+		"badge": "badge_salvage",
+	},
 ]
 
 var state: State = State.TITLE
@@ -303,18 +504,45 @@ func _ready() -> void:
 
 
 func _run_smoke_test() -> void:
+	var smoke_ok: bool = true
 	_enter_stats()
 	_enter_options()
 	if not _smoke_check_input_prompts():
 		get_tree().quit(1)
 		return
-	# Exercise Rogue Legacy 30-node Skill Tree + unlocking Ships including S.S. Meow-zer (Flying Cats)!
-	MetaSave.scrap = 2500
+	# Save migration: v1 nodes are refunded (damage_1 2 ranks = 75, starter_turret = 70,
+	# xp_scholar ranks 4-5 above the new cap of 3 = 246), owned ships are kept.
+	MetaSave._init_default_tree()
+	var refund: int = MetaSave.migrate_tree_levels({"damage_1": 2, "starter_turret": 1, "xp_scholar": 5, "ship_neko": 1, "bogus_node": 3})
+	if refund != 391 or MetaSave.get_level("xp_scholar") != 3 or not MetaSave.is_ship_unlocked("neko"):
+		push_error("SMOKE: tree migration refunded %d (expected 391)" % refund)
+		smoke_ok = false
+	MetaSave._init_default_tree()
+	# With nothing bought, no DRAFT CARD upgrade may be offered.
+	for roll_i: int in range(30):
+		_roll_draft_choices()
+		for choice: Dictionary in _draft_choices:
+			if choice.has("short"):
+				push_error("SMOKE: locked draft card offered: " + String(choice["id"]))
+				smoke_ok = false
+	# Buy every node of the Starforge Skill Tree (parents first), then walk the cursor around.
+	MetaSave.scrap = 999999
 	_enter_hangar("SMOKE TEST SUMMARY")
-	for node_id: String in ["thruster_1", "weird_science", "ship_neko", "ship_eyeball", "hull_1", "aegis_core", "phoenix_cell", "magnet_1", "xp_scholar", "draft_reroll"]:
-		_tree_selected_id = node_id
-		_on_buy_tree_node()
-	_move_tree_selection(Vector2.RIGHT)
+	for pass_i: int in range(12):
+		for def: Dictionary in SkillTreeData.NODES:
+			var node_id: String = String(def["id"])
+			_tree_selected_id = node_id
+			_refresh_skill_tree_ui()
+			while MetaSave.can_buy_node(node_id):
+				_on_buy_tree_node()
+	for def: Dictionary in SkillTreeData.NODES:
+		if MetaSave.get_level(String(def["id"])) < int(def["max_level"]):
+			push_error("SMOKE: could not max tree node " + String(def["id"]))
+			smoke_ok = false
+	_tree_selected_id = "core_root"
+	for dir: Vector2 in [Vector2.RIGHT, Vector2.RIGHT, Vector2.UP, Vector2.LEFT, Vector2.LEFT, Vector2.LEFT, Vector2.DOWN, Vector2.DOWN, Vector2.RIGHT]:
+		_move_tree_selection(dir)
+	_click_tree_at(_tree_canvas.size * 0.5)
 	_tree_canvas.queue_redraw()
 	InputPrompts.set_gamepad(not InputPrompts.is_gamepad)
 	# Exercise Fleet Ship Loadout Bay across all 7 ships!
@@ -348,6 +576,50 @@ func _run_smoke_test() -> void:
 	player._fire_gravity_bomb()
 	player._trigger_nova_pulse(false)
 	player._update_orbiting_blades(0.15)
+	# Exercise all 18 DRAFT CARD upgrades (unlocked by the tree above) at max rank.
+	var card_count: int = 0
+	for def: Dictionary in RUN_UPGRADE_POOL:
+		if not def.has("short"):
+			continue
+		card_count += 1
+		var card_id: String = String(def["id"])
+		if SkillTreeData.get_upgrade_unlock_node(card_id) == "" or not MetaSave.is_run_upgrade_unlocked(card_id):
+			push_error("SMOKE: draft card has no bought tree node: " + card_id)
+			smoke_ok = false
+		for r_i: int in range(int(def["max_rank"])):
+			run_ranks[card_id] = int(run_ranks.get(card_id, 0)) + 1
+			player.apply_run_upgrade(card_id)
+	if card_count != MetaSave.get_total_draft_card_nodes():
+		push_error("SMOKE: %d draft cards vs %d tree unlock nodes" % [card_count, MetaSave.get_total_draft_card_nodes()])
+		smoke_ok = false
+	_roll_draft_choices()
+	player._fire_primary()
+	var graze_shot: GameBullet = GameBullet.new()
+	bullet_layer.add_child(graze_shot)
+	graze_shot.setup(player.global_position + Vector2(10.0, 0.0), Vector2(-60.0, 0.0), 1.0, false, "bullet_enemy_pink", 0, false, 2.5, fx_layer)
+	var xp_before: int = run_xp + player_level * 1000
+	player._update_run_perks(1.0, true)
+	graze_shot._process(0.05)
+	if not graze_shot.grazed or graze_shot.slow_timer <= 0.0 or run_xp + player_level * 1000 <= xp_before:
+		push_error("SMOKE: graze / chrono field did not affect a nearby enemy shot")
+		smoke_ok = false
+	player._reflect_burst()
+	for b_node: Node in bullet_layer.get_children():
+		if b_node is GameBullet and (b_node as GameBullet).life_left > 0.0:
+			(b_node as GameBullet)._process(8.0)
+	for k_i: int in range(30):
+		player.on_enemy_killed(Vector2(300.0, 120.0), false)
+	player.hp = 2
+	player.invuln_timer = 0.0
+	player.shield_charges = 0
+	player.take_player_hit()
+	if player.hp != 1 or player.invuln_timer < 2.5:
+		push_error("SMOKE: Last Stand did not trigger")
+		smoke_ok = false
+	player.on_stage_cleared()
+	if _collect_installed_modules().size() < 20:
+		push_error("SMOKE: pause screen lists too few modules")
+		smoke_ok = false
 	_gain_xp(55)
 	hud_bar.queue_redraw()
 	for st_i: int in range(8):
@@ -366,6 +638,29 @@ func _run_smoke_test() -> void:
 	for e: Node in enemy_layer.get_children():
 		e.call("_process", 0.05)
 		e.call("take_damage", 1.5)
+	# DRAFT CARD on-hit effects: ambush, cryo, napalm, execute and shrapnel on a live enemy,
+	# plus the enemy-targeting perks (ion aura, orbital strike, chain blast).
+	for e: Node in enemy_layer.get_children():
+		if e is GameEnemy and (e as GameEnemy).enemy_type == GameEnemy.Type.CRUISER and not (e as GameEnemy)._dead:
+			var probe_target: GameEnemy = e as GameEnemy
+			probe_target.hp = probe_target.max_hp
+			var probe: GameBullet = player._spawn_player_bullet(probe_target.global_position, Vector2(300.0, 0.0), 1.0, "bullet_vulcan", 0, false, 3.0)
+			probe.split_count = 3
+			probe._on_area_entered(probe_target)
+			if probe_target._chill_timer <= 0.0 or probe_target._burn_timer <= 0.0:
+				push_error("SMOKE: cryo / napalm status not applied")
+				smoke_ok = false
+			probe_target._process(0.3)
+			probe_target.hp = probe_target.max_hp * 0.2
+			var probe_2: GameBullet = player._spawn_player_bullet(probe_target.global_position, Vector2(300.0, 0.0), 1.0, "bullet_vulcan", 0, false, 3.0)
+			probe_2._on_area_entered(probe_target)
+			if not probe_target._dead:
+				push_error("SMOKE: execute protocol did not finish a weakened enemy")
+				smoke_ok = false
+			break
+	player._pulse_ion_aura()
+	player._fire_orbital_strike()
+	player._chain_blast(Vector2(360.0, 130.0))
 	for e: Node in enemy_layer.get_children():
 		if e is GameEnemy and (e as GameEnemy).enemy_type == GameEnemy.Type.BOSS:
 			var boss_test: GameEnemy = e as GameEnemy
@@ -390,6 +685,10 @@ func _run_smoke_test() -> void:
 	player.invuln_timer = 0.0
 	player.take_player_hit()
 	MetaSave.reset_save()
+	if not smoke_ok:
+		push_error("STAR_VIPER_SMOKE_TEST_FAILED")
+		get_tree().quit(1)
+		return
 	print("STAR_VIPER_SMOKE_TEST_PASSED")
 	get_tree().quit(0)
 
@@ -468,6 +767,7 @@ func _build_world() -> void:
 	player.fx = fx_layer
 	player.hp_changed.connect(_on_player_hp_changed)
 	player.player_died.connect(_on_player_died)
+	player.grazed.connect(_on_player_grazed)
 	player.touch_state_changed.connect(_sync_touch_hud_visibility)
 
 
@@ -870,15 +1170,17 @@ func _build_skill_tree_ui() -> void:
 	hangar_panel.add_child(bot_box)
 
 	_tree_node_title_lbl = Label.new()
-	_tree_node_title_lbl.position = Vector2(14.0, 208.0)
+	_tree_node_title_lbl.position = Vector2(14.0, 206.0)
 	_tree_node_title_lbl.size = Vector2(310.0, 14.0)
 	_tree_node_title_lbl.add_theme_font_size_override("font_size", FONT_SZ)
 	_tree_node_title_lbl.add_theme_color_override("font_color", Color("#ffe854"))
 	hangar_panel.add_child(_tree_node_title_lbl)
 
 	_tree_node_desc_lbl = Label.new()
-	_tree_node_desc_lbl.position = Vector2(14.0, 222.0)
-	_tree_node_desc_lbl.size = Vector2(312.0, 16.0)
+	_tree_node_desc_lbl.position = Vector2(14.0, 217.0)
+	_tree_node_desc_lbl.size = Vector2(314.0, 22.0)
+	_tree_node_desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_tree_node_desc_lbl.add_theme_constant_override("line_spacing", 0)
 	_tree_node_desc_lbl.add_theme_font_size_override("font_size", FONT_SZ)
 	_tree_node_desc_lbl.add_theme_color_override("font_color", Color.WHITE)
 	hangar_panel.add_child(_tree_node_desc_lbl)
@@ -947,8 +1249,8 @@ func _draw_skill_tree_canvas() -> void:
 		gy += grid_step
 
 	# 2) Directional Wing Labels
-	_tree_canvas.draw_string(font, origin + Vector2(-46.0, -34.0), "NORTH: HULL & BIO", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(0.94, 0.35, 0.45, 0.55))
-	_tree_canvas.draw_string(font, origin + Vector2(30.0, -16.0), "EAST: WEAPONS", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.65, 0.25, 0.55))
+	_tree_canvas.draw_string(font, origin + Vector2(-46.0, -34.0), "NORTH: HULL & SHIELDS", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(0.94, 0.35, 0.45, 0.55))
+	_tree_canvas.draw_string(font, origin + Vector2(30.0, -16.0), "EAST: WEAPON MODS", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.65, 0.25, 0.55))
 	_tree_canvas.draw_string(font, origin + Vector2(-46.0, 44.0), "SOUTH: SCRAP & XP", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.91, 0.33, 0.55))
 	_tree_canvas.draw_string(font, origin + Vector2(-132.0, -16.0), "WEST: WEIRD LAB", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.38, 0.78, 0.55))
 
@@ -1010,13 +1312,16 @@ func _draw_skill_tree_canvas() -> void:
 
 		_tree_canvas.draw_rect(box_r, bg_col)
 		_tree_canvas.draw_rect(box_r, border_col, false, 2.0 if (lvl > 0 or affordable or is_ship_node) else 1.0)
+		if String(def.get("unlocks_upgrade", "")) != "":
+			_draw_tree_card_tag(Vector2(box_r.end.x - 3.0, box_r.position.y - 3.0), lvl > 0)
 
 		if revealed or lvl > 0:
 			var icon_tex: Texture2D = PixelArt.tex(String(def["icon"]))
 			if icon_tex != null:
 				_tree_canvas.draw_texture(icon_tex, (np - Vector2(5.0, 5.0)).round())
 			if id != "core_root":
-				var r_str: String = "★" if lvl >= max_lvl else "%d/%d" % [lvl, max_lvl]
+				# (The FF6 bitmap font has no star glyph, so maxed nodes say MAX.)
+				var r_str: String = "MAX" if lvl >= max_lvl else "%d/%d" % [lvl, max_lvl]
 				var r_col: Color = Color("#ffe854") if lvl >= max_lvl else (Color.WHITE if lvl > 0 else Color("#8ca8dc"))
 				_tree_canvas.draw_string(font, Vector2(np.x - 9.0, np.y + half + 9.0), r_str, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, r_col)
 		else:
@@ -1025,6 +1330,21 @@ func _draw_skill_tree_canvas() -> void:
 		if id == _tree_selected_id:
 			var sel_r: Rect2 = box_r.grow(3.0)
 			_tree_canvas.draw_rect(sel_r, Color.WHITE, false, 2.0)
+
+	# 5) Legend for DRAFT CARD nodes (fixed in the canvas corner, on a backing so nodes behind don't clash)
+	var legend: String = "= NEW DRAFT CARD"
+	var legend_w: float = font.get_string_size(legend, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x
+	_tree_canvas.draw_rect(Rect2(2.0, c_size.y - 15.0, legend_w + 17.0, 13.0), Color(0.02, 0.04, 0.14, 0.88))
+	_draw_tree_card_tag(Vector2(5.0, c_size.y - 13.0), true)
+	_tree_canvas.draw_string(font, Vector2(14.0, c_size.y - 5.0), legend, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(0.75, 0.82, 1.0, 0.85))
+
+
+# Small playing-card glyph marking skill tree nodes that add a draft upgrade.
+func _draw_tree_card_tag(top_left: Vector2, owned: bool) -> void:
+	var r: Rect2 = Rect2(top_left.round(), Vector2(6.0, 8.0))
+	_tree_canvas.draw_rect(r, Color("#ffe854") if owned else Color("#2c3a60"))
+	_tree_canvas.draw_rect(r, Color.WHITE if owned else Color("#8ca8dc"), false, 1.0)
+	_tree_canvas.draw_rect(Rect2(r.position + Vector2(2.0, 3.0), Vector2(2.0, 2.0)), Color("#d44cff") if owned else Color("#6c88c4"))
 
 
 func _on_tree_canvas_gui_input(event: InputEvent) -> void:
@@ -1125,11 +1445,12 @@ func _refresh_skill_tree_ui() -> void:
 			_tree_buy_btn.disabled = not MetaSave.can_buy_node(id)
 			InputPrompts.bind_button(_tree_buy_btn, "buy")
 	else:
+		# Not reachable yet: still say what the node gives, so players can plan a route to it.
 		var p_def: Dictionary = SkillTreeData.get_node_def(String(def["parent"]))
 		var p_name: String = String(p_def.get("name", "PARENT NODE"))
-		_tree_node_title_lbl.text = "??? MYSTERY TECH NODE ???"
+		_tree_node_title_lbl.text = "%s (NEEDS %s)" % [String(def["name"]), p_name]
 		_tree_node_title_lbl.add_theme_color_override("font_color", Color("#7c96c8"))
-		_tree_node_desc_lbl.text = "Unlock [%s] first to reveal this branch!" % p_name
+		_tree_node_desc_lbl.text = String(def["desc"])
 		_tree_buy_btn.text = "LOCKED"
 		_tree_buy_btn.disabled = true
 		InputPrompts.bind_button(_tree_buy_btn, "")
@@ -1389,7 +1710,7 @@ func _refresh_loadout_ui() -> void:
 		_loadout_info_title.add_theme_color_override("font_color", cur["color"])
 		_loadout_info_weapon.text = "BLASTER: %s" % String(cur["weapon_name"])
 		_loadout_info_desc.text = String(cur["weapon_desc"])
-		_loadout_info_perks.text = "SHIP PERK: %s\nTREE STARTERS: %s" % [String(cur["perk_desc"]), _format_active_starters()]
+		_loadout_info_perks.text = "SHIP PERK: %s\nSKILL TREE: %s" % [String(cur["perk_desc"]), _format_active_starters()]
 		_loadout_action_btn.text = "LAUNCH RUN" if cur_equipped else "EQUIP SHIP"
 	else:
 		_loadout_info_title.text = "LOCKED CLASSIFIED HULL"
@@ -1402,27 +1723,17 @@ func _refresh_loadout_ui() -> void:
 
 func _format_active_starters() -> String:
 	var tags: Array[String] = []
+	var bonus_hull: int = MetaSave.get_level("hull_1") + MetaSave.get_level("hull_2")
+	if bonus_hull > 0:
+		tags.append("+%d Hull" % bonus_hull)
 	if MetaSave.get_starting_shields() > 0:
 		tags.append("Shield x%d" % MetaSave.get_starting_shields())
-	if MetaSave.get_level("starter_option") > 0:
-		tags.append("Option Orb")
-	if MetaSave.get_level("starter_turret") > 0:
-		tags.append("Auto-Turret")
-	if MetaSave.get_level("starter_missile") > 0:
-		tags.append("Homing Pods")
-	if MetaSave.get_level("starter_blades") > 0:
-		tags.append("Sawblades")
-	if MetaSave.get_level("starter_nova") > 0:
-		tags.append("Nova Coil")
-	if MetaSave.get_level("starter_bomb") > 0:
-		tags.append("Grav-Bombs")
 	if MetaSave.has_lazarus_revive():
 		tags.append("Lazarus Revive")
 	if MetaSave.get_starting_rerolls() > 0:
 		tags.append("%d Rerolls" % MetaSave.get_starting_rerolls())
-	if MetaSave.has_veteran_drop():
-		tags.append("Free Lv1 Drop")
-	return "None yet" if tags.is_empty() else ", ".join(tags)
+	tags.append("%d/%d Draft Cards" % [MetaSave.get_unlocked_draft_card_count(), MetaSave.get_total_draft_card_nodes()])
+	return ", ".join(tags)
 
 
 func _build_pause_ui() -> void:
@@ -1534,6 +1845,14 @@ func _collect_installed_modules() -> Array[Dictionary]:
 		modules.append({"icon": "badge_thruster", "name": "Afterburner", "val": "Lv%d" % player.thruster_level, "col": Color("#3ce878")})
 	if int(run_ranks.get("repair", 0)) > 0:
 		modules.append({"icon": "badge_bio", "name": "Hull Overclock", "val": "Lv%d" % int(run_ranks.get("repair", 0)), "col": Color("#66ff99")})
+	# DRAFT CARD upgrades (Skill Tree unlocks) carry their own pause-screen name & badge.
+	for def: Dictionary in RUN_UPGRADE_POOL:
+		if not def.has("short"):
+			continue
+		var c_rank: int = int(run_ranks.get(String(def["id"]), 0))
+		if c_rank > 0:
+			var c_val: String = "Lv%d" % c_rank if int(def["max_rank"]) > 1 else ""
+			modules.append({"icon": String(def["badge"]), "name": String(def["short"]), "val": c_val, "col": def["color"]})
 	return modules
 
 
@@ -1597,24 +1916,41 @@ func _draw_pause_stats_and_upgrades() -> void:
 		Color("#54f4ff")
 	)
 
+	# Up to 14 modules: roomy 2-column cards. With draft-card perks a run can hold many more,
+	# so switch to compact 12px rows (2 columns up to 22, then 3 columns up to 33).
 	var mods: Array[Dictionary] = _collect_installed_modules()
-	for m_i: int in range(mini(14, mods.size())):
+	var cols: int = 2
+	var row_step: float = 19.0
+	var ch: float = 16.0
+	if mods.size() > 14:
+		row_step = 12.0
+		ch = 11.0
+		if mods.size() > 22:
+			cols = 3
+	var cw: float = 145.0 if cols == 2 else 96.0
+	var col_step: float = 149.0 if cols == 2 else 99.0
+	var max_mods: int = cols * (7 if row_step > 12.0 else 11)
+	for m_i: int in range(mini(max_mods, mods.size())):
 		var mod: Dictionary = mods[m_i]
-		var col_idx: int = m_i % 2
-		var row_idx: int = m_i / 2
-		var cx: float = 164.0 + float(col_idx) * 149.0
-		var cy: float = 118.0 + float(row_idx) * 19.0
-		var cw: float = 145.0
-		var ch: float = 16.0
+		var col_idx: int = m_i % cols
+		var row_idx: int = m_i / cols
+		var cx: float = 164.0 + float(col_idx) * col_step
+		var cy: float = 118.0 + float(row_idx) * row_step
 		var accent: Color = mod["col"]
 
 		_pause_info_canvas.draw_rect(Rect2(cx, cy, cw, ch), Color("#101c4a"))
 		_pause_info_canvas.draw_rect(Rect2(cx, cy + ch - 1.0, cw, 1.0), accent)
 		var icon_tex: Texture2D = PixelArt.tex(String(mod["icon"]))
+		var pad_y: float = 3.0 if ch > 11.0 else 1.0
 		if icon_tex != null:
-			_pause_info_canvas.draw_texture(icon_tex, Vector2(cx + 3.0, cy + 3.0))
+			_pause_info_canvas.draw_texture(icon_tex, Vector2(cx + 3.0, cy + pad_y))
 		var m_lbl: String = ("%s %s" % [String(mod["name"]), String(mod["val"])]).strip_edges()
-		_pause_info_canvas.draw_string(font, Vector2(cx + 17.0, cy + 12.0), m_lbl, HORIZONTAL_ALIGNMENT_LEFT, 124, FONT_SZ, Color.WHITE)
+		var max_w: float = cw - 19.0
+		if font.get_string_size(m_lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x > max_w:
+			m_lbl = String(mod["name"]) # Narrow column: drop the level before cutting the name.
+		while m_lbl.length() > 3 and font.get_string_size(m_lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x > max_w:
+			m_lbl = m_lbl.substr(0, m_lbl.length() - 1)
+		_pause_info_canvas.draw_string(font, Vector2(cx + 17.0, cy + pad_y + 9.0), m_lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color.WHITE)
 
 
 func _open_hangar_from_title() -> void:
@@ -1913,7 +2249,10 @@ func _enter_hangar(summary_msg: String) -> void:
 	_clear_entities()
 	GenesisMusic.play_title()
 
-	if summary_msg == "":
+	if MetaSave.migration_refund_notice > 0:
+		_tree_summary_lbl.text = "TREE REWORK REFUND +%d" % MetaSave.migration_refund_notice
+		MetaSave.migration_refund_notice = 0
+	elif summary_msg == "":
 		_tree_summary_lbl.text = "NODES: %d / %d" % [MetaSave.get_unlocked_node_count(), SkillTreeData.NODES.size()]
 	else:
 		_tree_summary_lbl.text = summary_msg
@@ -1948,7 +2287,7 @@ func _start_run() -> void:
 	run_xp = 0
 	xp_to_next = _calc_xp_for_level(1)
 	rerolls_left = MetaSave.get_starting_rerolls()
-	_pending_level_ups = 1 if MetaSave.has_veteran_drop() else 0
+	_pending_level_ups = 0
 	_pending_hyperspace = false
 	run_ranks.clear()
 	_squad_counts.clear()
@@ -1957,7 +2296,7 @@ func _start_run() -> void:
 	player.controls_enabled = false
 	player.global_position = Vector2(-44.0, 134.0)
 
-	# Sync run_ranks with Skill Tree starter addons & shields!
+	# Sync run_ranks with ship-hull addons & tree starting shields (so draft rank caps stay right).
 	var starters: Dictionary = MetaSave.get_starter_addons()
 	for k: String in starters.keys():
 		var v: int = int(starters[k])
@@ -2132,6 +2471,7 @@ func _begin_hyperspace_jump() -> void:
 	starfield.hyperspace_progress = 0.0
 	starfield.speed_scale = 2.0
 
+	player.on_stage_cleared()
 	var stage_heal: int = MetaSave.get_stage_heal_amount()
 	if stage_heal > 0 and player.hp < player.max_hp:
 		player.heal(stage_heal)
@@ -2505,8 +2845,9 @@ func _on_enemy_destroyed(enemy: GameEnemy, killed_by_player: bool) -> void:
 
 	# Automatic Scrap banking on kill!
 	var bounty_mult: float = MetaSave.get_boss_bounty_mult() if is_boss_kill else 1.0
-	var auto_scrap: int = maxi(1, int(round(float(enemy.scrap_drop) * MetaSave.get_scrap_mult() * bounty_mult)))
+	var auto_scrap: int = maxi(1, int(round(float(enemy.scrap_drop) * MetaSave.get_scrap_mult() * player.get_run_scrap_mult() * bounty_mult)))
 	run_scrap += auto_scrap
+	player.on_enemy_killed(e_pos, is_boss_kill)
 
 	var drop_xp: int = int(round(float(enemy.xp_drop) * bounty_mult))
 	_spawn_xp_burst(e_pos, drop_xp)
@@ -2519,7 +2860,7 @@ func _on_enemy_destroyed(enemy: GameEnemy, killed_by_player: bool) -> void:
 		if left <= 0:
 			_squad_counts.erase(sq)
 			score += 500
-			var sq_scrap: int = maxi(1, int(round(4.0 * MetaSave.get_scrap_mult())))
+			var sq_scrap: int = maxi(1, int(round(4.0 * MetaSave.get_scrap_mult() * player.get_run_scrap_mult())))
 			run_scrap += sq_scrap
 			fx_layer.spawn_popup(e_pos + Vector2(-26.0, -10.0), "SQUAD +XP!", Color("#28e8ff"))
 			RetroSfx.play("powerup", -8.0, 0.03)
@@ -2564,6 +2905,8 @@ func _roll_draft_choices() -> void:
 		var cat: String = String(def["cat"])
 		var cur_rank: int = int(run_ranks.get(id, 0))
 		if cur_rank >= int(def["max_rank"]):
+			continue
+		if not MetaSave.is_run_upgrade_unlocked(id):
 			continue
 		if cat == "BEAM" and committed_beam != "" and id != committed_beam:
 			continue
@@ -2720,6 +3063,11 @@ func _pick_draft_card(index: int) -> void:
 
 func _on_player_hp_changed(_hp: int, _max_hp: int, _sh: int, _max_sh: int) -> void:
 	hud_bar.queue_redraw()
+
+
+func _on_player_grazed(xp: int) -> void:
+	score += 25 * xp
+	_gain_xp(xp)
 
 
 func _on_player_died() -> void:
