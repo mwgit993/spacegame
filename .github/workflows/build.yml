@@ -1,0 +1,81 @@
+name: Build & Publish Star Viper (.exe)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Smoke Test & Package StarViper.exe
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Godot 4.7.2 (Windows x64)
+        shell: pwsh
+        run: |
+          $url = "https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_win64.exe.zip"
+          Invoke-WebRequest -Uri $url -OutFile "godot.zip"
+          Expand-Archive -Path "godot.zip" -DestinationPath "godot_bin" -Force
+          Get-ChildItem "godot_bin"
+
+      - name: Import project & run automated headless smoke test
+        shell: pwsh
+        run: |
+          $godotConsole = "$PWD\godot_bin\Godot_v4.7.2-stable_win64_console.exe"
+          & $godotConsole --headless --path . --import
+          $out = & $godotConsole --headless --path . --quit-after 30 -- --smoke-test 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch "STAR_VIPER_SMOKE_TEST_PASSED") {
+            Write-Error "Smoke test did not pass!"
+            exit 1
+          }
+
+      - name: Package standalone StarViper-Windows.zip
+        shell: pwsh
+        run: |
+          $godotGui     = "$PWD\godot_bin\Godot_v4.7.2-stable_win64.exe"
+          $godotConsole = "$PWD\godot_bin\Godot_v4.7.2-stable_win64_console.exe"
+          New-Item -ItemType Directory -Force -Path "builds\windows" | Out-Null
+          & $godotConsole --headless --path . --export-pack "Windows" "builds/windows/StarViper.pck"
+          if (-not (Test-Path "builds\windows\StarViper.pck")) {
+            Write-Error "Failed to export StarViper.pck!"
+            exit 1
+          }
+          Copy-Item -Force $godotGui "builds\windows\StarViper.exe"
+          Compress-Archive -Path "builds\windows\*" -DestinationPath "StarViper-Windows.zip" -Force
+          Get-Item "StarViper-Windows.zip" | Select-Object Name, Length
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarViper-Windows
+          path: StarViper-Windows.zip
+
+      - name: Publish / Update Latest Release on GitHub
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $shortSha = ("${{ github.sha }}").Substring(0, 7)
+          $stamp    = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'")
+          $notes    = "Automated build from commit ``$shortSha`` ($stamp).`n`n### How to Play`n1. Download **StarViper-Windows.zip** below.`n2. Extract the folder anywhere (keep ``StarViper.exe`` and ``StarViper.pck`` together in the same folder!).`n3. Double-click **StarViper.exe**!"
+          $exists = $true
+          gh release view latest 2>$null | Out-Null
+          if ($LASTEXITCODE -ne 0) { $exists = $false }
+          if (-not $exists) {
+            gh release create latest "StarViper-Windows.zip" --title "Star Viper — Latest Playable Build" --notes $notes
+          } else {
+            gh release upload latest "StarViper-Windows.zip" --clobber
+            gh release edit latest --title "Star Viper — Latest Playable Build ($shortSha)" --notes $notes
+          }
