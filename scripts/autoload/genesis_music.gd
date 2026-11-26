@@ -1,27 +1,46 @@
 extends Node
 
 # Multi-Ensemble 44.1 kHz Stereo Soundtrack Engine.
-# Every single stage (1..8) uses a COMPLETELY DIFFERENT set of musical instruments,
-# drum kits, bass timbres, chord textures, and rhythmic grooves so each world feels unmistakable:
-#   Stage 1 (Outer Orbit):   80s Midnight Synthwave (Rolling Dual-Saw Bass, Juno Chorus Pad, Brass Lead, Gated Snare)
-#   Stage 2 (Starcruiser):   Industrial Cyber-Funk (Percussive FM Slap-Bass, Clavinet Stabs, Sync Lead, Dry Breakbeat)
-#   Stage 3 (Cloud Base):    High-Altitude Sky-Fusion (Bouncy Fretless Triangle Bass, Pipe-Organ Air Pad, Flute Trill Lead)
-#   Stage 4 (Xeno Forest):   Bioluminescent Tribal (Deep Log-Drum Sub, Woody Marimba/Kalimba Plucks, Pan-Flute, Congas & Shakers)
-#   Stage 5 (Cryo Glacier):  Frozen Music-Box & Choir (Sustained Sub-Pedal, FM Ice-Bell Celesta, Glass Choir Pad, Shimmer Chimes)
-#   Stage 6 (Magma Core):    Volcanic Heavy Metal/Industrial (Growling Acid Bass, Low Brass, Overdriven Guitar, War Taiko Toms)
-#   Stage 7 (Abyssal Trench):Underwater Aquatic Dub (Deep Liquid Sub, Tremolo Rhodes E-Piano, Sonar Harp Echo, Muted Rim-Click)
-#   Stage 8 (Cyber Nexus):   142 BPM Euphoric Trance (Off-Beat Pumping Octave Bass, Gated Hypersaws, 303 Arp, Club 909 Kit)
-# Plus 1 Universal "Neon Medusa" Dark Synthwave Boss Theme for all Bosses!
-# All notes & harmonies are 100% locked to pure diatonic scale degrees (zero sour accidentals).
+# Each stage is scored for its environment. Besides its own instruments, every stage has
+# its own tempo, groove (meter + swing), mode, chord voicing, lead register and acoustic
+# space (echo time, echo feedback, master filter):
+#   Stage 1 (Outer Orbit):     118 BPM  A Aeolian   straight 4/4   80s synthwave: dual-saw bass, Juno pad, gated snare
+#   Stage 2 (Starcruiser):     124 BPM  D Dorian    swung funk     FM slap bass, clavinet stabs, m7 chords, dry slapback room
+#   Stage 3 (Cloud Base):      116 BPM  F Lydian    3/4 waltz      harp arpeggios, airy organ maj7 chords, long soaring flute
+#   Stage 4 (Xeno Forest):     100 BPM  G Dorian    heavy shuffle  marimba, congas & shakers, pentatonic pan-flute call & response
+#   Stage 5 (Cryo Glacier):     80 BPM  E Aeolian   half-time      open quartal choir, high music box, swelling glass lead, long icy echo
+#   Stage 6 (Magma Core):      152 BPM  C Phrygian  driving 16ths  acid chug bass on the b2, power chords, double kick, war toms
+#   Stage 7 (Abyssal Trench):   76 BPM  B Aeolian   swung dub      Rhodes, sonar pings, deep dub echo, muffled underwater filter
+#   Stage 8 (Cyber Nexus):     142 BPM  F# Aeolian  four-on-floor  trance: pumping bass, gated hypersaws, bit-crushed digital lead
+# Plus 1 universal "Neon Medusa" dark synthwave boss theme.
+# All notes come from 7-note diatonic modes, so there are no accidentals.
 
 enum Mode { NONE, TITLE, STAGE, BOSS, HYPERSPACE }
 
 const MIX_RATE: float = 44100.0
-const DELAY_MAX: int = 34000
+const DELAY_MAX: int = 66200 # 1.5 s, room for the glacier's long echo
 
 const SCALE_MINOR: Array[int] = [0, 2, 3, 5, 7, 8, 10]
 const SCALE_DORIAN: Array[int] = [0, 2, 3, 5, 7, 9, 10]
 const SCALE_MAJOR: Array[int] = [0, 2, 4, 5, 7, 9, 11]
+const SCALE_LYDIAN: Array[int] = [0, 2, 4, 6, 7, 9, 11]
+const SCALE_PHRYGIAN: Array[int] = [0, 1, 3, 5, 7, 8, 10]
+
+# Per-song arrangement settings. A song dictionary may override any of these;
+# the title and hyperspace jingles always use the defaults.
+const SONG_DEFAULTS: Dictionary = {
+	"bar_steps": 16,          # 16ths per bar: 16 = 4/4, 12 = 3/4
+	"swing": 0.0,             # 0 = straight; 0.2 = heavy shuffle (even 16ths 20% longer, odd 20% shorter)
+	"voicing": [0, 4, 7, 9],  # pad chord tones, as scale-degree offsets from the chord root
+	"lead_oct": 24,           # lead register, in semitones above the song root
+	"lead_attack": 165.0,     # lead envelope attack rate (higher = sharper)
+	"lead_decay": 1.65,       # lead envelope decay rate (lower = longer notes)
+	"harm_int": -2,           # harmony line, in scale degrees relative to the lead
+	"delay_beats": 0.75,      # echo time in beats
+	"delay_fb": 0.34,         # echo feedback
+	"master_lp": 1.0,         # one-pole low-pass coefficient on the whole mix; 1.0 = bypass
+	"crush": 1,               # lead sample-and-hold length in samples (bit-crush); 1 = off
+}
 
 var current_mode: Mode = Mode.NONE
 var current_stage_idx: int = 0
@@ -33,6 +52,25 @@ var _playback: AudioStreamGeneratorPlayback
 
 var _sample_in_step: float = 0.0
 var _step: int = 0
+
+# Current song and its arrangement settings, cached by _load_song_params() so the
+# per-sample code never does dictionary lookups.
+var _song: Dictionary = {}
+var _style: int = 0
+var _bar_steps: int = 16
+var _swing: float = 0.0
+var _voicing: Array = [0, 4, 7, 9]
+var _lead_oct: int = 24
+var _lead_attack: float = 165.0
+var _lead_decay: float = 1.65
+var _harm_int: int = -2
+var _delay_fb: float = 0.34
+var _master_lp: float = 1.0
+var _master_lp_l: float = 0.0
+var _master_lp_r: float = 0.0
+var _crush: int = 1
+var _crush_count: int = 0
+var _crush_hold: float = 0.0
 
 # Bass state
 var _bass_p1: float = 0.0
@@ -130,9 +168,10 @@ const STAGE_SONGS: Array[Dictionary] = [
 			6,-99,5,4,   6,-99,7,-99,  7,-99,-99,-99,-99,-99,-99,-99,
 		],
 	},
-	# 1: STARCRUISER - Syncopated Slap-FM Funk & Industrial Clavinet Stabs (128 BPM, D Dorian)
+	# 1: STARCRUISER - Swung Slap-FM Funk & Clavinet Stabs in a dry metal hull (124 BPM, D Dorian)
 	{
-		"style": 1, "root": 38, "bpm": 128.0, "scale": SCALE_DORIAN, "delay_wet": 0.18,
+		"style": 1, "root": 38, "bpm": 124.0, "scale": SCALE_DORIAN, "delay_wet": 0.16,
+		"swing": 0.10, "voicing": [0, 2, 4, 6], "delay_beats": 0.25, "delay_fb": 0.22,
 		"prog_a": [0, 0, 3, 2,  0, 0, -1, 3],
 		"prog_b": [2, 3, 0, -1, 2, 3, 4, 4],
 		"mel_a": [
@@ -148,45 +187,50 @@ const STAGE_SONGS: Array[Dictionary] = [
 			5,6,7,9,     8,-99,7,5,    7,-99,-99,-99,-99,-99,-99,-99,
 		],
 	},
-	# 2: CLOUD BASE - Breezy Skyward Flute-Bell & Walking Fretless Bass (126 BPM, F Major)
+	# 2: CLOUD BASE - Floating 3/4 Sky Waltz: Harp Arpeggios, Organ maj7 Chords & Soaring Flute (116 BPM, F Lydian)
+	# Bars are 12 sixteenths (3 beats), so the melodies are 48 steps (4 bars) long.
 	{
-		"style": 2, "root": 41, "bpm": 126.0, "scale": SCALE_MAJOR, "delay_wet": 0.30,
-		"prog_a": [0, 4, 5, 3,  0, 4, 3, 4],
-		"prog_b": [3, 4, 5, 2,  3, 4, 0, 4],
+		"style": 2, "root": 41, "bpm": 116.0, "scale": SCALE_LYDIAN, "delay_wet": 0.34,
+		"bar_steps": 12, "voicing": [0, 2, 4, 6], "lead_decay": 0.9, "delay_beats": 1.0, "delay_fb": 0.38,
+		"prog_a": [0, 1, 0, 1,  5, 4, 1, 1],
+		"prog_b": [5, 4, 1, 0,  6, 5, 1, 4],
 		"mel_a": [
-			4,-99,5,4,   2,-99,0,-99,  4,-99,6,-99, 7,-99,-99,-99,
-			5,-99,4,2,   3,-99,4,5,    4,-99,2,-99, 1,-99,-99,-99,
-			4,-99,6,7,   9,-99,7,4,    5,-99,6,7,   4,-99,2,-99,
-			3,-99,4,5,   6,-99,7,8,    7,-99,-99,-99,-99,-99,-99,-99,
+			4,-99,-99,-99, -99,-99,-99,-99, 5,-99,6,-99,
+			7,-99,-99,-99, -99,-99,6,-99,   4,-99,-99,-99,
+			5,-99,-99,-99, 3,-99,2,-99,     1,-99,-99,-99,
+			2,-99,-99,-99, -99,-99,-99,-99, -99,-99,-99,-99,
 		],
 		"mel_b": [
-			9,-99,-99,7, 6,-99,4,-99,  7,-99,-99,6, 4,-99,2,-99,
-			3,-99,5,7,   9,-99,7,6,    7,-99,-99,-99,8,-99,9,-99,
-			11,-99,9,7,  9,-99,7,4,    5,-99,7,9,   7,-99,4,-99,
-			5,-99,7,9,   8,-99,7,6,    7,-99,-99,-99,-99,-99,-99,-99,
+			9,-99,-99,-99, 10,-99,9,-99,    7,-99,-99,-99,
+			6,-99,-99,-99, 7,-99,8,-99,     9,-99,-99,-99,
+			11,-99,-99,-99, 10,-99,9,-99,   7,-99,6,-99,
+			7,-99,-99,-99, -99,-99,-99,-99, -99,-99,-99,-99,
 		],
 	},
-	# 3: XENO FOREST - Tribal Marimba, Pan-Flute & Conga Hand-Drums (108 BPM, G Dorian)
+	# 3: XENO FOREST - Shuffling Tribal Marimba, Congas & Pentatonic Pan-Flute Call-and-Response (100 BPM, G Dorian)
 	{
-		"style": 3, "root": 43, "bpm": 108.0, "scale": SCALE_DORIAN, "delay_wet": 0.38,
+		"style": 3, "root": 43, "bpm": 100.0, "scale": SCALE_DORIAN, "delay_wet": 0.38,
+		"swing": 0.22, "voicing": [0, 2, 4, 7], "lead_attack": 95.0, "delay_beats": 0.5, "delay_fb": 0.42,
 		"prog_a": [0, 3, 0, 3,  2, 3, 0, 4],
 		"prog_b": [2, 3, 4, 0,  2, 3, 4, 6],
+		# Melodies stay on the minor pentatonic degrees (0, 2, 3, 4, 6) and leave gaps for the "answer".
 		"mel_a": [
-			4,-99,-99,-99,5,4,2,-99,   0,-99,-99,-99,2,3,2,-99,
-			4,-99,-99,-99,7,-99,5,-99, 4,-99,-99,-99,-99,-99,-99,-99,
-			6,-99,-99,5,  4,-99,2,-99, 3,-99,-99,2,  0,-99,-99,-99,
-			2,-99,4,-99,  5,-99,4,2,   4,-99,-99,-99,-99,-99,-99,-99,
+			4,-99,-99,6,   -99,-99,4,-99, 3,-99,2,-99,  0,-99,-99,-99,
+			-99,-99,-99,-99, 2,-99,3,-99, 4,-99,-99,-99, -99,-99,-99,-99,
+			7,-99,-99,6,   -99,-99,4,-99, 6,-99,4,-99,  3,-99,-99,-99,
+			2,-99,3,-99,   2,-99,0,-99,   0,-99,-99,-99, -99,-99,-99,-99,
 		],
 		"mel_b": [
-			7,-99,-99,9,  7,-99,5,4,   5,-99,-99,7,  4,-99,-99,-99,
-			6,-99,-99,7,  9,-99,7,5,   4,-99,-99,-99,-99,-99,-99,-99,
-			9,-99,-99,11, 9,-99,7,5,   6,-99,7,9,    7,-99,4,-99,
-			5,-99,4,2,    3,-99,5,6,   7,-99,-99,-99,-99,-99,-99,-99,
+			9,-99,-99,7,   -99,-99,9,-99, 10,-99,9,-99, 7,-99,-99,-99,
+			-99,-99,6,-99, 7,-99,9,-99,   7,-99,-99,-99, -99,-99,-99,-99,
+			11,-99,-99,10, -99,-99,9,-99, 7,-99,9,-99,  6,-99,-99,-99,
+			7,-99,6,-99,   4,-99,3,-99,   4,-99,-99,-99, -99,-99,-99,-99,
 		],
 	},
-	# 4: CRYO GLACIER - Sparkling FM Ice-Bell Celesta & Glass Choir (104 BPM, E Minor)
+	# 4: CRYO GLACIER - Half-Time Frozen Music-Box, Open Quartal Choir & Swelling Glass Lead (80 BPM, E Minor)
 	{
-		"style": 4, "root": 40, "bpm": 104.0, "scale": SCALE_MINOR, "delay_wet": 0.46,
+		"style": 4, "root": 40, "bpm": 80.0, "scale": SCALE_MINOR, "delay_wet": 0.50,
+		"voicing": [0, 4, 8, 11], "lead_attack": 7.0, "lead_decay": 0.75, "delay_beats": 1.5, "delay_fb": 0.50,
 		"prog_a": [0, 2, 5, 4,  0, 2, 3, 4],
 		"prog_b": [-2, -1, 0, 2, -2, 3, 4, 4],
 		"mel_a": [
@@ -202,11 +246,13 @@ const STAGE_SONGS: Array[Dictionary] = [
 			5,-99,6,7,    8,-99,7,6,   7,-99,-99,-99,-99,-99,-99,-99,
 		],
 	},
-	# 5: MAGMA CORE - Heavy Overdriven Rock Guitar, Low Brass & War Toms (136 BPM, C Minor)
+	# 5: MAGMA CORE - Driving Phrygian Metal: Acid Chug Bass, Power Chords, Overdriven Guitar & War Toms (152 BPM, C Phrygian)
+	# Chord degree 1 is the Phrygian bII (Db) and -2 is bVI (Ab); avoid degree 4, whose fifth is a tritone.
 	{
-		"style": 5, "root": 36, "bpm": 136.0, "scale": SCALE_MINOR, "delay_wet": 0.24,
-		"prog_a": [0, 0, 2, -1,  0, 0, -2, -1],
-		"prog_b": [-2, -1, 0, 0, -2, 2, -1, 4],
+		"style": 5, "root": 36, "bpm": 152.0, "scale": SCALE_PHRYGIAN, "delay_wet": 0.14,
+		"voicing": [0, 4, 7, 11], "delay_beats": 0.25, "delay_fb": 0.20,
+		"prog_a": [0, 0, 1, 0,  0, 0, -2, 1],
+		"prog_b": [-2, -1, 0, 0, -2, -1, 1, 1],
 		"mel_a": [
 			0,0,2,-99,   4,-99,3,2,    0,-99,6,-99, 5,-99,4,-99,
 			0,0,2,-99,   7,-99,6,4,    3,-99,2,1,   0,-99,-99,-99,
@@ -220,9 +266,11 @@ const STAGE_SONGS: Array[Dictionary] = [
 			6,-99,7,9,   8,-99,6,4,    7,-99,-99,-99,-99,-99,-99,-99,
 		],
 	},
-	# 6: ABYSSAL TRENCH - Underwater Tremolo Rhodes E-Piano & Dub Sonar (94 BPM, B Minor)
+	# 6: ABYSSAL TRENCH - Swung Deep-Sea Dub: Tremolo Rhodes, Sonar Pings & Muffled Underwater Filter (76 BPM, B Minor)
 	{
-		"style": 6, "root": 35, "bpm": 94.0, "scale": SCALE_MINOR, "delay_wet": 0.50,
+		"style": 6, "root": 35, "bpm": 76.0, "scale": SCALE_MINOR, "delay_wet": 0.55,
+		"swing": 0.16, "voicing": [0, 2, 4, 6], "lead_attack": 60.0, "lead_decay": 1.0,
+		"delay_beats": 0.75, "delay_fb": 0.58, "master_lp": 0.16,
 		"prog_a": [0, 4, -2, 3,  0, -1, -2, -1],
 		"prog_b": [-2, 2, -1, 4, -2, 3, 0, -1],
 		"mel_a": [
@@ -238,9 +286,10 @@ const STAGE_SONGS: Array[Dictionary] = [
 			5,-99,4,2,    3,-99,5,6,   7,-99,-99,-99,-99,-99,-99,-99,
 		],
 	},
-	# 7: CYBER NEXUS - 142 BPM Off-Beat Pumping Euphoric Cyber-Trance (F# Minor)
+	# 7: CYBER NEXUS - 142 BPM Off-Beat Pumping Euphoric Cyber-Trance with a Bit-Crushed Digital Lead (F# Minor)
 	{
 		"style": 7, "root": 42, "bpm": 142.0, "scale": SCALE_MINOR, "delay_wet": 0.36,
+		"crush": 4,
 		"prog_a": [0, -2, 2, -1,  3, -2, -1, 4],
 		"prog_b": [-2, -1, 2, 0,  -2, -1, 0, 4],
 		"mel_a": [
@@ -365,8 +414,15 @@ func _switch_state(new_mode: Mode, stage_idx: int) -> void:
 		return
 	current_mode = new_mode
 	current_stage_idx = wrapped_stage
+	if new_mode == Mode.STAGE:
+		_song = STAGE_SONGS[current_stage_idx]
+	elif new_mode == Mode.BOSS:
+		_song = BOSS_SONG
+	else:
+		_song = {}
+	_load_song_params()
 	_step = 0
-	_sample_in_step = 999999.0
+	_sample_in_step = 999999.0 # fires step 0 on the next sample (see _render_block)
 	_bass_env = 0.0
 	_arp_env = 0.0
 	_lead_env = 0.0
@@ -379,6 +435,10 @@ func _switch_state(new_mode: Mode, stage_idx: int) -> void:
 	_rim_env = 0.0
 	_tom_env = 0.0
 	_hat_env = 0.0
+	_master_lp_l = 0.0
+	_master_lp_r = 0.0
+	_crush_count = 0
+	_crush_hold = 0.0
 	_clear_delay()
 
 	if new_mode == Mode.NONE:
@@ -387,17 +447,31 @@ func _switch_state(new_mode: Mode, stage_idx: int) -> void:
 		return
 
 	var bpm: float = _get_current_bpm()
-	_delay_len = clampi(int((60.0 / bpm) * 0.75 * MIX_RATE), 5000, DELAY_MAX - 1)
-	if new_mode == Mode.STAGE:
-		_delay_wet = float(STAGE_SONGS[current_stage_idx]["delay_wet"])
-	elif new_mode == Mode.BOSS:
-		_delay_wet = float(BOSS_SONG["delay_wet"])
-	else:
-		_delay_wet = 0.34
+	var delay_beats: float = float(_song_param("delay_beats"))
+	_delay_len = clampi(int((60.0 / bpm) * delay_beats * MIX_RATE), 2000, DELAY_MAX - 1)
+	_delay_wet = float(_song.get("delay_wet", 0.34))
 
 	if not _player.playing:
 		_player.play()
 	_playback = _player.get_stream_playback() as AudioStreamGeneratorPlayback
+
+
+func _song_param(key: String) -> Variant:
+	return _song.get(key, SONG_DEFAULTS[key])
+
+
+func _load_song_params() -> void:
+	_style = int(_song.get("style", 0))
+	_bar_steps = int(_song_param("bar_steps"))
+	_swing = float(_song_param("swing"))
+	_voicing = _song_param("voicing")
+	_lead_oct = int(_song_param("lead_oct"))
+	_lead_attack = float(_song_param("lead_attack"))
+	_lead_decay = float(_song_param("lead_decay"))
+	_harm_int = int(_song_param("harm_int"))
+	_delay_fb = float(_song_param("delay_fb"))
+	_master_lp = float(_song_param("master_lp"))
+	_crush = maxi(1, int(_song_param("crush")))
 
 
 func _get_current_bpm() -> float:
@@ -424,37 +498,44 @@ func _process(_delta: float) -> void:
 			return
 
 	var frames: int = _playback.get_frames_available()
-	if frames <= 0:
-		return
+	if frames > 0:
+		_playback.push_buffer(_render_block(frames))
 
+
+# Renders the next `frames` stereo samples of the current music. Separate from _process
+# so the soundtrack can also be rendered offline (e.g. to a WAV for listening tests).
+func _render_block(frames: int) -> PackedVector2Array:
+	var buf: PackedVector2Array = PackedVector2Array()
+	buf.resize(frames)
 	var bpm: float = _get_current_bpm()
 	var samples_per_16th: float = (60.0 / bpm) * 0.25 * MIX_RATE
+	var long_step: float = samples_per_16th * (1.0 + _swing)
+	var short_step: float = samples_per_16th * (1.0 - _swing)
 	var dt: float = 1.0 / MIX_RATE
 
-	for _i: int in range(frames):
+	for i: int in range(frames):
 		_sample_in_step += 1.0
-		if _sample_in_step >= samples_per_16th:
-			_sample_in_step -= samples_per_16th
+		# Swing: the step now sounding (_step - 1) is long if even, short if odd.
+		var step_len: float = long_step if posmod(_step - 1, 2) == 0 else short_step
+		if _sample_in_step >= step_len:
+			# Reset (rather than subtract) after the large value set by _switch_state, so a new
+			# song fires step 0 once instead of a burst of catch-up steps that skipped ~11 bars.
+			_sample_in_step = 0.0 if _sample_in_step > step_len * 2.0 else _sample_in_step - step_len
 			_trigger_step()
 			_step += 1
 
-		var out_frame: Vector2 = Vector2.ZERO
 		if current_mode == Mode.TITLE:
-			out_frame = _synth_title_frame(dt)
+			buf[i] = _synth_title_frame(dt)
 		elif current_mode == Mode.HYPERSPACE:
-			out_frame = _synth_hyperspace_frame(dt)
+			buf[i] = _synth_hyperspace_frame(dt)
 		else:
-			var song: Dictionary = BOSS_SONG if current_mode == Mode.BOSS else STAGE_SONGS[current_stage_idx]
-			out_frame = _synth_ensemble_frame(dt, int(song["style"]))
-
-		_playback.push_frame(out_frame)
+			buf[i] = _synth_ensemble_frame(dt, _style)
+	return buf
 
 
 func _set_pad_chord(root_midi: int, scale: Array, chord_deg: int) -> void:
-	_pad_target_freqs[0] = _midi_to_hz(_deg_to_midi(root_midi + 12, scale, chord_deg))
-	_pad_target_freqs[1] = _midi_to_hz(_deg_to_midi(root_midi + 12, scale, chord_deg + 4))
-	_pad_target_freqs[2] = _midi_to_hz(_deg_to_midi(root_midi + 12, scale, chord_deg + 7))
-	_pad_target_freqs[3] = _midi_to_hz(_deg_to_midi(root_midi + 12, scale, chord_deg + 9))
+	for k: int in range(4):
+		_pad_target_freqs[k] = _midi_to_hz(_deg_to_midi(root_midi + 12, scale, chord_deg + int(_voicing[k])))
 	if _pad_swell < 0.05:
 		for k: int in range(4):
 			_pad_freqs[k] = _pad_target_freqs[k]
@@ -496,16 +577,18 @@ func _trigger_step() -> void:
 			_kick_phase = 0.0
 		return
 
-	var song: Dictionary = BOSS_SONG if current_mode == Mode.BOSS else STAGE_SONGS[current_stage_idx]
-	var style: int = int(song["style"])
+	var song: Dictionary = _song
+	var style: int = _style
 	var root: int = int(song["root"])
 	var scale: Array = song["scale"]
 
-	var pos512: int = _step % 512
-	var section: int = pos512 / 128
-	var sec_step: int = pos512 % 128
-	var bar8: int = sec_step / 16
-	var s16: int = sec_step % 16
+	# Song form: 4 sections x 8 bars. A bar is _bar_steps sixteenths (16 in 4/4, 12 in 3/4).
+	var bar_len: int = _bar_steps
+	var pos: int = _step % (bar_len * 32)
+	var section: int = pos / (bar_len * 8)
+	var sec_step: int = pos % (bar_len * 8)
+	var bar8: int = sec_step / bar_len
+	var s16: int = sec_step % bar_len # step within the bar
 
 	var prog: Array = song["prog_b"] if (section == 2 or (section == 3 and bar8 >= 4)) else song["prog_a"]
 	var chord_deg: int = int(prog[bar8])
@@ -516,49 +599,52 @@ func _trigger_step() -> void:
 	var is_breakdown: bool = (section == 3 and bar8 < 4)
 
 	# --- STYLE-SPECIFIC RHYTHM, BASS, CHORD STABS, ARPEGGIOS & PERCUSSION! ---
-	_trigger_style_rhythm(style, root, scale, chord_deg, s16, bar8, section, is_breakdown, pos512)
+	_trigger_style_rhythm(style, root, scale, chord_deg, s16, bar8, section, is_breakdown, pos)
 
 	# --- MELODIC LEAD & PURE DIATONIC HARMONY ---
-	var mel_step64: int = sec_step % 64
+	# Melodies are 4 bars long (64 steps in 4/4, 48 in 3/4) and repeat twice per section.
 	var m_deg: int = -99
 	var use_harmony: bool = false
 
 	if section == 0:
 		if bar8 >= 2 or style == 8:
 			var ma0: Array = song["mel_a"]
-			m_deg = int(ma0[mel_step64])
+			m_deg = int(ma0[sec_step % ma0.size()])
 	elif section == 1:
 		var ma1: Array = song["mel_a"]
-		m_deg = int(ma1[mel_step64])
+		m_deg = int(ma1[sec_step % ma1.size()])
 		use_harmony = (bar8 >= 4)
 	elif section == 2:
 		var mb: Array = song["mel_b"]
-		m_deg = int(mb[mel_step64])
+		m_deg = int(mb[sec_step % mb.size()])
 		use_harmony = true
 	else:
 		if bar8 >= 4:
 			var climb: Array[int] = [0,-99,2,4, 6,-99,4,2, 4,-99,6,7, 9,-99,7,6]
-			m_deg = chord_deg + 7 + climb[s16]
+			var climb_deg: int = climb[s16 % climb.size()]
+			if climb_deg != -99:
+				m_deg = chord_deg + 7 + climb_deg
 			use_harmony = (bar8 >= 6)
 		elif s16 == 0 or s16 == 6:
 			m_deg = chord_deg + (7 if s16 == 0 else 9)
 
 	if m_deg != -99:
-		_lead_target_freq = _midi_to_hz(_deg_to_midi(root + 24, scale, m_deg))
+		_lead_target_freq = _midi_to_hz(_deg_to_midi(root + _lead_oct, scale, m_deg))
 		if _lead_env < 0.15:
 			_lead_freq = _lead_target_freq
 		_lead_env = 0.96
 		_lead_atk = 0.0
 
 		if use_harmony:
-			_harm_target_freq = _midi_to_hz(_deg_to_midi(root + 24, scale, m_deg - 2))
+			_harm_target_freq = _midi_to_hz(_deg_to_midi(root + _lead_oct, scale, m_deg + _harm_int))
 			if _harm_env < 0.15:
 				_harm_freq = _harm_target_freq
 			_harm_env = 0.75
 			_harm_atk = 0.0
 
 
-func _trigger_style_rhythm(style: int, root: int, scale: Array, chord_deg: int, s16: int, bar8: int, section: int, is_breakdown: bool, pos512: int) -> void:
+# `s16` is the step within the bar: 0..15 in 4/4, 0..11 for the 3/4 Cloud Base waltz.
+func _trigger_style_rhythm(style: int, root: int, scale: Array, chord_deg: int, s16: int, bar8: int, section: int, is_breakdown: bool, pos: int) -> void:
 	var chord_tones: Array[int] = [0, 2, 4, 7, 9]
 
 	match style:
@@ -585,28 +671,33 @@ func _trigger_style_rhythm(style: int, root: int, scale: Array, chord_deg: int, 
 				_hat_env = 0.55 if (s16 % 2 == 0) else 0.25
 				_hat_decay = 48.0
 
-		2: # STAGE 3 (CLOUD BASE): Bouncy Walking Fretless Bass + Breezy Sky Harp + Marching Snare!
-			var walk_pat: Array[int] = [0, -99, 2, -99, 4, -99, 7, 4,  0, -99, 4, -99, 6, -99, 4, 2]
-			var w_off: int = walk_pat[s16]
-			if not is_breakdown and w_off != -99:
-				_bass_freq = _midi_to_hz(_deg_to_midi(root, scale, chord_deg + w_off))
-				_bass_env = 0.92
+		2: # STAGE 3 (CLOUD BASE): 3/4 Sky Waltz. Fretless bass "oom" on beat 1 (fifth on beat 3),
+			# harp arpeggio rising and falling on every 8th, soft brushed snare on beats 2 & 3.
+			# One bar = 12 sixteenths: beats fall on steps 0, 4 and 8.
+			if s16 == 0:
+				_bass_freq = _midi_to_hz(_deg_to_midi(root, scale, chord_deg))
+				_bass_env = 0.95 if not is_breakdown else 0.70
 				_bass_atk = 0.0
-			var sky_arp: Array[int] = [0, 2, 4, 7, 9, 7, 4, 2]
-			_arp_freq = _midi_to_hz(_deg_to_midi(root + 12, scale, chord_deg + sky_arp[pos512 % 8]))
-			_arp_env = 0.78
-			_arp_atk = 0.0
+			elif s16 == 8 and not is_breakdown:
+				_bass_freq = _midi_to_hz(_deg_to_midi(root, scale, chord_deg + 4))
+				_bass_env = 0.55
+				_bass_atk = 0.0
+			if s16 % 2 == 0:
+				var harp: Array[int] = [0, 2, 4, 7, 4, 2]
+				_arp_freq = _midi_to_hz(_deg_to_midi(root + 24, scale, chord_deg + harp[(s16 / 2) % harp.size()]))
+				_arp_env = 0.80
+				_arp_atk = 0.0
 			if not is_breakdown:
-				if s16 == 0 or s16 == 8:
-					_kick_env = 0.85
+				if s16 == 0:
+					_kick_env = 0.70
 					_kick_phase = 0.0
-				if s16 == 4 or s16 == 12 or s16 == 14 or (bar8 == 7 and s16 >= 12):
-					_snare_body_env = 0.70
-					_snare_gate_time = 0.04
+				if s16 == 4 or s16 == 8:
+					_snare_body_env = 0.32
+					_snare_gate_time = 0.06
 					_snare_phase = 0.0
-				if s16 % 2 == 1:
-					_hat_env = 0.50
-					_hat_decay = 35.0
+				if s16 % 2 == 0:
+					_hat_env = 0.30
+					_hat_decay = 40.0
 
 		3: # STAGE 4 (XENO FOREST): Deep Log-Sub + Wooden Kalimba/Marimba Polyrhythm + Tribal Congas & Shakers!
 			if s16 == 0 or s16 == 6 or s16 == 10:
@@ -635,30 +726,33 @@ func _trigger_style_rhythm(style: int, root: int, scale: Array, chord_deg: int, 
 			_hat_env = 0.42 if (s16 % 2 == 0) else 0.22
 			_hat_decay = 24.0 # Soft organic shaker!
 
-		4: # STAGE 5 (CRYO GLACIER): Sustained Sub-Pedal + Sparkling FM Ice-Bell Music-Box + Minimalist Chimes!
+		4: # STAGE 5 (CRYO GLACIER): Sustained Sub-Pedal + Sparse High Music-Box + Half-Time Heartbeat
 			if s16 == 0:
 				_bass_freq = _midi_to_hz(_deg_to_midi(root, scale, chord_deg))
 				_bass_env = 1.0
 				_bass_atk = 0.0
-			# High-register sparkling crystal music-box arpeggio!
-			var ice_arp: Array[int] = [0, 4, 7, 9, 11, 9, 7, 4]
-			_arp_freq = _midi_to_hz(_deg_to_midi(root + 24, scale, chord_deg + ice_arp[s16 % 8]))
-			_arp_env = 0.88
-			_arp_atk = 0.0
-			# Delicate heartbeat kick & crystal rim chime (NO heavy snare!)
+			# Music box two octaves above the lead's home, in 8ths with gaps so the echo can ring.
+			var box: Array[int] = [0, -99, 4, -99, 7, -99, 11, -99, 9, -99, -99, -99, 7, -99, 4, -99]
+			var box_deg: int = box[s16]
+			if box_deg != -99:
+				_arp_freq = _midi_to_hz(_deg_to_midi(root + 36, scale, chord_deg + box_deg))
+				_arp_env = 0.80
+				_arp_atk = 0.0
+			# Half-time heartbeat: one soft kick per bar and a crystal rim on beat 3 (no snare, barely any hats).
 			if not is_breakdown:
-				if s16 == 0 or (section == 2 and s16 == 8):
-					_kick_env = 0.75
+				if s16 == 0:
+					_kick_env = 0.70
 					_kick_phase = 0.0
 				if s16 == 8:
-					_rim_env = 0.75
+					_rim_env = 0.60
 					_rim_phase = 0.0
-				if s16 % 4 == 0:
-					_hat_env = 0.45
+				if s16 == 4 or s16 == 12:
+					_hat_env = 0.30
 					_hat_decay = 14.0
 
 		5: # STAGE 6 (MAGMA CORE): Growling Acid Saw Bass + Heavy Double-Kick & War Taiko Toms!
-			var magma_b: Array[int] = [0, 0, 0, 7,  0, 0, 4, 3,  0, 0, 0, 7,  6, 4, 3, 2]
+			# Palm-muted chug that keeps leaning on the Phrygian b2 (offset 1) for the metal crunch.
+			var magma_b: Array[int] = [0, 0, 0, 7,  0, 0, 1, 0,  0, 0, 0, 7,  4, 1, 0, -1]
 			if not is_breakdown:
 				_bass_freq = _midi_to_hz(_deg_to_midi(root, scale, chord_deg + magma_b[s16]))
 				_bass_env = 1.0
@@ -686,11 +780,15 @@ func _trigger_style_rhythm(style: int, root: int, scale: Array, chord_deg: int, 
 				_bass_atk = 0.0
 			if s16 == 0 or s16 == 8:
 				_stab_env = 1.0 # Warm Fender-Rhodes electric piano bell-chord!
-			# Spacious underwater sonar harp droplets
-			if s16 % 2 == 0:
-				var sonar_notes: Array[int] = [4, 7, 9, 11, 7, 4, 9, 7]
-				_arp_freq = _midi_to_hz(_deg_to_midi(root + 24, scale, chord_deg + sonar_notes[(s16 / 2) % 8]))
-				_arp_env = 0.80
+			# A lone high sonar ping every other bar, plus a few deep droplets; the dub echo fills the rest.
+			if s16 == 0 and bar8 % 2 == 0:
+				_arp_freq = _midi_to_hz(_deg_to_midi(root + 36, scale, chord_deg + 4))
+				_arp_env = 1.0
+				_arp_atk = 0.0
+			elif s16 == 6 or s16 == 11:
+				var drop_notes: Array[int] = [4, 7, 9, 7]
+				_arp_freq = _midi_to_hz(_deg_to_midi(root + 24, scale, chord_deg + drop_notes[bar8 % 4]))
+				_arp_env = 0.65
 				_arp_atk = 0.0
 			# Soft muted underwater beat (soft sub-kick + crisp rim-click on beat 3)
 			if not is_breakdown:
@@ -711,7 +809,7 @@ func _trigger_style_rhythm(style: int, root: int, scale: Array, chord_deg: int, 
 			# Trance rhythmic hypersaw gate pattern!
 			if s16 == 0 or s16 == 3 or s16 == 6 or s16 == 8 or s16 == 11 or s16 == 14:
 				_stab_env = 0.95
-			_arp_freq = _midi_to_hz(_deg_to_midi(root + 12, scale, chord_deg + chord_tones[pos512 % 5]))
+			_arp_freq = _midi_to_hz(_deg_to_midi(root + 12, scale, chord_deg + chord_tones[pos % 5]))
 			_arp_env = 0.85
 			_arp_atk = 0.0
 			if not is_breakdown:
@@ -737,7 +835,7 @@ func _trigger_style_rhythm(style: int, root: int, scale: Array, chord_deg: int, 
 				_bass_freq = _midi_to_hz(_deg_to_midi(root, scale, chord_deg + pat[s16]))
 				_bass_env = 1.0 if (s16 % 4 == 0) else 0.85
 				_bass_atk = 0.0
-			_arp_freq = _midi_to_hz(_deg_to_midi(root + 12, scale, chord_deg + chord_tones[pos512 % 5]))
+			_arp_freq = _midi_to_hz(_deg_to_midi(root + 12, scale, chord_deg + chord_tones[pos % 5]))
 			_arp_env = 0.80 if (s16 % 2 == 0) else 0.50
 			_arp_atk = 0.0
 			if bar8 == 7 and s16 >= 10:
@@ -860,11 +958,18 @@ func _synth_ensemble_frame(dt: float, style: int) -> Vector2:
 	var arp_sig: float = 0.0
 	if _arp_env > 0.001:
 		_arp_atk = minf(1.0, _arp_atk + dt * 420.0)
-		var a_dec: float = 11.0 if style == 3 else (4.8 if (style == 4 or style == 6) else 8.2)
+		var a_dec: float = 8.2
+		match style:
+			2: a_dec = 6.0
+			3: a_dec = 11.0
+			4, 6: a_dec = 4.8
 		_arp_env = maxf(0.0, _arp_env - dt * a_dec)
 		_arp_p = fmod(_arp_p + _arp_freq * dt, 1.0)
 
-		if style == 3:
+		if style == 2:
+			# Concert Harp Pluck (sine + soft octave that fades faster than the body)
+			arp_sig = (sin(_arp_p * TAU) + sin(_arp_p * 2.0 * TAU) * 0.3 * _arp_env) * (_arp_env * _arp_env) * _arp_atk * 0.17
+		elif style == 3:
 			# Wooden Marimba / Kalimba Mallet (fundamental sine + fast-decaying 4x hollow wood overtone!)
 			var wood_hit: float = sin(_arp_p * 4.0 * TAU) * (_arp_env * _arp_env * _arp_env) * 0.65
 			arp_sig = (sin(_arp_p * TAU) + wood_hit) * _arp_env * _arp_atk * 0.20
@@ -886,8 +991,8 @@ func _synth_ensemble_frame(dt: float, style: int) -> Vector2:
 	if _lead_env > 0.002:
 		var glide_spd: float = 55.0 if style == 1 else 32.0
 		_lead_freq = lerpf(_lead_freq, _lead_target_freq, clampf(dt * glide_spd, 0.0, 1.0))
-		_lead_atk = minf(1.0, _lead_atk + dt * (95.0 if (style == 3 or style == 4) else 165.0))
-		_lead_env = maxf(0.0, _lead_env - dt * (1.35 if (style == 4 or style == 6) else 1.65))
+		_lead_atk = minf(1.0, _lead_atk + dt * _lead_attack)
+		_lead_env = maxf(0.0, _lead_env - dt * _lead_decay)
 		var vib_depth: float = 0.0065 if style == 5 else 0.0040
 		var vib: float = 1.0 + vib_depth * sin(_lfo_phase * TAU)
 		_lead_p1 = fmod(_lead_p1 + _lead_freq * vib * dt, 1.0)
@@ -919,6 +1024,14 @@ func _synth_ensemble_frame(dt: float, style: int) -> Vector2:
 		var l_cut: float = 0.28 if (style == 3 or style == 4 or style == 6) else (0.15 + 0.28 * _lead_env)
 		_lead_lp += l_cut * (raw_lead - _lead_lp)
 		lead_sig = _lead_lp * _lead_env * _lead_atk * 0.23
+
+		if _crush > 1:
+			# Digital bit-crush: hold each value for _crush samples and quantize it to coarse steps.
+			_crush_count += 1
+			if _crush_count >= _crush:
+				_crush_count = 0
+				_crush_hold = snappedf(lead_sig, 0.012)
+			lead_sig = _crush_hold
 
 	# --- 5) PURE DIATONIC HARMONY LEAD ---
 	var harm_sig: float = 0.0
@@ -1000,12 +1113,19 @@ func _tick_stereo_pad(dt: float, gain: float, style: int) -> Vector2:
 func _apply_stereo_delay(dry_l: float, dry_r: float, send_l: float, send_r: float) -> Vector2:
 	var dl: float = _delay_l[_delay_pos]
 	var dr: float = _delay_r[_delay_pos]
-	_delay_l[_delay_pos] = send_l + dr * 0.34
-	_delay_r[_delay_pos] = send_r + dl * 0.34
+	_delay_l[_delay_pos] = send_l + dr * _delay_fb
+	_delay_r[_delay_pos] = send_r + dl * _delay_fb
 	_delay_pos = (_delay_pos + 1) % _delay_len
 
 	var out_l: float = dry_l + send_l + dl * _delay_wet
 	var out_r: float = dry_r + send_r + dr * _delay_wet
+	if _master_lp < 1.0:
+		# Whole-mix low-pass (Abyssal Trench "underwater" muffle), drifting slowly like a current.
+		var lp_a: float = _master_lp * (0.8 + 0.2 * sin(_lfo_phase * 0.02 * TAU))
+		_master_lp_l += lp_a * (out_l - _master_lp_l)
+		_master_lp_r += lp_a * (out_r - _master_lp_r)
+		out_l = _master_lp_l
+		out_r = _master_lp_r
 	out_l = out_l / (1.0 + maxf(0.0, absf(out_l) - 0.65) * 0.85)
 	out_r = out_r / (1.0 + maxf(0.0, absf(out_r) - 0.65) * 0.85)
 	return Vector2(clampf(out_l, -0.96, 0.96), clampf(out_r, -0.96, 0.96))
