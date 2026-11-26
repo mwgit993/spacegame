@@ -540,3 +540,12 @@ func _install_art(m: RefCounted, built: Dictionary) -> void:
 	if boss_tex != "" and not PixelArt._cache.has(boss_tex) and PixelArt._cache.has(boss_tex + "_0"):
 		PixelArt._cache[boss_tex] = PixelArt._cache[boss_tex + "_0"]
 	_art_ready[String(def.get("id", ""))] = true
+
+
+# Enemy HP growth by stage index. The built-in stages 1-8 keep their original steep curve
+# (`base` per stage, 1.34 for regular enemies). Past stage 8 it grows 12% per stage, so stage
+# 28 is ~75x stage 1 instead of ~2,700x (a full run's upgrades can't keep up with the latter).
+func stage_hp_growth(stage_index: int, base: float = 1.34) -> float:
+	var early: int = mini(stage_index, 7)
+	var late: int = maxi(0, stage_index - 7)
+	return pow(base, float(early)) * pow(1.12, float(late))

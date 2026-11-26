@@ -1428,7 +1428,8 @@ func _update_boss_intro(delta: float) -> void:
 func _boss_attack() -> void:
 	# Faster cooldowns & higher bullet velocity in Phase 2 (<=66% HP) and Phase 3 (<=33% HP)!
 	var rate_mult: float = 1.0 if boss_phase == 1 else (0.78 if boss_phase == 2 else 0.62)
-	var spd_bonus: float = float(boss_phase - 1) * 18.0 + float(stage_idx) * 5.0
+	# +5 per stage through stage 8, then +2 per stage, so stage 28 bosses aren't absurdly fast.
+	var spd_bonus: float = float(boss_phase - 1) * 18.0 + float(mini(stage_idx, 7)) * 5.0 + float(maxi(0, stage_idx - 7)) * 2.0
 
 	_boss_substep += 1
 	if _boss_substep >= 4:
@@ -1555,7 +1556,7 @@ func _spawn_boss_escort() -> void:
 	for offset_y: float in [-62.0, 62.0]:
 		var esc: GameEnemy = GameEnemy.new()
 		get_parent().add_child(esc)
-		var esc_hp_scale: float = pow(1.32, float(stage_idx))
+		var esc_hp_scale: float = StageData.stage_hp_growth(stage_idx, 1.32)
 		esc.setup(
 			Type.SWOOPER,
 			Vector2(492.0, clampf(global_position.y + offset_y, 38.0, 226.0)),

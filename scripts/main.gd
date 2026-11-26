@@ -3759,7 +3759,7 @@ func _begin_next_wave() -> void:
 	_wave_clear_delay = 0.70
 	_spawn_queue.clear()
 
-	var hp_mult: float = pow(1.34, float(current_stage_idx)) * (1.0 + float(sub_wave - 1) * 0.16)
+	var hp_mult: float = StageData.stage_hp_growth(current_stage_idx) * (1.0 + float(sub_wave - 1) * 0.16)
 
 	if is_boss:
 		_pending_hyperspace = true
