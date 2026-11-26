@@ -1456,6 +1456,17 @@ func _build_all() -> void:
 		"............................",
 	]))
 
+	# --- UI: bouncing cursor over the selected level-up draft card ---
+	_cache["ui_cursor_down"] = _make_tex(PackedStringArray([
+		"NNNNNNNNNNN",
+		"NWWWWWWWWWN",
+		".NYYYYYYYN.",
+		"..NYYYYYN..",
+		"...NYOYN...",
+		"....NON....",
+		".....N.....",
+	]))
+
 	_build_draft_card_icons()
 
 

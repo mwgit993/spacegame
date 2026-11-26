@@ -428,6 +428,8 @@ var _opt_touch_btn: Button
 var _opt_fullscreen_btn: Button
 var _opt_speed_btn: Button
 var _opt_soundtrack_btn: Button
+var _opt_reset_btn: Button
+var _opt_back_btn: Button
 
 # Soundtrack picker (Options > SOUNDTRACK): one row per place music plays
 # (GenesisMusic.SLOT_KEYS); left/right picks the original or one of its alternatives.
@@ -493,9 +495,16 @@ var _death_timer: float = 0.0
 var _next_squad_id: int = 1
 var _squad_counts: Dictionary = {}
 
-# Visual Draft Cards
+# Visual Draft Cards. Sized so the run stays visible around them; 126 px is the narrowest
+# width that fits the longest title (BLASTER OVERCLOCK) and every description in 2 lines.
+const DRAFT_CARD_W: float = 126.0
+const DRAFT_CARD_H: float = 104.0
+const DRAFT_CARD_GAP: float = 14.0
+const DRAFT_CARD_Y: float = 88.0
+const DRAFT_SELECT_LIFT: float = 4.0  # the selected card rises by this much
 var _draft_choices: Array[Dictionary] = []
 var _draft_cards: Array[Dictionary] = []
+var _draft_cursor: TextureRect
 
 # Rogue Legacy-Style Starforge Skill Tree UI state
 var _tree_canvas: Control
@@ -527,6 +536,12 @@ var _loadout_cursor_idx: int = 0
 
 func _ready() -> void:
 	randomize()
+	# Menu focus follows the left stick through _poll_controller_menu_stick (with auto-repeat).
+	# Godot's default ui_* actions also map the stick, so one push moved the focus two steps.
+	for act: String in ["ui_left", "ui_right", "ui_up", "ui_down"]:
+		for ev: InputEvent in InputMap.action_get_events(act):
+			if ev is InputEventJoypadMotion:
+				InputMap.action_erase_event(act, ev)
 	_base_physics_tps = Engine.physics_ticks_per_second
 	MetaSave.apply_audio_and_display_settings()
 	_build_world()
@@ -543,6 +558,8 @@ func _run_smoke_test() -> void:
 	if not _smoke_check_input_prompts():
 		get_tree().quit(1)
 		return
+	if not _smoke_check_options_nav():
+		smoke_ok = false
 	# Save migration: v1 nodes are refunded (damage_1 2 ranks = 75, starter_turret = 70,
 	# xp_scholar ranks 4-5 above the new cap of 3 = 246), owned ships are kept.
 	MetaSave._init_default_tree()
@@ -711,8 +728,10 @@ func _run_smoke_test() -> void:
 			boss_test._process(0.30)
 			break
 	_open_upgrade_draft()
+	if not _smoke_check_draft_selection():
+		smoke_ok = false
 	InputPrompts.set_gamepad(not InputPrompts.is_gamepad)
-	_refresh_draft_card_glyphs()
+	_refresh_draft_selection()
 	InputPrompts.set_gamepad(not InputPrompts.is_gamepad)
 	_reroll_draft_cards()
 	_pick_draft_card(0)
@@ -777,6 +796,75 @@ func _smoke_check_input_prompts() -> bool:
 	for g_id: String in InputPrompts.all_glyph_ids():
 		InputPrompts.glyph(g_id)
 	return true
+
+
+# Options focus: UP/DOWN/LEFT/RIGHT reach every row, and the bottom row steps RESET SAVE <->
+# SOUNDTRACK <-> BACK both ways (focus used to get stuck on SOUNDTRACK). Uses the same focus
+# neighbours as the D-pad, arrow keys, left stick and WASD.
+func _smoke_check_options_nav() -> bool:
+	_open_options_from_title()
+	# [direction, where focus must land: a Control, or a Button's text]. Starts on AUTOFIRE.
+	var steps: Array = [
+		[SIDE_TOP, "-10%"], [SIDE_TOP, "-10%"], [SIDE_RIGHT, "+10%"], [SIDE_RIGHT, "+10%"],
+		[SIDE_BOTTOM, "+10%"], [SIDE_LEFT, "-10%"], [SIDE_BOTTOM, _opt_autofire_btn],
+		[SIDE_LEFT, _opt_autofire_btn], [SIDE_BOTTOM, _opt_shake_btn], [SIDE_BOTTOM, _opt_touch_btn],
+		[SIDE_BOTTOM, _opt_fullscreen_btn], [SIDE_BOTTOM, _opt_speed_btn],
+		[SIDE_BOTTOM, _opt_soundtrack_btn], [SIDE_LEFT, _opt_reset_btn], [SIDE_LEFT, _opt_reset_btn],
+		[SIDE_RIGHT, _opt_soundtrack_btn], [SIDE_RIGHT, _opt_back_btn], [SIDE_RIGHT, _opt_back_btn],
+		[SIDE_LEFT, _opt_soundtrack_btn], [SIDE_RIGHT, _opt_back_btn], [SIDE_TOP, _opt_speed_btn],
+		[SIDE_BOTTOM, _opt_soundtrack_btn], [SIDE_LEFT, _opt_reset_btn], [SIDE_TOP, _opt_speed_btn],
+		[SIDE_BOTTOM, _opt_soundtrack_btn], [SIDE_RIGHT, _opt_back_btn], [SIDE_BOTTOM, "+10%"],
+		[SIDE_TOP, _opt_back_btn],
+	]
+	var ok: bool = true
+	for i: int in range(steps.size()):
+		var step: Array = steps[i]
+		_move_menu_focus(int(step[0]) as Side)
+		var foc: Control = get_viewport().gui_get_focus_owner()
+		var want: Variant = step[1]
+		var hit: bool = (foc == want) if want is Control else (foc is Button and (foc as Button).text == String(want))
+		if not hit:
+			var got: String = (foc as Button).text if foc is Button else str(foc)
+			push_error("SMOKE: options focus step %d (%s) landed on '%s'" % [i + 1, ["LEFT", "UP", "RIGHT", "DOWN"][int(step[0])], got])
+			ok = false
+			break
+	_leave_options()
+	return ok
+
+
+# Level-up draft: the selected card (D-pad / keys / mouse hover) is lifted with the cursor over
+# it and the others sit lower; LEFT/RIGHT walk the row and stop at its ends.
+func _smoke_check_draft_selection() -> bool:
+	if state != State.DRAFT or _draft_choices.size() < 3:
+		push_error("SMOKE: level-up draft did not open with 3 cards")
+		return false
+	var ok: bool = true
+	var btns: Array[Button] = []
+	for card: Dictionary in _draft_cards:
+		btns.append(card["btn"] as Button)
+	# [move (or -1 for a mouse move over card 0), card that must be selected afterwards]
+	for step: Array in [[SIDE_RIGHT, 2], [SIDE_RIGHT, 2], [SIDE_LEFT, 1], [SIDE_LEFT, 0], [SIDE_LEFT, 0], [SIDE_TOP, 0], [SIDE_RIGHT, 1], [-1, 0]]:
+		if int(step[0]) < 0:
+			var hover: InputEventMouseMotion = InputEventMouseMotion.new()
+			hover.position = btns[0].size * 0.5
+			btns[0].gui_input.emit(hover)
+		else:
+			_move_menu_focus(int(step[0]) as Side)
+		_refresh_draft_selection()
+		var want: int = int(step[1])
+		for i: int in range(btns.size()):
+			var lifted: bool = btns[i].position.y < DRAFT_CARD_Y
+			if btns[i].has_focus() != (i == want) or lifted != (i == want):
+				push_error("SMOKE: draft card %d selection/lift wrong (wanted card %d selected)" % [i, want])
+				ok = false
+		var cursor_cx: float = _draft_cursor.position.x + _draft_cursor.texture.get_size().x * 0.5
+		var card_cx: float = btns[want].position.x + btns[want].size.x * 0.5
+		if not _draft_cursor.visible or absf(cursor_cx - card_cx) > 1.0:
+			push_error("SMOKE: draft cursor is not over the selected card %d" % want)
+			ok = false
+		if not ok:
+			break
+	return ok
 
 
 # Speed-up button: HOLD and TOGGLE reach 2x only while flying, every way out of the flight drops
@@ -1392,6 +1480,54 @@ func _build_options_ui() -> void:
 	InputPrompts.bind_button(back_btn, "back")
 	back_btn.pressed.connect(_leave_options)
 	options_panel.add_child(back_btn)
+	_opt_reset_btn = reset_btn
+	_opt_back_btn = back_btn
+
+	# Explicit focus paths. Godot's automatic search takes the nearest control whose far edge
+	# lies past this one's, so LEFT/RIGHT on the bottom row jumped up to the full-width SPEED UP
+	# row (4 px above, nearer than RESET SAVE / BACK 6 px to the side), and DOWN from there came
+	# back to SOUNDTRACK: RESET SAVE and BACK were unreachable by D-pad, stick and keys.
+	_link_focus_grid([
+		[m_minus, m_plus],
+		[s_minus, s_plus],
+		[_opt_autofire_btn],
+		[_opt_shake_btn],
+		[_opt_touch_btn],
+		[_opt_fullscreen_btn],
+		[_opt_speed_btn],
+		[reset_btn, _opt_soundtrack_btn, back_btn],
+	])
+
+
+# Sets every focus neighbour of a menu given as rows of sibling controls (top to bottom, each
+# left to right). LEFT/RIGHT step along a row and stop at its ends; UP/DOWN go to the control in
+# the next row whose centre is closest horizontally, wrapping between the last and first rows.
+func _link_focus_grid(rows: Array) -> void:
+	for r: int in range(rows.size()):
+		var row: Array = rows[r]
+		var above: Array = rows[posmod(r - 1, rows.size())]
+		var below: Array = rows[posmod(r + 1, rows.size())]
+		for c: int in range(row.size()):
+			var ctrl: Control = row[c] as Control
+			var left: Control = (row[c - 1] as Control) if c > 0 else ctrl
+			var right: Control = (row[c + 1] as Control) if c < row.size() - 1 else ctrl
+			ctrl.focus_neighbor_left = ctrl.get_path_to(left)
+			ctrl.focus_neighbor_right = ctrl.get_path_to(right)
+			ctrl.focus_neighbor_top = ctrl.get_path_to(_closest_in_row(ctrl, above))
+			ctrl.focus_neighbor_bottom = ctrl.get_path_to(_closest_in_row(ctrl, below))
+
+
+func _closest_in_row(from: Control, row: Array) -> Control:
+	var from_x: float = from.position.x + from.size.x * 0.5
+	var best: Control = row[0] as Control
+	var best_d: float = INF
+	for item: Variant in row:
+		var ctrl: Control = item as Control
+		var d: float = absf(ctrl.position.x + ctrl.size.x * 0.5 - from_x)
+		if d < best_d:
+			best_d = d
+			best = ctrl
+	return best
 
 
 func _build_soundtrack_ui() -> void:
@@ -2460,78 +2596,86 @@ func _build_draft_ui() -> void:
 	draft_panel.visible = false
 	ui_layer.add_child(draft_panel)
 
+	# A light dim only, so the frozen run stays visible around the cards.
 	var dim: ColorRect = ColorRect.new()
 	dim.position = Vector2(0.0, 20.0)
 	dim.size = Vector2(VIEW_W, 230.0)
-	dim.color = Color(0.02, 0.03, 0.10, 0.78)
+	dim.color = Color(0.02, 0.03, 0.10, 0.5)
 	draft_panel.add_child(dim)
 
 	_draft_title_lbl = PromptBar.new()
-	_draft_title_lbl.position = Vector2(0.0, 27.0)
+	_draft_title_lbl.position = Vector2(0.0, 54.0)
 	_draft_title_lbl.size = Vector2(VIEW_W, 16.0)
 	_draft_title_lbl.align = HORIZONTAL_ALIGNMENT_CENTER
 	_draft_title_lbl.text_color = Color("#ffe854")
 	_draft_title_lbl.set_segments(["LEVEL UP! SELECT UPGRADE  ", {"act": "draft_pick"}])
 	draft_panel.add_child(_draft_title_lbl)
-	InputPrompts.device_changed.connect(func(_is_pad: bool) -> void: _refresh_draft_card_glyphs())
+	InputPrompts.device_changed.connect(func(_is_pad: bool) -> void: _refresh_draft_selection())
 
 	_draft_cards.clear()
+	var cw: float = DRAFT_CARD_W
+	var row_x: float = floorf((VIEW_W - 3.0 * cw - 2.0 * DRAFT_CARD_GAP) * 0.5)
+	var card_btns: Array[Button] = []
 	for i: int in range(3):
-		var cx: float = 20.0 + float(i) * 150.0
-		var cy: float = 48.0
-		var cw: float = 140.0
-		var ch: float = 158.0
-
 		var btn: Button = Button.new()
-		btn.position = Vector2(cx, cy)
-		btn.size = Vector2(cw, ch)
+		btn.position = Vector2(row_x + float(i) * (cw + DRAFT_CARD_GAP), DRAFT_CARD_Y)
+		btn.size = Vector2(cw, DRAFT_CARD_H)
+		# _refresh_draft_selection swaps the normal/hover faces itself; no extra focus overlay.
+		btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		var idx: int = i
 		btn.pressed.connect(func() -> void: _pick_draft_card(idx))
-		btn.focus_entered.connect(_refresh_draft_card_glyphs, CONNECT_DEFERRED)
-		btn.focus_exited.connect(_refresh_draft_card_glyphs, CONNECT_DEFERRED)
+		btn.focus_entered.connect(_refresh_draft_selection, CONNECT_DEFERRED)
+		btn.focus_exited.connect(_refresh_draft_selection, CONNECT_DEFERRED)
+		# Moving the mouse over a card selects it, so hover and D-pad / keys share one highlight.
+		btn.gui_input.connect(func(ev: InputEvent) -> void:
+			if ev is InputEventMouseMotion and not btn.has_focus():
+				btn.grab_focus()
+		)
 		draft_panel.add_child(btn)
+		card_btns.append(btn)
 
-		# What picks this card: key cap 1/2/3, or the A button on the focused card.
+		var title_lbl: Label = Label.new()
+		title_lbl.position = Vector2(0.0, 4.0)
+		title_lbl.size = Vector2(cw, 12.0)
+		title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		title_lbl.add_theme_font_size_override("font_size", FONT_SZ)
+		title_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(title_lbl)
+
+		# Second line: what picks this card (key cap 1/2/3, or A on the selected card), then the
+		# category and rank pips. _refresh_draft_selection centres the pair.
 		var pick_glyph: TextureRect = TextureRect.new()
-		pick_glyph.position = Vector2(4.0, 6.0)
+		pick_glyph.position = Vector2(4.0, 16.0)
 		pick_glyph.stretch_mode = TextureRect.STRETCH_KEEP
 		pick_glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		btn.add_child(pick_glyph)
 
-		var key_lbl: Label = Label.new()
-		key_lbl.position = Vector2(0.0, 7.0)
-		key_lbl.size = Vector2(cw, 14.0)
-		key_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		key_lbl.add_theme_font_size_override("font_size", FONT_SZ)
-		key_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		btn.add_child(key_lbl)
-
 		var pips_lbl: Label = Label.new()
-		pips_lbl.position = Vector2(0.0, 22.0)
+		pips_lbl.position = Vector2(0.0, 17.0)
 		pips_lbl.size = Vector2(cw, 12.0)
-		pips_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		pips_lbl.add_theme_font_size_override("font_size", FONT_SZ)
 		pips_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		btn.add_child(pips_lbl)
 
 		var art_bg: Panel = Panel.new()
-		art_bg.position = Vector2(20.0, 38.0)
-		art_bg.size = Vector2(100.0, 68.0)
+		art_bg.position = Vector2(floorf((cw - 68.0) * 0.5), 30.0)
+		art_bg.size = Vector2(68.0, 44.0)
 		art_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		art_bg.add_theme_stylebox_override("panel", _make_ff6_box(Color("#050818"), Color("#4c6cb0"), 1))
 		btn.add_child(art_bg)
 
+		# 28x18 card art at exactly 2x.
 		var icon_rect: TextureRect = TextureRect.new()
-		icon_rect.position = Vector2(28.0, 45.0)
-		icon_rect.size = Vector2(84.0, 54.0)
+		icon_rect.position = Vector2(art_bg.position.x + 6.0, 34.0)
+		icon_rect.size = Vector2(56.0, 36.0)
 		icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		btn.add_child(icon_rect)
 
 		var short_lbl: Label = Label.new()
-		short_lbl.position = Vector2(6.0, 116.0)
-		short_lbl.size = Vector2(cw - 12.0, 34.0)
+		short_lbl.position = Vector2(3.0, 77.0)
+		short_lbl.size = Vector2(cw - 6.0, 22.0)
 		short_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		short_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		short_lbl.add_theme_font_size_override("font_size", FONT_SZ)
@@ -2539,18 +2683,34 @@ func _build_draft_ui() -> void:
 		short_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		btn.add_child(short_lbl)
 
+		# Selected: brighter fill and a thick white frame that sticks out 2 px past the card.
+		var box_sel: StyleBoxFlat = _make_ff6_box(Color("#1d3796"), Color.WHITE, 3)
+		box_sel.set_expand_margin_all(2.0)
+		var box_press: StyleBoxFlat = _make_ff6_box(Color("#2c50c4"), Color.WHITE, 3)
+		box_press.set_expand_margin_all(2.0)
 		_draft_cards.append({
 			"btn": btn,
-			"title_lbl": key_lbl,
+			"title_lbl": title_lbl,
 			"pips_lbl": pips_lbl,
 			"icon_rect": icon_rect,
 			"short_lbl": short_lbl,
 			"pick_glyph": pick_glyph,
+			"box_idle": _make_ff6_box(Color("#0a1236"), Color.WHITE, 2),  # border = card colour
+			"box_sel": box_sel,
+			"box_press": box_press,
 		})
+	# LEFT/RIGHT walk the row and stop at the ends; UP/DOWN stay put.
+	_link_focus_grid([card_btns])
+
+	_draft_cursor = TextureRect.new()
+	_draft_cursor.texture = PixelArt.tex("ui_cursor_down")
+	_draft_cursor.stretch_mode = TextureRect.STRETCH_KEEP
+	_draft_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	draft_panel.add_child(_draft_cursor)
 
 	_draft_reroll_btn = Button.new()
-	_draft_reroll_btn.position = Vector2(160.0, 214.0)
-	_draft_reroll_btn.size = Vector2(160.0, 24.0)
+	_draft_reroll_btn.position = Vector2(160.0, 200.0)
+	_draft_reroll_btn.size = Vector2(160.0, 22.0)
 	_draft_reroll_btn.focus_mode = Control.FOCUS_NONE
 	_style_menu_btn(_draft_reroll_btn, Color("#d46bff"))
 	InputPrompts.bind_button(_draft_reroll_btn, "reroll")
@@ -3073,6 +3233,9 @@ func _process(delta: float) -> void:
 			if String(cur_s["id"]) == "neko":
 				_loadout_preview_bullet.texture = PixelArt.tex("bullet_cat_1" if l_alt else "bullet_cat_0")
 
+	elif state == State.DRAFT:
+		_update_draft_cursor()
+
 	if state != State.PAUSED and fx_layer.shake_strength > 0.1:
 		var s: float = fx_layer.shake_strength
 		world_root.position = Vector2(randf_range(-s, s), randf_range(-s, s)).round()
@@ -3130,22 +3293,31 @@ func _poll_controller_menu_stick(delta: float) -> void:
 			_joy_nav_cooldown = 0.19
 		return
 
+	var moved: bool = false
+	if ay < -0.55:
+		moved = _move_menu_focus(SIDE_TOP)
+	elif ay > 0.55:
+		moved = _move_menu_focus(SIDE_BOTTOM)
+	elif ax < -0.55:
+		moved = _move_menu_focus(SIDE_LEFT)
+	elif ax > 0.55:
+		moved = _move_menu_focus(SIDE_RIGHT)
+	if moved:
+		_joy_nav_cooldown = 0.19
+
+
+# Moves keyboard/gamepad focus to the focused control's neighbour on that side (left stick and
+# WASD; arrow keys and the D-pad go through Godot's ui_* actions, which use the same neighbours).
+func _move_menu_focus(side: Side) -> bool:
 	var focused: Control = get_viewport().gui_get_focus_owner()
 	if focused == null:
-		return
-	var next_ctrl: Control = null
-	if ay < -0.55:
-		next_ctrl = focused.find_valid_focus_neighbor(SIDE_TOP)
-	elif ay > 0.55:
-		next_ctrl = focused.find_valid_focus_neighbor(SIDE_BOTTOM)
-	elif ax < -0.55:
-		next_ctrl = focused.find_valid_focus_neighbor(SIDE_LEFT)
-	elif ax > 0.55:
-		next_ctrl = focused.find_valid_focus_neighbor(SIDE_RIGHT)
-	if next_ctrl != null:
-		next_ctrl.grab_focus()
-		RetroSfx.play("ui", -11.0, 0.03)
-		_joy_nav_cooldown = 0.19
+		return false
+	var next_ctrl: Control = focused.find_valid_focus_neighbor(side)
+	if next_ctrl == null or next_ctrl == focused:
+		return false
+	next_ctrl.grab_focus()
+	RetroSfx.play("ui", -11.0, 0.03)
+	return true
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -3248,6 +3420,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif state == State.OPTIONS:
 			if k == KEY_ESCAPE or k == KEY_BACKSPACE:
 				_leave_options()
+			elif k == KEY_W:
+				_move_menu_focus(SIDE_TOP)
+			elif k == KEY_S:
+				_move_menu_focus(SIDE_BOTTOM)
+			elif k == KEY_A:
+				_move_menu_focus(SIDE_LEFT)
+			elif k == KEY_D:
+				_move_menu_focus(SIDE_RIGHT)
 		elif state == State.SOUNDTRACK:
 			if k == KEY_W or k == KEY_UP:
 				_snd_move_row(-1)
@@ -3528,9 +3708,8 @@ func _populate_draft_cards_ui() -> void:
 			var col: Color = choice["color"]
 
 			btn.visible = true
-			btn.add_theme_stylebox_override("normal", _make_ff6_box(Color("#0c1540"), col, 2))
-			btn.add_theme_stylebox_override("hover", _make_ff6_box(Color("#192c75"), Color.WHITE, 2))
-			btn.add_theme_stylebox_override("focus", _make_ff6_box(Color("#192c75"), Color.WHITE, 2))
+			var box_idle: StyleBoxFlat = card["box_idle"]
+			box_idle.border_color = col
 
 			var title_lbl: Label = card["title_lbl"]
 			title_lbl.text = String(choice["title"])
@@ -3555,33 +3734,60 @@ func _populate_draft_cards_ui() -> void:
 	if not _draft_choices.is_empty():
 		var first_btn: Button = _draft_cards[focus_idx]["btn"]
 		first_btn.grab_focus()
-	_refresh_draft_card_glyphs()
+	_refresh_draft_selection()
 
 
-# Key caps 1/2/3 on every card for keyboard players; for gamepad players, the A button on
-# whichever card is focused. The glyph sits just left of the card title, centred as a pair.
-func _refresh_draft_card_glyphs() -> void:
+# Shows which card is selected (focused by D-pad, stick, arrow keys or mouse hover): it gets a
+# brighter face with a thick white frame, lifts DRAFT_SELECT_LIFT px and has the bouncing cursor
+# above it, while the others dim. Pick glyphs: key caps 1/2/3 on every card for keyboard
+# players; for gamepad players, the A button on the selected card only.
+func _refresh_draft_selection() -> void:
 	var focus_owner: Control = get_viewport().gui_get_focus_owner()
 	for i: int in range(_draft_cards.size()):
 		var card: Dictionary = _draft_cards[i]
 		var btn: Button = card["btn"]
+		var selected: bool = btn == focus_owner
+		var face: StyleBox = card["box_sel"] if selected else card["box_idle"]
+		btn.add_theme_stylebox_override("normal", face)
+		btn.add_theme_stylebox_override("hover", face)
+		btn.add_theme_stylebox_override("pressed", card["box_press"] as StyleBox)
+		btn.modulate = Color.WHITE if selected else Color(0.6, 0.62, 0.72)
+		btn.position.y = DRAFT_CARD_Y - (DRAFT_SELECT_LIFT if selected else 0.0)
+
 		var pick_glyph: TextureRect = card["pick_glyph"]
-		var title_lbl: Label = card["title_lbl"]
+		var pips_lbl: Label = card["pips_lbl"]
 		if InputPrompts.is_gamepad:
-			pick_glyph.texture = InputPrompts.glyph("pad_a") if btn == focus_owner else null
+			pick_glyph.texture = InputPrompts.glyph("pad_a") if selected else null
 		else:
 			pick_glyph.texture = InputPrompts.glyph("key_%d" % (i + 1))
-		if pick_glyph.texture == null:
-			title_lbl.position.x = 0.0
-			title_lbl.size.x = btn.size.x
-			continue
-		var font: Font = title_lbl.get_theme_font("font")
-		var title_w: float = font.get_string_size(title_lbl.text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x
-		var glyph_w: float = float(pick_glyph.texture.get_width())
-		var x0: float = maxf(4.0, floorf((btn.size.x - glyph_w - 3.0 - title_w) * 0.5))
-		pick_glyph.position = Vector2(x0, 6.0)
-		title_lbl.position.x = x0 + glyph_w + 3.0
-		title_lbl.size.x = title_w + 2.0
+		var font: Font = pips_lbl.get_theme_font("font")
+		var text_w: float = font.get_string_size(pips_lbl.text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x
+		var glyph_w: float = 0.0 if pick_glyph.texture == null else float(pick_glyph.texture.get_width()) + 3.0
+		var x0: float = floorf((btn.size.x - glyph_w - text_w) * 0.5)
+		pick_glyph.position.x = x0
+		pips_lbl.position.x = x0 + glyph_w
+		pips_lbl.size.x = text_w + 2.0
+	_update_draft_cursor()
+
+
+# The cursor sits centred above the selected card and bobs 0-2 px (called every frame in DRAFT).
+func _update_draft_cursor() -> void:
+	var sel_btn: Button = null
+	var focus_owner: Control = get_viewport().gui_get_focus_owner()
+	for card: Dictionary in _draft_cards:
+		var btn: Button = card["btn"]
+		if btn == focus_owner and btn.visible:
+			sel_btn = btn
+	_draft_cursor.visible = sel_btn != null
+	if sel_btn == null:
+		return
+	var bob: float = roundf(1.0 + sin(float(Time.get_ticks_msec()) * 0.008))
+	var cursor_size: Vector2 = _draft_cursor.texture.get_size()
+	# 2 px of frame stick out above the card, then a 2 px gap.
+	_draft_cursor.position = Vector2(
+		sel_btn.position.x + floorf((sel_btn.size.x - cursor_size.x) * 0.5),
+		sel_btn.position.y - 4.0 - cursor_size.y - bob
+	)
 
 
 func _reroll_draft_cards() -> void:
