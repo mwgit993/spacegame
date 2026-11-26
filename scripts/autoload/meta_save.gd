@@ -40,6 +40,7 @@ var screen_shake_enabled: bool = true
 var default_autofire: bool = true
 var fullscreen_enabled: bool = false
 var touch_mode: int = 0 # 0 = AUTO (shows on touch), 1 = ALWAYS ON (phone/mouse test), 2 = OFF
+var music_picks: Dictionary = {} # soundtrack slot -> chosen track (0 = original), see GenesisMusic.SLOT_KEYS
 var speed_up_toggle: bool = false # Speed-up button (RT / F): false = HOLD for 2x, true = press to TOGGLE 2x
 
 # Rogue Legacy-style Skill Tree node levels & Fleet Loadout!
@@ -65,6 +66,7 @@ func _init_default_tree() -> void:
 
 func apply_audio_and_display_settings() -> void:
 	GenesisMusic.set_volume(music_volume)
+	GenesisMusic.set_picks(music_picks)
 	RetroSfx.sfx_volume = sfx_volume
 	var cur_fs: bool = (DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN)
 	if fullscreen_enabled != cur_fs and DisplayServer.get_name() != "headless":
@@ -330,6 +332,7 @@ func save_game() -> void:
 		"fullscreen_enabled": fullscreen_enabled,
 		"touch_mode": touch_mode,
 		"speed_up_toggle": speed_up_toggle,
+		"music_picks": music_picks,
 		"selected_ship": selected_ship,
 		"tree_version": TREE_VERSION,
 		"tree_levels": tree_levels,
@@ -400,6 +403,11 @@ func load_game() -> void:
 	fullscreen_enabled = bool(data.get("fullscreen_enabled", false))
 	touch_mode = int(data.get("touch_mode", 0))
 	speed_up_toggle = bool(data.get("speed_up_toggle", false))
+	music_picks = {}
+	var saved_picks: Variant = data.get("music_picks", {})
+	if saved_picks is Dictionary:
+		for slot: Variant in (saved_picks as Dictionary).keys():
+			music_picks[String(slot)] = clampi(int((saved_picks as Dictionary)[slot]), 0, 5)
 
 	_init_default_tree()
 	# _init_default_tree() resets the ship, so restore the saved choice afterwards.

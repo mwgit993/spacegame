@@ -59,7 +59,8 @@
 | `scripts/autoload/meta_save.gd` | JSON save/load (`user://star_viper_save.json`) for Skill Tree ranks, unlocked ships, Scrap, stats, and options |
 | `scripts/autoload/pixel_art.gd` | Caches all ship, enemy, bullet, XP gem, upgrade diagram, and badge pixel textures |
 | `scripts/autoload/retro_sfx.gd` | Synthesizes 16-bit WAV SFX (`shoot`, `laser`, `zap`, `bounce`, `meow`, `xp`, `level_up`, `boss_beam`, `boss_pose`, `boss_hp_tick`, etc.) |
-| `scripts/autoload/genesis_music.gd` | Real-time 44.1 kHz stereo diatonic music synthesizer (8 stage ensembles + universal Boss darksynth anthem) |
+| `scripts/autoload/genesis_music.gd` | Real-time 44.1 kHz stereo diatonic music synthesizer (8 stage ensembles + universal Boss darksynth anthem), plus the alternative-track engine (extra grooves, voices and a melody composer) |
+| `scripts/music_candidates.gd` | 5 alternative tracks per music slot (title, 8 stages, boss, hyperspace), picked in Options → SOUNDTRACK |
 
 ---
 

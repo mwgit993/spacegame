@@ -89,7 +89,7 @@ World layering is `world_root` → `pickup_layer`, `enemy_layer`, `player`, `bul
   - a boss pattern in `GameEnemy._boss_attack` (`match stage_idx`)
   - boss frames in `BossPainter.build_all_bosses`
   - a biome in `StarfieldBg`
-  - a song in `GenesisMusic.STAGE_SONGS`
+  - a song in `GenesisMusic.STAGE_SONGS`, plus a `"stage_N"` slot with 5 alternatives in `music_candidates.gd` (the smoke test expects 5 per slot)
 
   After stage 8, play loops with harder enemies; nothing ends the game.
 
@@ -98,3 +98,8 @@ World layering is `world_root` → `pickup_layer`, `enemy_layer`, `player`, `bul
 - `PixelArt` sprites are arrays of strings, one character per pixel, mapped through `PALETTE` or an optional custom palette passed to `_make_tex`. `BossPainter` draws bosses into `Image`s and registers three animation frames per boss, `boss_<theme>_0`, `_1` and `_2`.
 - **Lookups fail silently.** `PixelArt.tex("typo")` returns the `scout_space` sprite. `RetroSfx.play("typo")` does nothing. A wrong key won't produce an error, so look at the result on screen.
 - `GenesisMusic._process` synthesizes every sample in GDScript on the main thread, with a buffer of only 0.14 s. Keep the per-sample path (`_synth_*_frame`, `_tick_*`) cheap. Any work added there runs 44,100 times per second.
+- **Soundtrack slots and alternatives.** Music plays in 11 slots (`GenesisMusic.SLOT_KEYS`: `title`, `stage_1`–`stage_8`, `boss`, `hyperspace`). Each slot has its original track plus 5 alternatives in `scripts/music_candidates.gd`, picked in **Options → SOUNDTRACK** (`main._build_soundtrack_ui`, state `SOUNDTRACK`) and saved as `MetaSave.music_picks` (slot → index, 0 = original). `GenesisMusic.DEFAULT_PICKS` sets the shipped choice for players who haven't picked. `_resolve_song` picks the song for each slot; `preview()` / `resume_after_preview()` are for the picker.
+  - An alternative is a song dictionary like `STAGE_SONGS`, with a few extras. `"style"` is the groove: 0–8 are the original stage grooves, and 9–17 add chiptune, drum & bass, outrun, orchestral, ambient, lo-fi, bossa nova, industrial and 6/8. `"bass"`, `"pad"`, `"arp"` and `"lead"` borrow any instrument voice; voices 9+ are extra instruments. `"kit"` sets the drum tuning. The voice list is at the top of `music_candidates.gd`.
+  - Melodies are composed at load time from `"seed"` by `GenesisMusic.compose_melody`, unless the entry spells out `"mel_a"`/`"mel_b"`. Change the seed to get a different tune with the same arrangement.
+  - Hyperspace alternatives (`"hyper"`) are 2.6 s jingles made of per-16th-step lists (`h_arp`, `h_lead`, `h_kick`, ...).
+  - Songs without the extra keys render exactly as before, so changing the shared voice or kit code can change the originals. To prove they're unchanged, render them before and after and compare the bytes.
