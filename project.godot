@@ -34,8 +34,8 @@ window/stretch/scale_mode="integer"
 
 [gui]
 
-theme/custom_font="res://assets/fonts/ff6_font.fnt"
 theme/default_font_antialiasing=0
+theme/custom_font="res://assets/fonts/ff6_font.fnt"
 
 [rendering]
 

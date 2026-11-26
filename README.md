@@ -1,13 +1,14 @@
 # Star Viper: 16-Bit Galactic Roguelite
 
-A horizontal 16-bit style roguelite space shooter built in **Godot 4.7** (`480x270` integer-scaled widescreen pixel art), combining *Gradius*-style modular ship upgrades (trailing Option orbs, spread vulcan, piercing lasers, homing missiles, regenerating shields) with between-run permanent Hangar progression, 8 themed worlds, giant multi-phase bosses, and a real-time 44.1 kHz multi-instrument synth soundtrack.
+A horizontal 16-bit style roguelite space shooter built in **Godot 4.7** (`480x270` integer-scaled widescreen pixel art), combining *Gradius*-style modular ship upgrades and *BALL x PIT*-style XP gem leveling with a 30-node *Rogue Legacy*-style Starforge Skill Tree, **7 unlockable starships** (including bio-cruisers, alien UFOs, cosmic eyeballs, and the **S.S. Meow-zer** firing Flying Space Cats!), 8 themed worlds, animated Mega Man-style boss intros, and a real-time 44.1 kHz multi-instrument synth soundtrack.
 
 ## Controls
-- **Move:** `WASD` / `Arrow Keys` / Controller Left Stick or D-Pad / Touch Drag
+- **Move:** `WASD` / `Arrow Keys` / Any Connected Controller Left Stick or D-Pad / Touch Drag
 - **Focus Slow-Dodge (shows 3px core hitbox):** Hold `Shift` / Controller `LB`, `RB`, or `LT` / Touch `FOCUS` pad
 - **Fire:** Autofire ON by default (`C` or Controller `Y` toggles) / Hold `Space`, `Z`, `J`, `A`, `X`, or `RT`
-- **Pause:** `Esc` / `P` / Controller `Start` / Top-right `II` button
-- **Draft Upgrades:** Keys `1` / `2` / `3`, Mouse/Touch tap, or Controller D-Pad + `A`
+- **Pause (Stats & Installed Upgrades):** `Esc` / `P` / Controller `Start` / Top-right `II` button
+- **Level-Up Powerup Draft:** Keys `1` / `2` / `3`, Mouse/Touch tap, or Controller D-Pad + `A` (`R` or `Y` to Reroll when unlocked)
+- **Skill Tree & Ship Loadout:** Navigate nodes with `WASD` / Arrows / D-Pad / Stick or Mouse click & drag; `Tab` / `X` switches between **Skill Tree** and **Fleet Ship Loadout**
 
 ## Opening in Godot
 1. Install **Godot Engine v4.7+** (Standard GDScript build).

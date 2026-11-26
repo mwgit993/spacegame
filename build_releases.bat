@@ -1,6 +1,8 @@
 @echo off
 setlocal
-set "GODOT=C:\Users\Work9\Documents\Godot\Godot_v4.7.2-stable_win64.exe"
+set "GODOT=C:\Users\matth\OneDrive\Documents\Godot\Godot_v4.7.2-stable_win64.exe"
+if not exist "%GODOT%" set "GODOT=%USERPROFILE%\Documents\Godot\Godot_v4.7.2-stable_win64.exe"
+if not exist "%GODOT%" set "GODOT=C:\Users\Work9\Documents\Godot\Godot_v4.7.2-stable_win64.exe"
 if not exist "%GODOT%" (
     echo Edit build_releases.bat to point GODOT to your Godot 4.7+ executable.
     pause

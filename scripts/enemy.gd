@@ -4,6 +4,7 @@ extends Area2D
 enum Type { SCOUT_SINE, SWOOPER, SNIPER, CRUISER, BOSS }
 
 signal destroyed(enemy: GameEnemy, killed_by_player: bool)
+signal boss_phase_broken(enemy: GameEnemy, bonus_xp: int)
 
 static var _flash_shader: Shader = null
 
@@ -13,6 +14,7 @@ var max_hp: float = 2.0
 var hp: float = 2.0
 var score_value: int = 100
 var scrap_drop: int = 1
+var xp_drop: int = 2
 var squad_id: int = -1
 
 var player_ref: Node2D = null
@@ -28,9 +30,25 @@ var _target_x: float = 360.0
 var _phase_offset: float = 0.0
 var _fire_timer: float = 1.2
 
-# 3-Phase Boss Resilience & Anti-Melt System!
+# 3-Phase Boss Resilience, Mega Man Intro & Live Animation System!
+const BOSS_HP_PIPS: int = 28
 var boss_phase: int = 1                 # 1 (100..66%), 2 (66..33%), 3 (33..0%)
 var boss_shield_timer: float = 0.0      # Brief invulnerable phase-shift barrier on phase transition
+var boss_intro_active: bool = false     # True while Mega Man teleport arrival -> pose -> HP bar fill runs
+var boss_hp_bar_visible: bool = false   # Becomes true once boss strikes pose & begins filling HP gauge
+var boss_hp_bar_fill: float = 1.0       # 0.0 -> 1.0 pip-by-pip during Mega Man boss intro!
+
+var _boss_intro_stage: int = 0          # 0 = beam arrival, 1 = landing pose, 2 = HP bar fill, 3 = fight
+var _boss_intro_timer: float = 0.0
+var _boss_hp_pips_filled: int = 0
+var _boss_tex_base: String = "boss_space"
+var _boss_attack_anim_timer: float = 0.0
+var _boss_recoil_x: float = 0.0
+var _boss_spark_timer: float = 0.25
+var _boss_dying: bool = false
+var _boss_death_timer: float = 0.0
+var _boss_death_boom_timer: float = 0.0
+
 var _dps_accumulator: float = 0.0       # Tracks burst damage per second to prevent 2-second instant melts
 var _boss_pattern: int = 0
 var _boss_substep: int = 0
@@ -105,6 +123,7 @@ func setup(
 			max_hp = 2.2 * hp_scale * loop_mult
 			score_value = 100
 			scrap_drop = 1
+			xp_drop = 2
 			_fire_timer = randf_range(1.4, 2.4)
 			var s1: CircleShape2D = CircleShape2D.new()
 			s1.radius = 6.5
@@ -114,6 +133,7 @@ func setup(
 			max_hp = 3.0 * hp_scale * loop_mult
 			score_value = 150
 			scrap_drop = 1
+			xp_drop = 3
 			_fire_timer = randf_range(0.8, 1.5)
 			var s2: CircleShape2D = CircleShape2D.new()
 			s2.radius = 7.0
@@ -123,6 +143,7 @@ func setup(
 			max_hp = 6.5 * hp_scale * loop_mult
 			score_value = 250
 			scrap_drop = 2
+			xp_drop = 5
 			_target_x = randf_range(325.0, 430.0)
 			_fire_timer = 0.90
 			var s3: CircleShape2D = CircleShape2D.new()
@@ -133,19 +154,34 @@ func setup(
 			max_hp = 22.0 * hp_scale * loop_mult
 			score_value = 600
 			scrap_drop = 5
+			xp_drop = 14
 			_target_x = randf_range(340.0, 425.0)
 			_fire_timer = 1.15
 			var s4: CircleShape2D = CircleShape2D.new()
 			s4.radius = 11.0
 			col.shape = s4
 		Type.BOSS:
-			_sprite.texture = PixelArt.tex(String(st["boss_tex"]))
+			_boss_tex_base = String(st["boss_tex"])
+			_sprite.texture = PixelArt.tex(_boss_tex_base + "_0")
 			max_hp = STAGE_BOSS_HP[stage_idx] * loop_mult
 			score_value = 5000 + stage_idx * 1500
 			scrap_drop = 28 + stage_idx * 4
+			xp_drop = 48 + stage_idx * 12
 			_target_x = 424.0 if stage_idx == 0 else 414.0
 			_fire_timer = 1.20
-			boss_shield_timer = 0.85 # Brief entrance shield while sliding onto screen!
+
+			# Launch Mega Man-style Boss Teleport Arrival -> Signature Pose -> 28-Pip HP Bar Fill!
+			boss_intro_active = true
+			boss_hp_bar_visible = false
+			boss_hp_bar_fill = 0.0
+			_boss_intro_stage = 0
+			_boss_intro_timer = 0.0
+			_boss_hp_pips_filled = 0
+			global_position = Vector2(_target_x, -110.0)
+			_sprite.scale = Vector2(0.18, 1.95)
+			_mat.set_shader_parameter("flash", 1.0)
+			RetroSfx.play("boss_beam", -5.0, 0.02)
+
 			var box: RectangleShape2D = RectangleShape2D.new()
 			box.size = Vector2(88.0, 176.0) if stage_idx == 0 else Vector2(82.0, 146.0)
 			col.shape = box
@@ -159,17 +195,13 @@ func _process(delta: float) -> void:
 		return
 	_age += delta
 
-	if _flash_timer > 0.0:
+	if _flash_timer > 0.0 and not boss_intro_active and not _boss_dying:
 		_flash_timer = maxf(0.0, _flash_timer - delta)
 		_mat.set_shader_parameter("flash", 1.0 if _flash_timer > 0.0 else 0.0)
 
 	if enemy_type == Type.BOSS:
-		# Bleed off burst DPS tracker so bosses always survive ~20-35s of active combat
-		var max_dps_allowed: float = max_hp * 0.062
-		_dps_accumulator = maxf(0.0, _dps_accumulator - max_dps_allowed * delta)
-		if boss_shield_timer > 0.0:
-			boss_shield_timer = maxf(0.0, boss_shield_timer - delta)
-			queue_redraw()
+		_process_boss(delta)
+		return
 
 	match enemy_type:
 		Type.SCOUT_SINE:
@@ -221,20 +253,154 @@ func _process(delta: float) -> void:
 				_shoot_spread(4 if stage_idx >= 4 else 3, 0.22, 138.0 + float(stage_idx) * 4.0, _bullet_b)
 			queue_redraw()
 
-		Type.BOSS:
-			global_position.x = lerpf(global_position.x, _target_x, 2.0 * delta)
-			var bob_amp: float = 10.0 if stage_idx == 0 else (22.0 + float(boss_phase) * 4.0)
-			var bob_spd: float = (0.9 if stage_idx == 0 else 1.2) + float(boss_phase - 1) * 0.25
-			global_position.y = 134.0 + sin(_age * bob_spd) * bob_amp
-			_fire_timer -= delta
-			if _fire_timer <= 0.0 and global_position.x < 465.0:
-				_boss_attack()
-			queue_redraw()
+		_:
+			pass
 
-	if enemy_type != Type.BOSS and global_position.x < -36.0:
+	if global_position.x < -36.0:
 		_dead = true
 		destroyed.emit(self, false)
 		queue_free()
+
+
+func _process_boss(delta: float) -> void:
+	# 1) Dramatic Boss Chain-Explosion Meltdown on Defeat!
+	if _boss_dying:
+		_boss_death_timer -= delta
+		_boss_death_boom_timer -= delta
+		_sprite.texture = PixelArt.tex(_boss_tex_base + "_2")
+		_sprite.position = Vector2(randf_range(-4.5, 4.5), randf_range(-4.5, 4.5))
+		_mat.set_shader_parameter("flash", 1.0 if (int(_age * 26.0) % 2 == 0) else 0.0)
+		if _boss_death_boom_timer <= 0.0:
+			_boss_death_boom_timer = 0.13
+			if fx != null:
+				fx.spawn_explosion(global_position + Vector2(randf_range(-38.0, 24.0), randf_range(-58.0, 58.0)), true)
+				fx.add_shake(5.0)
+			RetroSfx.play("explode", -6.0, 0.09)
+		if _boss_death_timer <= 0.0:
+			_finish_boss_death()
+			return
+		queue_redraw()
+		return
+
+	# 2) Mega Man-Style 3-Stage Boss Intro Sequence!
+	if boss_intro_active:
+		_update_boss_intro(delta)
+		queue_redraw()
+		return
+
+	# 3) Active Boss Combat & Multi-Frame Procedural Animation!
+	var max_dps_allowed: float = max_hp * 0.062
+	_dps_accumulator = maxf(0.0, _dps_accumulator - max_dps_allowed * delta)
+	if boss_shield_timer > 0.0:
+		boss_shield_timer = maxf(0.0, boss_shield_timer - delta)
+
+	var bob_amp: float = 10.0 if stage_idx == 0 else (22.0 + float(boss_phase) * 4.0)
+	var bob_spd: float = (0.9 if stage_idx == 0 else 1.2) + float(boss_phase - 1) * 0.25
+	var sway_x: float = 0.0 if stage_idx == 0 else (-sin(_age * bob_spd * 2.0) * float(boss_phase) * 3.2)
+	global_position.x = lerpf(global_position.x, _target_x + sway_x, 3.5 * delta)
+	global_position.y = 134.0 + sin(_age * bob_spd) * bob_amp
+
+	# Decay weapon recoil & attack squash/stretch smoothly
+	_boss_recoil_x = lerpf(_boss_recoil_x, 0.0, clampf(delta * 14.0, 0.0, 1.0))
+	_sprite.scale = _sprite.scale.lerp(Vector2.ONE, clampf(delta * 12.0, 0.0, 1.0))
+	if _boss_attack_anim_timer > 0.0:
+		_boss_attack_anim_timer = maxf(0.0, _boss_attack_anim_timer - delta)
+
+	# Select animated boss sprite frame (_0, _1, or _2 for roar/attack/phase-burst)
+	if _boss_attack_anim_timer > 0.0 or boss_shield_timer > 0.0:
+		_sprite.texture = PixelArt.tex(_boss_tex_base + "_2")
+	else:
+		var anim_fps: float = 3.2 + float(boss_phase) * 1.5
+		var idle_idx: int = int(_age * anim_fps) % 2
+		_sprite.texture = PixelArt.tex(_boss_tex_base + ("_1" if idle_idx == 1 else "_0"))
+
+	if boss_shield_timer > 0.0:
+		_sprite.position = Vector2(_boss_recoil_x + randf_range(-2.0, 2.0), randf_range(-2.0, 2.0))
+	else:
+		_sprite.position = Vector2(_boss_recoil_x, 0.0)
+	_sprite.rotation = 0.0 if stage_idx == 0 else sin(_age * (1.8 + float(boss_phase) * 0.45)) * 0.036
+
+	# Phase 3 Berserk damage sparks venting from hull
+	if boss_phase >= 3:
+		_boss_spark_timer -= delta
+		if _boss_spark_timer <= 0.0:
+			_boss_spark_timer = 0.26
+			if fx != null:
+				fx.spawn_hit_sparks(global_position + Vector2(randf_range(-32.0, 20.0), randf_range(-50.0, 50.0)), Color("#ff6828"), 4)
+
+	_fire_timer -= delta
+	if _fire_timer <= 0.0 and global_position.x < 465.0:
+		_boss_attack()
+		_boss_attack_anim_timer = 0.28
+		_boss_recoil_x = 5.5
+		_sprite.scale = Vector2(1.06, 0.95)
+
+	queue_redraw()
+
+
+func _update_boss_intro(delta: float) -> void:
+	_boss_intro_timer += delta
+
+	if _boss_intro_stage == 0:
+		# Stage 0: Vertical Mega Man Teleport Beam streak-in to arena perch!
+		var t0: float = clampf(_boss_intro_timer / 0.46, 0.0, 1.0)
+		global_position.x = _target_x
+		global_position.y = lerpf(-110.0, 134.0, 1.0 - pow(1.0 - t0, 2.2))
+		_sprite.scale = Vector2(lerpf(0.16, 0.36, t0), lerpf(1.95, 1.42, t0))
+		_mat.set_shader_parameter("flash", 1.0)
+
+		if _boss_intro_timer >= 0.46:
+			_boss_intro_stage = 1
+			_boss_intro_timer = 0.0
+			global_position = Vector2(_target_x, 134.0)
+			_sprite.scale = Vector2(1.24, 0.80)
+			_sprite.texture = PixelArt.tex(_boss_tex_base + "_2")
+			RetroSfx.play("boss_pose", -4.5, 0.01)
+			if fx != null:
+				fx.add_shake(6.5)
+				fx.spawn_hit_sparks(global_position + Vector2(-20.0, 0.0), Color("#28e8ff"), 18)
+
+	elif _boss_intro_stage == 1:
+		# Stage 1: Materialization Flash & Signature 2-Beat Boss Taunt / Power Pose!
+		var t1: float = clampf(_boss_intro_timer / 0.68, 0.0, 1.0)
+		_sprite.scale = _sprite.scale.lerp(Vector2.ONE, clampf(delta * 12.0, 0.0, 1.0))
+		_mat.set_shader_parameter("flash", maxf(0.0, 1.0 - t1 * 2.8))
+		var pose_suf: String = "_1" if (t1 > 0.28 and t1 < 0.52) else "_2"
+		_sprite.texture = PixelArt.tex(_boss_tex_base + pose_suf)
+		_sprite.position = Vector2(-6.0 * sin(t1 * PI), 0.0)
+
+		if _boss_intro_timer >= 0.68:
+			_boss_intro_stage = 2
+			_boss_intro_timer = 0.0
+			_sprite.scale = Vector2.ONE
+			_sprite.position = Vector2.ZERO
+			_mat.set_shader_parameter("flash", 0.0)
+			boss_hp_bar_visible = true
+			_boss_hp_pips_filled = 0
+			boss_hp_bar_fill = 0.0
+
+	else:
+		# Stage 2: Classic Mega Man Tick-by-Tick Boss HP Bar Fill (28 pips)!
+		while _boss_intro_timer >= 0.038 and _boss_hp_pips_filled < BOSS_HP_PIPS:
+			_boss_intro_timer -= 0.038
+			_boss_hp_pips_filled += 1
+			boss_hp_bar_fill = float(_boss_hp_pips_filled) / float(BOSS_HP_PIPS)
+			RetroSfx.play("boss_hp_tick", -9.0, 0.0)
+
+		var fill_suf: String = "_2" if _boss_hp_pips_filled >= BOSS_HP_PIPS - 4 else (
+			"_1" if (_boss_hp_pips_filled / 3) % 2 == 1 else "_0"
+		)
+		_sprite.texture = PixelArt.tex(_boss_tex_base + fill_suf)
+
+		if _boss_hp_pips_filled >= BOSS_HP_PIPS:
+			boss_hp_bar_fill = 1.0
+			boss_intro_active = false
+			_boss_intro_stage = 3
+			boss_shield_timer = 0.0
+			_age = 0.0
+			_fire_timer = 0.35
+			_boss_attack_anim_timer = 0.22
+			RetroSfx.play("shield_hit", -6.0, 0.02)
 
 
 func _boss_attack() -> void:
@@ -424,11 +590,11 @@ func take_contact_damage(dmg: float) -> void:
 
 
 func take_damage(dmg: float) -> void:
-	if _dead:
+	if _dead or _boss_dying:
 		return
 
 	if enemy_type == Type.BOSS:
-		if boss_shield_timer > 0.0:
+		if boss_intro_active or boss_shield_timer > 0.0:
 			return
 		# Smooth Adaptive Boss Plating: caps ultra-high stacked multi-ray burst so bosses never melt in 2 seconds!
 		var cap_window: float = max_hp * 0.095
@@ -438,14 +604,14 @@ func take_damage(dmg: float) -> void:
 		elif _dps_accumulator > cap_window * 0.6:
 			effective_dmg = dmg * 0.45
 		_dps_accumulator += effective_dmg
-		hp -= effective_dmg
+		hp = maxf(0.0, hp - effective_dmg)
 
 		# Check 3-Phase Thresholds (66% -> Phase 2, 33% -> Phase 3)!
 		var ratio: float = hp / max_hp
-		if boss_phase == 1 and ratio <= 0.66:
+		if boss_phase == 1 and ratio <= 0.66 and hp > 0.0:
 			_enter_next_boss_phase(2)
 			return
-		elif boss_phase == 2 and ratio <= 0.33:
+		elif boss_phase == 2 and ratio <= 0.33 and hp > 0.0:
 			_enter_next_boss_phase(3)
 			return
 	else:
@@ -454,7 +620,10 @@ func take_damage(dmg: float) -> void:
 	_flash_timer = 0.055
 	_mat.set_shader_parameter("flash", 1.0)
 	if hp <= 0.0:
-		_die()
+		if enemy_type == Type.BOSS:
+			_start_boss_death_sequence()
+		else:
+			_die()
 	else:
 		RetroSfx.play("hit", -14.0, 0.08)
 
@@ -464,15 +633,50 @@ func _enter_next_boss_phase(new_phase: int) -> void:
 	boss_shield_timer = 0.95 # Brief phase-transition energy shield!
 	_dps_accumulator = 0.0
 	_fire_timer = 0.45
+	_boss_attack_anim_timer = 0.95
+	_sprite.scale = Vector2(1.14, 0.88)
 	RetroSfx.play("explode", -5.0, 0.04)
 	if fx != null:
 		fx.spawn_explosion(global_position + Vector2(-20.0, 0.0), true)
-		fx.add_shake(6.0)
+		fx.add_shake(6.5)
 		fx.spawn_popup(
 			global_position + Vector2(-58.0, -40.0),
 			"PHASE 2: OVERDRIVE!" if new_phase == 2 else "PHASE 3: BERSERK!",
 			Color("#ffe854") if new_phase == 2 else Color("#ff4c68")
 		)
+	boss_phase_broken.emit(self, 18 + stage_idx * 4)
+
+
+func _start_boss_death_sequence() -> void:
+	_boss_dying = true
+	_boss_death_timer = 1.15
+	_boss_death_boom_timer = 0.02
+	hp = 0.0
+	collision_layer = 0
+	monitorable = false
+	_sprite.rotation = 0.0
+	_sprite.scale = Vector2(1.08, 1.08)
+	# Cancel all active enemy bullets on screen as an immediate boss-kill reward!
+	if bullet_container != null:
+		for child: Node in bullet_container.get_children():
+			if child is GameBullet:
+				var gb: GameBullet = child as GameBullet
+				if not gb.is_player_bullet:
+					if fx != null:
+						fx.spawn_hit_sparks(gb.global_position, Color("#ff4c68"), 3)
+					gb.queue_free()
+
+
+func _finish_boss_death() -> void:
+	_dead = true
+	if fx != null:
+		fx.spawn_explosion(global_position, true)
+		for k: int in range(7):
+			fx.spawn_explosion(global_position + Vector2(randf_range(-36.0, 26.0), randf_range(-58.0, 58.0)), true)
+		fx.add_shake(13.0)
+	RetroSfx.play("big_explode", -3.5, 0.05)
+	destroyed.emit(self, true)
+	queue_free()
 
 
 func _die() -> void:
@@ -480,11 +684,7 @@ func _die() -> void:
 	var is_big: bool = (enemy_type == Type.CRUISER or enemy_type == Type.BOSS)
 	if fx != null:
 		fx.spawn_explosion(global_position, is_big)
-		if enemy_type == Type.BOSS:
-			for k: int in range(6):
-				fx.spawn_explosion(global_position + Vector2(randf_range(-34.0, 24.0), randf_range(-56.0, 56.0)), true)
-			fx.add_shake(12.0)
-		elif enemy_type == Type.CRUISER:
+		if enemy_type == Type.CRUISER:
 			fx.add_shake(4.0)
 	RetroSfx.play("big_explode" if is_big else "explode", -4.0 if is_big else -8.5, 0.07)
 	destroyed.emit(self, true)
@@ -496,6 +696,22 @@ func _draw() -> void:
 		var ratio: float = clampf(hp / max_hp, 0.0, 1.0)
 		draw_rect(Rect2(-12.0, -14.0, 24.0, 3.0), Color("#14182e"))
 		draw_rect(Rect2(-12.0, -14.0, 24.0 * ratio, 3.0), Color("#ff4c5e"))
-	elif enemy_type == Type.BOSS and boss_shield_timer > 0.0:
-		# Glowing cyan phase-shift energy barrier around the boss!
-		draw_arc(Vector2(-8.0, 0.0), 58.0, 0.0, TAU, 32, Color(0.16, 0.91, 1.0, 0.65), 2.0)
+	elif enemy_type == Type.BOSS:
+		if boss_intro_active:
+			if _boss_intro_stage == 0:
+				# Mega Man vertical cyan-white teleport arrival beam!
+				draw_rect(Rect2(-12.0, -220.0, 24.0, 300.0), Color(0.16, 0.91, 1.0, 0.38))
+				draw_rect(Rect2(-4.0, -220.0, 8.0, 300.0), Color(1.0, 1.0, 1.0, 0.92))
+			elif _boss_intro_stage == 1:
+				# Expanding signature pose shockwave ring!
+				var pt: float = clampf(_boss_intro_timer / 0.68, 0.0, 1.0)
+				draw_arc(Vector2(-10.0, 0.0), lerpf(16.0, 76.0, pt), 0.0, TAU, 32, Color(1.0, 0.91, 0.33, 1.0 - pt), 2.0)
+		elif boss_shield_timer > 0.0:
+			# Glowing cyan phase-shift energy barrier around the boss!
+			draw_arc(Vector2(-8.0, 0.0), 58.0, 0.0, TAU, 32, Color(0.16, 0.91, 1.0, 0.65), 2.0)
+		elif not _boss_dying and _fire_timer > 0.0 and _fire_timer < 0.22:
+			# Pre-attack weapon charge glint right before firing a volley!
+			var ct: float = 1.0 - (_fire_timer / 0.22)
+			var r_glint: float = lerpf(3.0, 8.5, ct)
+			draw_circle(Vector2(-36.0, 0.0), r_glint, Color(1.0, 0.16, 0.28, 0.55))
+			draw_circle(Vector2(-36.0, 0.0), r_glint * 0.48, Color(1.0, 0.95, 0.75, 0.92))

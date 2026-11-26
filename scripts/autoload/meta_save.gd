@@ -18,61 +18,22 @@ var default_autofire: bool = true
 var fullscreen_enabled: bool = false
 var touch_mode: int = 0 # 0 = AUTO (shows on touch), 1 = ALWAYS ON (phone/mouse test), 2 = OFF
 
-# Permanent upgrade levels
-var upgrades: Dictionary = {
-	"hull": 0,
-	"fire_rate": 0,
-	"damage": 0,
-	"magnet": 0,
-	"starter_shield": 0,
-}
-
-const UPGRADE_DEFS: Array[Dictionary] = [
-	{
-		"id": "hull",
-		"name": "REINFORCED HULL",
-		"desc": "+1 Max Hull per rank",
-		"max_level": 5,
-		"base_cost": 25,
-		"cost_step": 25,
-	},
-	{
-		"id": "fire_rate",
-		"name": "CYCLER CAPACITOR",
-		"desc": "+10% Base Fire Rate",
-		"max_level": 5,
-		"base_cost": 30,
-		"cost_step": 30,
-	},
-	{
-		"id": "damage",
-		"name": "PLASMA CORE",
-		"desc": "+15% Weapon Damage",
-		"max_level": 5,
-		"base_cost": 35,
-		"cost_step": 35,
-	},
-	{
-		"id": "magnet",
-		"name": "TRACTOR ARRAY",
-		"desc": "+25px Magnet & +10% Scrap",
-		"max_level": 4,
-		"base_cost": 20,
-		"cost_step": 25,
-	},
-	{
-		"id": "starter_shield",
-		"name": "AEGIS GENERATOR",
-		"desc": "Start runs w/ Force Shield",
-		"max_level": 1,
-		"base_cost": 80,
-		"cost_step": 80,
-	},
-]
+# Rogue Legacy-style Skill Tree node levels & Fleet Loadout!
+var tree_levels: Dictionary = {"core_root": 1}
+var selected_ship: String = "viper"
 
 
 func _ready() -> void:
+	_init_default_tree()
 	load_game()
+
+
+func _init_default_tree() -> void:
+	tree_levels.clear()
+	for def: Dictionary in SkillTreeData.NODES:
+		var id: String = String(def["id"])
+		tree_levels[id] = 1 if id == "core_root" else 0
+	selected_ship = "viper"
 
 
 func apply_audio_and_display_settings() -> void:
@@ -86,87 +47,206 @@ func apply_audio_and_display_settings() -> void:
 
 
 func get_level(id: String) -> int:
-	return int(upgrades.get(id, 0))
+	return int(tree_levels.get(id, 0))
 
 
 func get_total_upgrade_ranks() -> int:
 	var sum: int = 0
-	for k: String in upgrades.keys():
-		sum += int(upgrades[k])
+	for k: String in tree_levels.keys():
+		if k != "core_root":
+			sum += int(tree_levels[k])
 	return sum
 
 
 func get_max_upgrade_ranks() -> int:
 	var sum: int = 0
-	for def: Dictionary in UPGRADE_DEFS:
-		sum += int(def["max_level"])
+	for def: Dictionary in SkillTreeData.NODES:
+		if String(def["id"]) != "core_root":
+			sum += int(def["max_level"])
 	return sum
 
 
-func has_any_affordable_upgrade() -> bool:
-	for def: Dictionary in UPGRADE_DEFS:
-		if can_buy(String(def["id"])):
-			return true
-	return false
+func get_unlocked_node_count() -> int:
+	var count: int = 0
+	for def: Dictionary in SkillTreeData.NODES:
+		if get_level(String(def["id"])) > 0:
+			count += 1
+	return count
 
 
-func get_upgrade_def(id: String) -> Dictionary:
-	for def: Dictionary in UPGRADE_DEFS:
-		if String(def["id"]) == id:
-			return def
-	return {}
-
-
-func get_upgrade_cost(id: String) -> int:
-	var def: Dictionary = get_upgrade_def(id)
+func is_node_revealed(id: String) -> bool:
+	var def: Dictionary = SkillTreeData.get_node_def(id)
 	if def.is_empty():
-		return 9999
+		return false
+	var parent_id: String = String(def["parent"])
+	if parent_id == "":
+		return true
+	return get_level(parent_id) > 0
+
+
+func get_node_cost(id: String) -> int:
+	var def: Dictionary = SkillTreeData.get_node_def(id)
+	if def.is_empty():
+		return 99999
 	var lvl: int = get_level(id)
 	return int(def["base_cost"]) + lvl * int(def["cost_step"])
 
 
-func can_buy(id: String) -> bool:
-	var def: Dictionary = get_upgrade_def(id)
-	if def.is_empty():
+func can_buy_node(id: String) -> bool:
+	var def: Dictionary = SkillTreeData.get_node_def(id)
+	if def.is_empty() or not is_node_revealed(id):
 		return false
 	var lvl: int = get_level(id)
 	if lvl >= int(def["max_level"]):
 		return false
-	return scrap >= get_upgrade_cost(id)
+	return scrap >= get_node_cost(id)
 
 
-func buy_upgrade(id: String) -> bool:
-	if not can_buy(id):
+func buy_node(id: String) -> bool:
+	if not can_buy_node(id):
 		return false
-	var cost: int = get_upgrade_cost(id)
+	var def: Dictionary = SkillTreeData.get_node_def(id)
+	var cost: int = get_node_cost(id)
 	scrap -= cost
-	upgrades[id] = get_level(id) + 1
+	tree_levels[id] = get_level(id) + 1
+	var ship_unlock: String = String(def.get("unlocks_ship", ""))
+	if ship_unlock != "":
+		selected_ship = ship_unlock
 	save_game()
 	return true
 
 
+func has_any_affordable_upgrade() -> bool:
+	for def: Dictionary in SkillTreeData.NODES:
+		if can_buy_node(String(def["id"])):
+			return true
+	return false
+
+
+# --- Ship Unlock & Fleet Loadout Queries ---
+func is_ship_unlocked(ship_id: String) -> bool:
+	if ship_id == "viper":
+		return true
+	for def: Dictionary in SkillTreeData.NODES:
+		if String(def.get("unlocks_ship", "")) == ship_id and get_level(String(def["id"])) > 0:
+			return true
+	return false
+
+
+func get_unlocked_ship_count() -> int:
+	var c: int = 0
+	for s: Dictionary in SkillTreeData.SHIPS:
+		if is_ship_unlocked(String(s["id"])):
+			c += 1
+	return c
+
+
+func select_ship(ship_id: String) -> bool:
+	if not is_ship_unlocked(ship_id):
+		return false
+	selected_ship = ship_id
+	save_game()
+	return true
+
+
+func get_selected_ship_def() -> Dictionary:
+	if not is_ship_unlocked(selected_ship):
+		selected_ship = "viper"
+	return SkillTreeData.get_ship_def(selected_ship)
+
+
+# --- Aggregated Run Stat & Starter Perks from Skill Tree + Selected Ship! ---
 func get_starting_max_hp() -> int:
-	return 4 + get_level("hull")
+	var ship_def: Dictionary = get_selected_ship_def()
+	var base: int = 4 + int(ship_def["hp_mod"]) + get_level("hull_1") + get_level("bio_carapace")
+	return maxi(2, base)
+
+
+func get_starting_speed() -> float:
+	var ship_def: Dictionary = get_selected_ship_def()
+	return float(ship_def["speed"]) * (1.0 + 0.07 * float(get_level("thruster_1")))
 
 
 func get_base_fire_rate_mult() -> float:
-	return 1.0 + 0.10 * float(get_level("fire_rate"))
+	return 1.0 + 0.10 * float(get_level("fire_rate_1"))
 
 
 func get_base_damage_mult() -> float:
-	return 1.0 + 0.15 * float(get_level("damage"))
+	var ship_bonus: float = 0.12 if selected_ship == "dread" else 0.0
+	return 1.0 + ship_bonus + 0.12 * float(get_level("damage_1")) + 0.10 * float(get_level("bio_carapace")) + 0.12 * float(get_level("heavy_ordnance"))
+
+
+func get_crit_chance() -> float:
+	var ship_crit: float = 0.20 if selected_ship == "phantom" else 0.0
+	return clampf(ship_crit + 0.07 * float(get_level("crit_optics")), 0.0, 0.75)
+
+
+func get_aoe_scale_mult() -> float:
+	return 1.0 + 0.15 * float(get_level("heavy_ordnance")) + 0.10 * float(get_level("weird_science"))
+
+
+func get_projectile_size_mult() -> float:
+	return 1.0 + 0.10 * float(get_level("weird_science"))
 
 
 func get_magnet_radius() -> float:
-	return 48.0 + 25.0 * float(get_level("magnet"))
+	var saucer_mag: float = 35.0 if selected_ship == "saucer" else 0.0
+	return 56.0 + saucer_mag + 26.0 * float(get_level("magnet_1"))
 
 
 func get_scrap_mult() -> float:
-	return 1.0 + 0.10 * float(get_level("magnet"))
+	var neko_bonus: float = 0.15 if selected_ship == "neko" else 0.0
+	return 1.0 + neko_bonus + 0.15 * float(get_level("scrap_greed"))
+
+
+func get_xp_mult() -> float:
+	var eye_bonus: float = 0.18 if selected_ship == "eyeball" else 0.0
+	return 1.0 + eye_bonus + 0.12 * float(get_level("xp_scholar"))
+
+
+func get_boss_bounty_mult() -> float:
+	return 1.0 + 0.25 * float(get_level("bounty_hunter"))
+
+
+func get_stage_heal_amount() -> int:
+	var scarab_heal: int = 1 if selected_ship == "beetle" else 0
+	return scarab_heal + (1 if get_level("regen_bay") > 0 else 0)
+
+
+func get_heal_drop_chance() -> float:
+	return 0.10 + 0.05 * float(get_level("regen_bay"))
+
+
+func get_starting_shields() -> int:
+	return get_level("aegis_core")
 
 
 func has_starter_shield() -> bool:
-	return get_level("starter_shield") > 0
+	return get_starting_shields() > 0
+
+
+func get_starting_rerolls() -> int:
+	return get_level("draft_reroll")
+
+
+func has_lazarus_revive() -> bool:
+	return get_level("phoenix_cell") > 0
+
+
+func has_veteran_drop() -> bool:
+	return get_level("veteran_drop") > 0
+
+
+func get_starter_addons() -> Dictionary:
+	return {
+		"option": get_level("starter_option"),
+		"turret": get_level("starter_turret"),
+		"missile": get_level("starter_missile"),
+		"blades": get_level("starter_blades") + (1 if selected_ship == "saucer" else 0),
+		"nova": get_level("starter_nova"),
+		"bomb": get_level("starter_bomb"),
+		"flank": 1 if selected_ship == "dread" else 0,
+	}
 
 
 func record_run_end(wave_reached: int, run_scrap: int, kills: int, run_score: int, run_bosses: int) -> void:
@@ -190,8 +270,7 @@ func reset_save() -> void:
 	total_runs = 0
 	total_kills = 0
 	bosses_defeated = 0
-	for key: String in upgrades.keys():
-		upgrades[key] = 0
+	_init_default_tree()
 	save_game()
 
 
@@ -210,7 +289,8 @@ func save_game() -> void:
 		"default_autofire": default_autofire,
 		"fullscreen_enabled": fullscreen_enabled,
 		"touch_mode": touch_mode,
-		"upgrades": upgrades,
+		"selected_ship": selected_ship,
+		"tree_levels": tree_levels,
 	}
 	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file != null:
@@ -243,9 +323,25 @@ func load_game() -> void:
 	default_autofire = bool(data.get("default_autofire", true))
 	fullscreen_enabled = bool(data.get("fullscreen_enabled", false))
 	touch_mode = int(data.get("touch_mode", 0))
-	var saved_upg: Variant = data.get("upgrades", {})
-	if typeof(saved_upg) == TYPE_DICTIONARY:
-		var upg_dict: Dictionary = saved_upg
-		for key: String in upgrades.keys():
-			if upg_dict.has(key):
-				upgrades[key] = int(upg_dict[key])
+	selected_ship = String(data.get("selected_ship", "viper"))
+
+	_init_default_tree()
+	var saved_tree: Variant = data.get("tree_levels", {})
+	if typeof(saved_tree) == TYPE_DICTIONARY:
+		var td: Dictionary = saved_tree
+		for key: String in tree_levels.keys():
+			if td.has(key):
+				tree_levels[key] = int(td[key])
+	else:
+		# Migrate legacy 5-row Hangar saves seamlessly into the new Starforge Skill Tree!
+		var legacy_upg: Variant = data.get("upgrades", {})
+		if typeof(legacy_upg) == TYPE_DICTIONARY:
+			var lu: Dictionary = legacy_upg
+			tree_levels["hull_1"] = int(lu.get("hull", 0))
+			tree_levels["fire_rate_1"] = int(lu.get("fire_rate", 0))
+			tree_levels["damage_1"] = int(lu.get("damage", 0))
+			tree_levels["magnet_1"] = int(lu.get("magnet", 0))
+			tree_levels["aegis_core"] = int(lu.get("starter_shield", 0))
+	tree_levels["core_root"] = 1
+	if not is_ship_unlocked(selected_ship):
+		selected_ship = "viper"

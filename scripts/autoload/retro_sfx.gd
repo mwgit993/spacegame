@@ -42,6 +42,16 @@ func _generate_sfx() -> void:
 	_streams["scrap"] = _synth_arpeggio([660.0, 990.0], 0.04, 0.45)
 	_streams["powerup"] = _synth_arpeggio([440.0, 554.0, 659.0, 880.0], 0.055, 0.55)
 	_streams["ui"] = _synth_arpeggio([520.0, 780.0], 0.035, 0.4)
+	_streams["boss_siren"] = _synth_tone(0.28, 390.0, 780.0, 0, 0.50)
+	_streams["boss_beam"] = _synth_tone(0.24, 1520.0, 310.0, 0, 0.52)
+	_streams["boss_pose"] = _synth_arpeggio([220.0, 277.2, 330.0, 440.0, 659.3], 0.045, 0.56)
+	_streams["boss_hp_tick"] = _synth_tone(0.028, 988.0, 1175.0, 0, 0.42)
+	_streams["xp"] = _synth_tone(0.032, 740.0, 1180.0, 1, 0.36)
+	_streams["level_up"] = _synth_arpeggio([523.25, 659.25, 783.99, 1046.5, 1318.5], 0.052, 0.56)
+	_streams["zap"] = _synth_tone(0.075, 1650.0, 280.0, 2, 0.44)
+	_streams["bounce"] = _synth_tone(0.035, 1120.0, 1560.0, 1, 0.34)
+	_streams["meow"] = _synth_tone(0.095, 590.0, 940.0, 1, 0.36)
+	_streams["unlock_ship"] = _synth_arpeggio([440.0, 554.37, 659.25, 880.0, 1108.7, 1318.5], 0.055, 0.58)
 
 
 # wave_type: 0 = pulse/square, 1 = triangle, 2 = crunchy 16-bit noise+pulse

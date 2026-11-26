@@ -54,6 +54,27 @@ func _make_tex(rows: PackedStringArray, custom_pal: Dictionary = {}) -> ImageTex
 	return ImageTexture.create_from_image(img)
 
 
+func _make_enemy_bullet_glow(size: int, mid_r: float, outer_r: float) -> ImageTexture:
+	var img: Image = Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var center: float = float(size - 1) * 0.5
+	for y: int in range(size):
+		for x: int in range(size):
+			var d: float = Vector2(float(x) - center, float(y) - center).length()
+			var col: Color = Color(0.0, 0.0, 0.0, 0.0)
+			if d <= 3.4:
+				# High-contrast dark crimson backing so bullets pop even against bright lava or sky!
+				col = Color(0.26, 0.0, 0.05, 0.90)
+			elif d <= mid_r:
+				# Bright vivid danger-red inner halo
+				col = Color(1.0, 0.10, 0.18, 0.76)
+			elif d <= outer_r:
+				# Soft pulsing scarlet outer aura
+				var t: float = (d - mid_r) / maxf(0.01, outer_r - mid_r)
+				col = Color(1.0, 0.06, 0.14, lerpf(0.46, 0.0, t))
+			img.set_pixel(x, y, col)
+	return ImageTexture.create_from_image(img)
+
+
 func _build_all() -> void:
 	if not _cache.is_empty():
 		return
@@ -107,6 +128,189 @@ func _build_all() -> void:
 		".OOYYYYYOO.",
 		"..OOOOOOO..",
 		"...OOOOO...",
+	]))
+
+	_cache["option_yarn"] = _make_tex(PackedStringArray([
+		"...MMMMM...",
+		"..MMWWWMM..",
+		".MWWMMMWWM.",
+		"MWMMYYYMMWM",
+		"MWMYYWYYMWM",
+		"MWMMYYYMMWM",
+		".MWWMMMWWM.",
+		"..MMWWWMM..M",
+		"...MMMMM..MM",
+	]))
+
+	# --- 6 Unlockable Playable Starships (2 animated frames each!) ---
+	# 1) SCARAB BIO-CRUISER (Living emerald-magenta xeno beetle!)
+	_cache["ship_beetle_0"] = _make_tex(PackedStringArray([
+		".....ggggg................",
+		"...ggGGGGGGg..............",
+		"..gGGMMGGGGGGg............",
+		".gGMMWWMMGGGGGGg..YYY.....",
+		"MGGMMWWMMGGGGGGGGYYWWYY...",
+		"WGGGGGGGGGGCCWWWWGG.......",
+		"MWWGGGGGGCCCCWWWWGGGGYY...",
+		"WGGGGGGGGGGCCWWWWGG.......",
+		"MGGMMWWMMGGGGGGGGYYWWYY...",
+		".gGMMWWMMGGGGGGg..YYY.....",
+		"..gGGMMGGGGGGg............",
+		"...ggGGGGGGg..............",
+		".....ggggg................",
+	]))
+	_cache["ship_beetle_1"] = _make_tex(PackedStringArray([
+		"....gggggg................",
+		"..ggGGGGGGGg..............",
+		".gGGMMGGGGGGGg....YYY.....",
+		".gGMMWWMMGGGGGGg..YYWWYY..",
+		"WGGMMWWMMGGGGGGGGGG.......",
+		"MWWGGGGGGGGCCWWWWGGGGYY...",
+		"WWWGGGGGGCCCCWWWWGGGGWW...",
+		"MWWGGGGGGGGCCWWWWGGGGYY...",
+		"WGGMMWWMMGGGGGGGGGG.......",
+		".gGMMWWMMGGGGGGg..YYWWYY..",
+		".gGGMMGGGGGGGg....YYY.....",
+		"..ggGGGGGGGg..............",
+		"....gggggg................",
+	]))
+
+	# 2) CHRONO PHANTOM (Forward-swept stealth phase needle-wing!)
+	_cache["ship_phantom_0"] = _make_tex(PackedStringArray([
+		"..........NNNNCCCC........",
+		"........NNDDCCCCCCWW......",
+		"......NNDDCCCCCCCCWWWW....",
+		"...NNNDDSSLLBBCCCC........",
+		".CCWWDDSSLLLBBCCWWWW......",
+		"CWWWWNNDDLLLCCWWWWWWWWYYYY",
+		".CCWWDDSSLLLBBCCWWWW......",
+		"...NNNDDSSLLBBCCCC........",
+		"......NNDDCCCCCCCCWWWW....",
+		"........NNDDCCCCCCWW......",
+		"..........NNNNCCCC........",
+	]))
+	_cache["ship_phantom_1"] = _make_tex(PackedStringArray([
+		"..........NNNNCCCC........",
+		"........NNDDCCCCCCWW......",
+		"......NNDDCCCCCCCCWWWW....",
+		"...NNNDDSSLLBBCCCC........",
+		"BCCWWDDSSLLLBBCCWWWW......",
+		"WWWWWNNDDLLLCCWWWWWWWWWWWW",
+		"BCCWWDDSSLLLBBCCWWWW......",
+		"...NNNDDSSLLBBCCCC........",
+		"......NNDDCCCCCCCCWWWW....",
+		"........NNDDCCCCCCWW......",
+		"..........NNNNCCCC........",
+	]))
+
+	# 3) TITAN GUNSHIP (Twin-prow heavy siege corvette!)
+	_cache["ship_dread_0"] = _make_tex(PackedStringArray([
+		"..kkkkOOOOOO..............",
+		".YOOKKOOOOLLLLWW..........",
+		"WYYOKKSSLLLLLLLLWWWW......",
+		".kkkkKSSDDDDSSSSLLLLWW....",
+		"...kKKSSDDCCWWDDSSLL......",
+		".YOOKKSSDDCCWWDDSSLLWWWW..",
+		"WYYOKKSSDDDDSSSSLLLLWWWW..",
+		".kkkkKSSDDDDSSSSLLLLWW....",
+		"WYYOKKSSLLLLLLLLWWWW......",
+		".YOOKKOOOOLLLLWW..........",
+		"..kkkkOOOOOO..............",
+	]))
+	_cache["ship_dread_1"] = _make_tex(PackedStringArray([
+		"..kkkkOOOOOO..............",
+		"YYWWKKOOOOLLLLWW..........",
+		"WWWWKKSSLLLLLLLLWWWW......",
+		".kkkkKSSDDDDSSSSLLLLWW....",
+		"...kKKSSDDCCWWDDSSLL......",
+		"YYWWKKSSDDCCWWDDSSLLWWWW..",
+		"WWWWKKSSDDDDSSSSLLLLWWWW..",
+		".kkkkKSSDDDDSSSSLLLLWW....",
+		"WWWWKKSSLLLLLLLLWWWW......",
+		"YYWWKKOOOOLLLLWW..........",
+		"..kkkkOOOOOO..............",
+	]))
+
+	# 4) COSMIC SAUCER X-99 (Spinning neon-domed alien UFO!)
+	_cache["ship_saucer_0"] = _make_tex(PackedStringArray([
+		"........CCCCCC............",
+		"......CCWWWWWWCC..........",
+		".....CWWCCWWWWWWC.........",
+		"...KKKCCCCCCCCCCKKK.......",
+		".KKLLLSSSSSSSSSSLLLKK.....",
+		"KLLGGSSYYSSSSGGSSYYLLK....",
+		"WWWWWWWWWWWWWWWWWWWWWW....",
+		".KKDDDDDDDDDDDDDDDDKK.....",
+		"...KKKKGGGGGGGGKKKK.......",
+		"......GG..YY..GG..........",
+	]))
+	_cache["ship_saucer_1"] = _make_tex(PackedStringArray([
+		"........CCCCCC............",
+		"......CCWWWWWWCC..........",
+		".....CWWWWCCWWWWC.........",
+		"...KKKCCCCCCCCCCKKK.......",
+		".KKLLLSSSSSSSSSSLLLKK.....",
+		"KLLYYSSGGSSSSYYSSGGLLK....",
+		"CCCCCCCCCCCCCCCCCCCCCC....",
+		".KKDDDDDDDDDDDDDDDDKK.....",
+		"...KKKKCCCCCCCCKKKK.......",
+		"......CC..GG..CC..........",
+	]))
+
+	# 5) OCULARIS VOID-SPAWN (Floating cosmic eyeball w/ writhing tentacles!)
+	_cache["ship_eyeball_0"] = _make_tex(PackedStringArray([
+		"..pppp....pppppp..........",
+		"ppPPPpp..pPPPPPPpp........",
+		"....ppPPpPPWWWWPPPp.......",
+		".ppp..pPPPWWWWWWWRRp......",
+		"pPPPppPPWWWWWWWRRMMRp.....",
+		"....pPPPWWWWWWWRMWWMR.....",
+		".ppp.pPPWWWWWWWRRMMRp.....",
+		"pPPPp.pPPPWWWWWWWRRp......",
+		"....ppPPpPPWWWWPPPp.......",
+		"..pppp...pPPPPPPpp........",
+		"ppPPPp....pppppp..........",
+	]))
+	_cache["ship_eyeball_1"] = _make_tex(PackedStringArray([
+		"ppPPPp....pppppp..........",
+		"..pppp...pPPPPPPpp........",
+		".ppp..pPpPPWWWWPPPp.......",
+		"pPPPpp..pPWWWWWWWRRp......",
+		"....ppPPWWWWWWWRRMMRp.....",
+		".ppppPPPWWWWWWWRMWWMR.....",
+		"pPPP..pPWWWWWWWRRMMRp.....",
+		"....pppPPPWWWWWWWRRp......",
+		"..pppp..pPPWWWWPPPp.......",
+		"ppPPPp...pPPPPPPpp........",
+		"..........pppppp..........",
+	]))
+
+	# 6) S.S. MEOW-ZER (Cat-eared starfighter w/ whiskers, kitty eyes & thruster tail!)
+	_cache["ship_neko_0"] = _make_tex(PackedStringArray([
+		".......MM....MM...........",
+		"......MWWM..MWWM..........",
+		".....MWMMWLLWMMWM.........",
+		".OO..MLLLLLLLLLLM.........",
+		"OYYO..LLWWWWWWWWLL........",
+		"...OOLLWWYYYYWWYYLLWW.....",
+		"..CYOLLWWWWWWWWWWLLWWWW...",
+		".WCYOLLWWWWWWWWMMLLWWWW...",
+		"..CYOLLWWYYYYWWYYLLWW.....",
+		"...OO.LLWWWWWWWWLL........",
+		".......LLLLLLLLLL.........",
+	]))
+	_cache["ship_neko_1"] = _make_tex(PackedStringArray([
+		".......MM....MM...........",
+		"......MWWM..MWWM..........",
+		".....MWMMWLLWMMWM.........",
+		".....MLLLLLLLLLLM.........",
+		"...OO.LLWWWWWWWWLL........",
+		".OYYOLLWWYYYYWWYYLLWW.....",
+		"WWYYOLLWWWWWWWWWWLLWWWW...",
+		"WWCYOLLWWWWWWWWMMLLWWWW...",
+		".OYYOLLWWYYYYWWYYLLWW.....",
+		".....OLLWWWWWWWWLL........",
+		"...OO..LLLLLLLLLL.........",
 	]))
 
 	# --- Base Enemy Silhouettes (re-paletted & specialized per biome!) ---
@@ -293,6 +497,160 @@ func _build_all() -> void:
 		"..RRLLLL..",
 	]))
 
+	_cache["bullet_wave"] = _make_tex(PackedStringArray([
+		"..gggGG..",
+		".gGGYYWW.",
+		"gGYYWW...",
+		"GYYWW....",
+		"GYWW.....",
+		"GYWW.....",
+		"GYYWW....",
+		"gGYYWW...",
+		".gGGYYWW.",
+		"..gggGG..",
+	]))
+
+	_cache["bullet_prism"] = _make_tex(PackedStringArray([
+		"...MM...",
+		"..MPPM..",
+		".MPWWPM.",
+		"MPWWWWPM",
+		"MPWWWWPM",
+		".MPWWPM.",
+		"..MPPM..",
+		"...MM...",
+	]))
+
+	_cache["bullet_tesla"] = _make_tex(PackedStringArray([
+		"..PP..CC..WW",
+		"PPCCWWCCWWWW",
+		"..WWWWWWWWWW",
+		"PPCCWWCCWWWW",
+		"..PP..CC..WW",
+	]))
+
+	_cache["bullet_plasma"] = _make_tex(PackedStringArray([
+		"..rrrrr..",
+		".rROOOOr.",
+		"rROYYYYOr",
+		"ROYYWWYYO",
+		"ROYWWWWYO",
+		"ROYYWWYYO",
+		"rROYYYYOr",
+		".rROOOOr.",
+		"..rrrrr..",
+	]))
+
+	_cache["bullet_dart"] = _make_tex(PackedStringArray([
+		".ggGGGG.",
+		"GGWWWWWW",
+		".ggGGGG.",
+	]))
+
+	_cache["bullet_flank"] = _make_tex(PackedStringArray([
+		".OOYYYY.",
+		"YYWWWWWW",
+		"YYWWWWWW",
+		".OOYYYY.",
+	]))
+
+	_cache["bullet_bomb"] = _make_tex(PackedStringArray([
+		"..ppppp..",
+		".pPPPPPp.",
+		"pPPMMMMPp",
+		"PPMWWWMPP",
+		"PPMWWWMPP",
+		"pPPMMMMPp",
+		".pPPPPPp.",
+		"..ppppp..",
+	]))
+
+	_cache["addon_sawblade"] = _make_tex(PackedStringArray([
+		"....CC.....",
+		"...CWWC..C.",
+		".C..CC..CWC",
+		"CWC.LL.CC..",
+		".CCLLLLLLC.",
+		"..LLWWWWLL.",
+		".CLLLLLLCC.",
+		"..CC.LL.CWC",
+		"CWC..CC..C.",
+		".C..CWWC...",
+		".....CC....",
+	]))
+
+	# --- Exotic Ship Signature Projectiles (Flying Space Cats, Bio-Waves, Mind-Rings, Ocular Gaze!) ---
+	_cache["bullet_cat_0"] = _make_tex(PackedStringArray([
+		".......O...O.",
+		".OO...OWO.OWO",
+		"OYYO..OYYYYYO",
+		"..OO.OYWGYWGY",
+		"...OOYYYYYYMO",
+		"..OYYYYWWWWYO",
+		".OWW..OYY..WW",
+		"......WW.....",
+	]))
+	_cache["bullet_cat_1"] = _make_tex(PackedStringArray([
+		".......O...O.",
+		"...OO.OWO.OWO",
+		"..OYYOOYYYYYO",
+		"...OOOYWGYWGY",
+		"...OOYYYYYYMO",
+		"..OYYYYWWWWYO",
+		"...WW.OYY.WW.",
+		".....WW....WW",
+	]))
+
+	_cache["bullet_biowave"] = _make_tex(PackedStringArray([
+		"...ggGGG..",
+		".ggGGMMWW.",
+		"gGGMMWW...",
+		"GMMWW.....",
+		"GMWW......",
+		"GMMWW.....",
+		"gGGMMWW...",
+		".ggGGMMWW.",
+		"...ggGGG..",
+	]))
+
+	_cache["bullet_rail"] = _make_tex(PackedStringArray([
+		"CCCCYYYYWWWWWWWWWW",
+		"YYYYWWWWWWWWWWWWWW",
+		"CCCCYYYYWWWWWWWWWW",
+	]))
+
+	_cache["bullet_flak"] = _make_tex(PackedStringArray([
+		"..kkkkk..",
+		".kKOOOOk.",
+		"kKOYYYYOk",
+		"KOYWWWWYO",
+		"kKOYYYYOk",
+		".kKOOOOk.",
+		"..kkkkk..",
+	]))
+
+	_cache["bullet_ufo_ring"] = _make_tex(PackedStringArray([
+		"..GGGGGG..",
+		".GGCCCCGG.",
+		"GGCWWWWCGG",
+		"GCWW..WWCG",
+		"GCWW..WWCG",
+		"GGCWWWWCGG",
+		".GGCCCCGG.",
+		"..GGGGGG..",
+	]))
+
+	_cache["bullet_eyeball"] = _make_tex(PackedStringArray([
+		"..ppppp..",
+		".pPWWWPp.",
+		"pPWWWWWRp",
+		"PWWWWRMMR",
+		"PWWWWRWWR",
+		"pPWWWWWRp",
+		".pPWWWPp.",
+		"..ppppp..",
+	]))
+
 	_cache["bullet_enemy_pink"] = _make_tex(PackedStringArray([
 		"..MM..",
 		".MWWM.",
@@ -329,17 +687,46 @@ func _build_all() -> void:
 		"..gg..",
 	]))
 
-	_cache["pickup_scrap"] = _make_tex(PackedStringArray([
-		"....Y....",
-		"...YYY...",
-		"..YYWYY..",
-		".YYWWWYY.",
-		"YYWWWWWYY",
-		".OYYYYYO.",
-		"..OYYYO..",
-		"...OOO...",
-		"....O....",
+	_cache["bullet_enemy_glow_0"] = _make_enemy_bullet_glow(16, 5.2, 7.8)
+	_cache["bullet_enemy_glow_1"] = _make_enemy_bullet_glow(18, 6.0, 8.8)
+
+	_cache["pickup_xp_small"] = _make_tex(PackedStringArray([
+		"....C....",
+		"...CCC...",
+		"..CCWCC..",
+		".CCWWWCC.",
+		"BBCWWWCBB",
+		".BBCCCBB.",
+		"..BBBBB..",
+		"...BBB...",
+		"....B....",
 	]))
+
+	_cache["pickup_xp_med"] = _make_tex(PackedStringArray([
+		"...MMM...",
+		"..MPWPM..",
+		".MPWWWPM.",
+		"MPWWWWWMp",
+		"pPWWWWWPp",
+		".pPMMMPp.",
+		"..pPPPp..",
+		"...ppp...",
+		".........",
+	]))
+
+	_cache["pickup_xp_big"] = _make_tex(PackedStringArray([
+		"....YYY....",
+		"..GGYYYGG..",
+		".GYYWWWYYG.",
+		"GYWWWWWWWYg",
+		"YYWWWWWWWYY",
+		"gYWWWWWWWYg",
+		".GYYWWWYYG.",
+		"..OOYYYOO..",
+		"....OOO....",
+	]))
+
+	_cache["pickup_scrap"] = _cache["pickup_xp_small"]
 
 	_cache["pickup_heal"] = _make_tex(PackedStringArray([
 		"..ggggggg..",
@@ -436,6 +823,279 @@ func _build_all() -> void:
 		"....GGGG...",
 		"...........",
 		"...........",
+	]))
+
+	_cache["badge_vulcan"] = _make_tex(PackedStringArray([
+		"...........",
+		"..OOYYYYWW.",
+		"..YYYYWWWW.",
+		"...........",
+		"...........",
+		"..OOYYYYWW.",
+		"..YYYYWWWW.",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_wave"] = _make_tex(PackedStringArray([
+		".....GGYYWW",
+		"...GGYYWW..",
+		"..GYYWW....",
+		".GYWW......",
+		".GYWW......",
+		"..GYYWW....",
+		"...GGYYWW..",
+		".....GGYYWW",
+		"...........",
+	]))
+
+	_cache["badge_prism"] = _make_tex(PackedStringArray([
+		"....MMM....",
+		"...MPWPM...",
+		"..MPWWWPM..",
+		".MPWWWWWM..",
+		"..MPWWWPM..",
+		"...MPWPM...",
+		"....MMM....",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_tesla"] = _make_tex(PackedStringArray([
+		"......CCWW.",
+		"....PPCC...",
+		"..PPCCWW...",
+		"PPCCWWWWWW.",
+		"....CCWW...",
+		"..PPCC.....",
+		"PPCC.......",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_plasma"] = _make_tex(PackedStringArray([
+		"...rrrrr...",
+		"..rROOOOr..",
+		".rROYYYYOr.",
+		".ROYWWWWYO.",
+		".ROYWWWWYO.",
+		".rROYYYYOr.",
+		"..rROOOOr..",
+		"...rrrrr...",
+		"...........",
+	]))
+
+	_cache["badge_flank"] = _make_tex(PackedStringArray([
+		"YY.........",
+		".YY....LLWW",
+		"..YY.DDLLLL",
+		"WWYYLLLLWWW",
+		"..YY.DDLLLL",
+		".YY....LLWW",
+		"YY.........",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_blades"] = _make_tex(PackedStringArray([
+		"....CC.....",
+		".C..CWC..C.",
+		"CWC.LLL.CWC",
+		"..CLLWLLC..",
+		"..CLWWWL...",
+		"..CLLWLLC..",
+		"CWC.LLL.CWC",
+		".C..CWC..C.",
+		"....CC.....",
+	]))
+
+	_cache["badge_turret"] = _make_tex(PackedStringArray([
+		".......GGWW",
+		".....GGWW..",
+		"...GGGG....",
+		"..GLLLLG...",
+		".GLLWWLLG..",
+		"KKKKKKKKKK.",
+		"DDDDDDDDDD.",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_bomb"] = _make_tex(PackedStringArray([
+		"...ppppp...",
+		"..pPMMMPp..",
+		".pPMWWWMPp.",
+		".pPMWWWMPp.",
+		"..pPMMMPp..",
+		"...ppppp...",
+		".MM.PPP.MM.",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_nova"] = _make_tex(PackedStringArray([
+		"...CCCCC...",
+		".CC..Y..CC.",
+		"C...YYY...C",
+		"C..YYWYY..C",
+		"C...YYY...C",
+		".CC..Y..CC.",
+		"...CCCCC...",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_ship"] = _make_tex(PackedStringArray([
+		"...DD......",
+		"..DLLL.....",
+		".YOLLLLWW..",
+		"WWLLCCWWWWW",
+		".YOLLLLWW..",
+		"..DLLL.....",
+		"...DD......",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_cat"] = _make_tex(PackedStringArray([
+		".OO.....OO.",
+		".OWO...OWO.",
+		".OYYYYYYYO.",
+		"OYYWYYYWYYO",
+		"OYYYYMYYYYO",
+		".OYYWWWYYO.",
+		"..OOOOOOO..",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_scrap"] = _make_tex(PackedStringArray([
+		"....YYY....",
+		"...YYYYY...",
+		"..YYWWWYY..",
+		".YYWWWWWYY.",
+		"..OYYYYYO..",
+		"...OYYYO...",
+		"....OOO....",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_xp"] = _make_tex(PackedStringArray([
+		"....CCC....",
+		"..CCCCCCC..",
+		".CCCWWWCCC.",
+		"CCWWWWWWWCC",
+		".BCCWWWCBB.",
+		"..BBBBBBB..",
+		"....BBB....",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_crit"] = _make_tex(PackedStringArray([
+		".....Y.....",
+		"..Y..Y..Y..",
+		"...YYYYY...",
+		"YYYYWWWYYYY",
+		"...YYYYY...",
+		"..Y..Y..Y..",
+		".....Y.....",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_revive"] = _make_tex(PackedStringArray([
+		".YY.....YY.",
+		"YYOO...OOYY",
+		"YYOYYYYYOYY",
+		".YYOYYYOYY.",
+		"..YYWWWWW..",
+		"...YYYYY...",
+		"....YYY....",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_reroll"] = _make_tex(PackedStringArray([
+		"..PPPPPPP..",
+		".PWWWWWWWP.",
+		".PWWPPWWWP.",
+		".PWWWWWWWP.",
+		".PWWWPWWWP.",
+		".PWWWWWWWP.",
+		"..PPPPPPP..",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_weird"] = _make_tex(PackedStringArray([
+		"...MMMMM...",
+		".MMCCCCCmm.",
+		"MCCWWWWWCCM",
+		"MCWWPPPWWCM",
+		"MCCWWWWWCCM",
+		".MMCCCCCmm.",
+		"...MMMMM...",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_bio"] = _make_tex(PackedStringArray([
+		"...ggggg...",
+		".ggGGGGGgg.",
+		"gGGMMWMMGGg",
+		"gGMWWWWWWGg",
+		"gGGMMWMMGGg",
+		".ggGGGGGgg.",
+		"...ggggg...",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_ufo"] = _make_tex(PackedStringArray([
+		"...CCCCC...",
+		"..CWWWWWC..",
+		".KCCCCCCCK.",
+		"GGGGGGGGGGG",
+		".KDDDDDDDK.",
+		"..GG...GG..",
+		"...........",
+		"...........",
+		"...........",
+	]))
+
+	_cache["badge_eye"] = _make_tex(PackedStringArray([
+		"..ppppppp..",
+		".pPWWWWWPp.",
+		"pPWWWRRWWPp",
+		"PWWWRWWWRWP",
+		"pPWWWRRWWPp",
+		".pPWWWWWPp.",
+		"..ppppppp..",
+		"...........",
+		"...........",
+	]))
+
+	_cache["upg_overclock"] = _make_tex(PackedStringArray([
+		"............................",
+		".............YY.............",
+		"............YYYY............",
+		"...DDLLL...YYYYYY..YYWW.....",
+		".YOLLLLWWWW..YY.......YYWW..",
+		".WWLLCCWWWW..YY..YYYYWWWWWWW",
+		".YOLLLLWWWW..YY.......YYWW..",
+		"...DDLLL.....YY....YYWW.....",
+		"............................",
+		".......YYYY..YYYY..YYYY.....",
+		".......YWWY..YWWY..YWWY.....",
+		".......YYYY..YYYY..YYYY.....",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
 	]))
 
 	# --- Upgrade Card Demonstration Diagrams (28x18) ---
@@ -602,6 +1262,195 @@ func _build_all() -> void:
 		"....RRRRR..RRRRR..GGGGG.....",
 		"....RWWWR..RWWWR..GWWWG.....",
 		"....RRRRR..RRRRR..GGGGG.....",
+		"............................",
+		"............................",
+		"............................",
+	]))
+
+	_cache["upg_wave"] = _make_tex(PackedStringArray([
+		"............................",
+		"..............GGYYWW........",
+		"............GGYYWW..........",
+		"...........GYWW......GGYYWW.",
+		"...DDLLL...GYWW....GGYYWW...",
+		".YOLLLLWWWW.GGYYWW..GYWW....",
+		".WWLLCCWWWW...GGYYWWGYWW....",
+		".YOLLLLWWWW.GGYYWW..GGYYWW..",
+		"...DDLLL...GYWW.......GGYYWW",
+		"...........GYWW.............",
+		"............GGYYWW..........",
+		"..............GGYYWW........",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+	]))
+
+	_cache["upg_prism"] = _make_tex(PackedStringArray([
+		"CCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+		"...............MM...........",
+		".............MPWWPM.........",
+		"...........MM..MM..MM.......",
+		".........MM..........MM.....",
+		"..DDLLL.MM............MPWPM.",
+		"YOLLLLWWWW..............MM..",
+		"WWLLCCWWWW..................",
+		"YOLLLLWWWW..........MM......",
+		"..DDLLL...........MPWWPM....",
+		"................MM..MM......",
+		"..............MM............",
+		"............MPWPM...........",
+		"CCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+	]))
+
+	_cache["upg_tesla"] = _make_tex(PackedStringArray([
+		"............................",
+		"....................gggg....",
+		"...................gGGGGg...",
+		"................WW..gggg....",
+		"..DDLLL.......CCWW..........",
+		"YOLLLLWWWWPPCCWW............",
+		"WWLLCCWWWWWWWWWWCC..........",
+		"YOLLLLWWWWPPCC..WWCC........",
+		"..DDLLL...........WWCC......",
+		"....................WWgggg..",
+		".....................gGGGGg.",
+		"......................gggg..",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+	]))
+
+	_cache["upg_plasma"] = _make_tex(PackedStringArray([
+		"............................",
+		"..................OOOOOO....",
+		"................OOYYYYYYOO..",
+		"...............OYYWWWWWWYYO.",
+		"..DDLLL.......rROYYWWWWYYORr",
+		"YOLLLLWWWW..rROYWYWWWWWWYWYO",
+		"WWLLCCWWWW..ROYWWYWWWWWWYWYO",
+		"YOLLLLWWWW..rROYWYWWWWWWYWYO",
+		"..DDLLL.......rROYYWWWWYYORr",
+		"...............OYYWWWWWWYYO.",
+		"................OOYYYYYYOO..",
+		"..................OOOOOO....",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+	]))
+
+	_cache["upg_flank"] = _make_tex(PackedStringArray([
+		"............................",
+		"....YYWW....................",
+		"......YYWW..................",
+		"........YYWW................",
+		"............DDLLL...........",
+		"..........YOLLLLWWWW..YYWW..",
+		".WWYYYY...WWLLCCWWWW........",
+		"..........YOLLLLWWWW..YYWW..",
+		"............DDLLL...........",
+		"........YYWW................",
+		"......YYWW..................",
+		"....YYWW....................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+	]))
+
+	_cache["upg_blades"] = _make_tex(PackedStringArray([
+		"...........CC...............",
+		".........CCWWCC.............",
+		"...........CC...............",
+		".....CC..........CC.........",
+		"...CCWWCC......CCWWCC.......",
+		".....CC..DDLLL...CC.........",
+		".......YOLLLLWWWW...........",
+		".......WWLLCCWWWW...........",
+		".......YOLLLLWWWW...........",
+		".....CC..DDLLL...CC.........",
+		"...CCWWCC......CCWWCC.......",
+		".....CC..........CC.........",
+		"...........CC...............",
+		".........CCWWCC.............",
+		"...........CC...............",
+		"............................",
+		"............................",
+		"............................",
+	]))
+
+	_cache["upg_turret"] = _make_tex(PackedStringArray([
+		"......................gggg..",
+		"...................WWgGGGGg.",
+		".................GGWW.gggg..",
+		"...............GG...........",
+		"............GGWW............",
+		"........GGGG................",
+		".......GLLWWG...............",
+		".......DDLLL................",
+		".....YOLLLLWWWW.............",
+		".....WWLLCCWWWW.............",
+		".....YOLLLLWWWW.............",
+		".......DDLLL................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+	]))
+
+	_cache["upg_bomb"] = _make_tex(PackedStringArray([
+		"............................",
+		"..DDLLL.....................",
+		"YOLLLLWWWW..................",
+		"WWLLCCWWWW..................",
+		"YOLLLLWWWW..................",
+		"..DDLLL.....................",
+		"......ppppp.................",
+		".....pPMWMPp................",
+		"......ppppp...PPPPPPPP......",
+		"............PPMMMMMMMMPP....",
+		"...........PMMWWWWWWWWMMP...",
+		"............PPMMMMMMMMPP....",
+		"..............PPPPPPPP......",
+		"DDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+		"............................",
+		"............................",
+		"............................",
+		"............................",
+	]))
+
+	_cache["upg_nova"] = _make_tex(PackedStringArray([
+		"........CCCCCCCCCCCC........",
+		".....CCC............CCC.....",
+		"...CC.....YYYYYYYY.....CC...",
+		"..C.....YY........YY.....C..",
+		".C.....Y....DDLLL...Y.....C.",
+		".C....Y...YOLLLLWWWW.Y....C.",
+		"C.....Y...WWLLCCWWWW.Y.....C",
+		"C.....Y...YOLLLLWWWW.Y.....C",
+		".C....Y.....DDLLL....Y....C.",
+		".C.....Y............Y.....C.",
+		"..C.....YY........YY.....C..",
+		"...CC.....YYYYYYYY.....CC...",
+		".....CCC............CCC.....",
+		"........CCCCCCCCCCCC........",
+		"............................",
 		"............................",
 		"............................",
 		"............................",

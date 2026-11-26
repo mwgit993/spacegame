@@ -1,75 +1,178 @@
 extends Node2D
 
-enum State { TITLE, STATS, OPTIONS, HANGAR, INTRO_WARP, PLAYING, PAUSED, DRAFT, HYPERSPACE, GAME_OVER_DELAY }
+enum State { TITLE, STATS, OPTIONS, HANGAR, LOADOUT, INTRO_WARP, PLAYING, PAUSED, DRAFT, HYPERSPACE, GAME_OVER_DELAY }
 
 const VIEW_W: float = 480.0
 const VIEW_H: float = 270.0
 const FONT_SZ: int = 10
 
 const RUN_UPGRADE_POOL: Array[Dictionary] = [
-	{
-		"id": "option",
-		"title": "OPTION ORB",
-		"icon": "upg_option",
-		"color": Color("#ff9624"),
-		"max_rank": 4,
-		"desc": "+1 Shadow Orb",
-	},
-	{
-		"id": "spread",
-		"title": "SPREAD SHOT",
-		"icon": "upg_spread",
-		"color": Color("#ffe854"),
-		"max_rank": 3,
-		"desc": "Wider Shot Fan",
-	},
+	# --- 5 Signature Elemental / Tech Beam Cores ---
 	{
 		"id": "laser",
+		"cat": "BEAM",
 		"title": "PIERCE LASER",
 		"icon": "upg_laser",
 		"color": Color("#28e8ff"),
-		"max_rank": 3,
-		"desc": "Piercing Beam",
+		"max_rank": 4,
+		"desc": "High-speed beam skewers lines of foes",
+	},
+	{
+		"id": "wave",
+		"cat": "BEAM",
+		"title": "SONIC WAVE BEAM",
+		"icon": "upg_wave",
+		"color": Color("#3ce878"),
+		"max_rank": 4,
+		"desc": "Wide helix crescents sweep the lane",
+	},
+	{
+		"id": "prism",
+		"cat": "BEAM",
+		"title": "RICOCHET PRISM",
+		"icon": "upg_prism",
+		"color": Color("#ff4cd4"),
+		"max_rank": 4,
+		"desc": "Bounces off walls & enemy to enemy!",
+	},
+	{
+		"id": "tesla",
+		"cat": "BEAM",
+		"title": "TESLA ARC BEAM",
+		"icon": "upg_tesla",
+		"color": Color("#b86bff"),
+		"max_rank": 4,
+		"desc": "Chains electric arcs across squads",
+	},
+	{
+		"id": "plasma",
+		"cat": "BEAM",
+		"title": "SOLAR PLASMA",
+		"icon": "upg_plasma",
+		"color": Color("#ff6820"),
+		"max_rank": 4,
+		"desc": "Explosive fireballs blast AoE clusters",
+	},
+
+	# --- 7 Physical Ship Addons (visibly mounted on or orbiting your hull!) ---
+	{
+		"id": "option",
+		"cat": "ADDON",
+		"title": "OPTION DRONE",
+		"icon": "upg_option",
+		"color": Color("#ff9624"),
+		"max_rank": 4,
+		"desc": "Trailing orb copies your main blaster",
+	},
+	{
+		"id": "blades",
+		"cat": "ADDON",
+		"title": "ORBITAL BLADES",
+		"icon": "upg_blades",
+		"color": Color("#54f4ff"),
+		"max_rank": 4,
+		"desc": "Spinning saws shred foes & bullets",
+	},
+	{
+		"id": "turret",
+		"cat": "ADDON",
+		"title": "AUTO-TURRET",
+		"icon": "upg_turret",
+		"color": Color("#6eff8c"),
+		"max_rank": 4,
+		"desc": "360 roof gun auto-aims at threats",
 	},
 	{
 		"id": "missile",
+		"cat": "ADDON",
 		"title": "HOMING PODS",
 		"icon": "upg_missile",
 		"color": Color("#ff4c68"),
+		"max_rank": 4,
+		"desc": "Wing pods fire lock-on missiles",
+	},
+	{
+		"id": "flank",
+		"cat": "ADDON",
+		"title": "TAIL & FLANK GUN",
+		"icon": "upg_flank",
+		"color": Color("#ffe854"),
 		"max_rank": 3,
-		"desc": "+Lock Missiles",
+		"desc": "Fires aft & diagonal wing blasters",
+	},
+	{
+		"id": "bomb",
+		"cat": "ADDON",
+		"title": "GRAVITY BOMBS",
+		"icon": "upg_bomb",
+		"color": Color("#d44cff"),
+		"max_rank": 3,
+		"desc": "Belly bay lobs vortex AoE torpedoes",
+	},
+	{
+		"id": "nova",
+		"cat": "ADDON",
+		"title": "NOVA SHOCK COIL",
+		"icon": "upg_nova",
+		"color": Color("#ffd84c"),
+		"max_rank": 3,
+		"desc": "Periodic EMP blast zaps foes & shots",
+	},
+
+	# --- 6 Core Ship Systems (including Signature Blaster Overclock!) ---
+	{
+		"id": "overclock",
+		"cat": "CORE",
+		"title": "BLASTER OVERCLOCK",
+		"icon": "upg_overclock",
+		"color": Color("#ff9624"),
+		"max_rank": 4,
+		"desc": "Upgrades your Ship's Signature Gun!",
+	},
+	{
+		"id": "spread",
+		"cat": "CORE",
+		"title": "SPREAD MATRIX",
+		"icon": "upg_spread",
+		"color": Color("#ffe854"),
+		"max_rank": 3,
+		"desc": "Splits main gun into multi-shot fan",
+	},
+	{
+		"id": "rapid",
+		"cat": "CORE",
+		"title": "RAPID COIL",
+		"icon": "upg_rapid",
+		"color": Color("#d46bff"),
+		"max_rank": 5,
+		"desc": "+22% Fire Rate & +10% Damage",
 	},
 	{
 		"id": "shield",
+		"cat": "CORE",
 		"title": "FORCE SHIELD",
 		"icon": "upg_shield",
 		"color": Color("#3ce8ff"),
 		"max_rank": 3,
-		"desc": "+1 Barrier",
-	},
-	{
-		"id": "rapid",
-		"title": "RAPID COIL",
-		"icon": "upg_rapid",
-		"color": Color("#d46bff"),
-		"max_rank": 6,
-		"desc": "+22% Fire Rate",
+		"desc": "+1 Regenerating Aegis Barrier",
 	},
 	{
 		"id": "thruster",
+		"cat": "CORE",
 		"title": "AFTERBURNER",
 		"icon": "upg_thruster",
 		"color": Color("#3ce878"),
 		"max_rank": 4,
-		"desc": "+Ship Speed",
+		"desc": "+Ship Speed & agile dodging",
 	},
 	{
 		"id": "repair",
-		"title": "HULL PATCH",
+		"cat": "CORE",
+		"title": "HULL OVERCLOCK",
 		"icon": "upg_repair",
 		"color": Color("#66ff99"),
-		"max_rank": 99,
-		"desc": "+1 HP & Heal 2",
+		"max_rank": 6,
+		"desc": "+1 Max HP, Heal 2 & +12% Damage",
 	},
 ]
 
@@ -92,18 +195,22 @@ var title_panel: Control
 var stats_panel: Control
 var options_panel: Control
 var hangar_panel: Control
+var loadout_panel: Control
 var draft_panel: Control
 var pause_panel: Control
 
 # Title & Menu focus buttons
 var _title_ship_sprite: Sprite2D
-var _title_hangar_btn: Button
+var _title_start_btn: Button
+var _title_tree_btn: Button
+var _title_loadout_btn: Button
 var _title_menu_btns: Array[Button] = []
 var _title_sel_idx: int = 0
 var _stats_back_btn: Button
 var _stats_body_lbl: Label
-var _hangar_launch_btn: Button
 var _pause_resume_btn: Button
+var _pause_info_canvas: Control
+var _pause_ship_sprite: Sprite2D
 var _options_from_pause: bool = false
 
 # Options UI controls
@@ -113,18 +220,25 @@ var _opt_autofire_btn: Button
 var _opt_shake_btn: Button
 var _opt_touch_btn: Button
 var _opt_fullscreen_btn: Button
-var _opt_first_btn: Button
 
 # Analog stick UI navigation repeat timer
 var _joy_nav_cooldown: float = 0.0
 
-# Run & Stage progression metrics
+# Run, XP Leveling & Stage progression metrics
 var wave: int = 0
 var current_stage_idx: int = 0
 var score: int = 0
 var run_scrap: int = 0
 var run_kills: int = 0
 var run_bosses: int = 0
+var player_level: int = 1
+var run_xp: int = 0
+var xp_to_next: int = 18
+var rerolls_left: int = 0
+var _pending_level_ups: int = 0
+var _draft_title_lbl: Label
+var _draft_reroll_btn: Button
+var _draft_pre_speed: float = 1.15
 var run_ranks: Dictionary = {}
 var _pre_pause_speed: float = 1.15
 
@@ -150,10 +264,32 @@ var _squad_counts: Dictionary = {}
 var _draft_choices: Array[Dictionary] = []
 var _draft_cards: Array[Dictionary] = []
 
-# Hangar UI state
-var _hangar_summary_lbl: Label
-var _hangar_scrap_lbl: Label
-var _hangar_rows: Array[Dictionary] = []
+# Rogue Legacy-Style Starforge Skill Tree UI state
+var _tree_canvas: Control
+var _tree_scrap_lbl: Label
+var _tree_summary_lbl: Label
+var _tree_node_title_lbl: Label
+var _tree_node_desc_lbl: Label
+var _tree_buy_btn: Button
+var _tree_selected_id: String = "hull_1"
+var _tree_cam_offset: Vector2 = Vector2(0.0, -68.0)
+var _tree_dragging: bool = false
+var _tree_drag_moved: bool = false
+
+# Ship Loadout Fleet Bay UI state
+var _loadout_scrap_lbl: Label
+var _loadout_count_lbl: Label
+var _loadout_ship_btns: Array[Button] = []
+var _loadout_ship_icons: Array[TextureRect] = []
+var _loadout_ship_names: Array[Label] = []
+var _loadout_preview_ship: Sprite2D
+var _loadout_preview_bullet: Sprite2D
+var _loadout_info_title: Label
+var _loadout_info_weapon: Label
+var _loadout_info_desc: Label
+var _loadout_info_perks: Label
+var _loadout_action_btn: Button
+var _loadout_cursor_idx: int = 0
 
 
 func _ready() -> void:
@@ -169,26 +305,49 @@ func _ready() -> void:
 func _run_smoke_test() -> void:
 	_enter_stats()
 	_enter_options()
-	_enter_hangar("TEST SUMMARY")
+	# Exercise Rogue Legacy 30-node Skill Tree + unlocking Ships including S.S. Meow-zer (Flying Cats)!
+	MetaSave.scrap = 2500
+	_enter_hangar("SMOKE TEST SUMMARY")
+	for node_id: String in ["thruster_1", "weird_science", "ship_neko", "ship_eyeball", "hull_1", "aegis_core", "phoenix_cell", "magnet_1", "xp_scholar", "draft_reroll"]:
+		_tree_selected_id = node_id
+		_on_buy_tree_node()
+	_move_tree_selection(Vector2.RIGHT)
+	_tree_canvas.queue_redraw()
+	# Exercise Fleet Ship Loadout Bay across all 7 ships!
+	_enter_loadout()
+	for s_idx: int in range(SkillTreeData.SHIPS.size()):
+		_select_loadout_slot(s_idx)
+	MetaSave.select_ship("neko")
 	_start_run()
-	# Exercise Stage 1 opening hyperspace warp-in arrival!
 	_update_intro_warp(1.0)
 	_update_intro_warp(1.0)
-	# Test pause -> options -> resume flow
 	_pause_game()
 	_options_from_pause = true
 	_enter_options()
 	_leave_options()
 	_resume_game()
-	# Test all 8 stages, expanded 24-bar music sections, upgrades, and clear bottom HUD dock
-	for upg_id: String in ["option", "option", "spread", "spread", "laser", "missile", "shield", "rapid", "thruster", "repair"]:
+	# Exercise all 7 ship signature blasters, beams, addons, rerolls, and Lazarus revive!
+	for ship_d: Dictionary in SkillTreeData.SHIPS:
+		MetaSave.tree_levels["ship_" + String(ship_d["id"])] = 1
+		MetaSave.select_ship(String(ship_d["id"]))
+		player.reset_for_new_run()
+		player._fire_primary()
+	MetaSave.select_ship("neko")
+	player.reset_for_new_run()
+	for upg_id: String in ["overclock", "prism", "wave", "tesla", "plasma", "laser", "option", "blades", "turret", "missile", "flank", "bomb", "nova", "spread", "shield", "rapid", "thruster", "repair"]:
 		player.apply_run_upgrade(upg_id)
+		player._fire_primary()
+	player._fire_flank_guns()
+	player._fire_auto_turret()
+	player._fire_gravity_bomb()
+	player._trigger_nova_pulse(false)
+	player._update_orbiting_blades(0.15)
+	_gain_xp(55)
 	hud_bar.queue_redraw()
 	for st_i: int in range(8):
 		starfield.set_stage(st_i)
 		starfield._process(0.02)
 		GenesisMusic.play_stage(st_i)
-		# Step across Verse, Chorus (step 140), and Breakdown/Build (step 280)
 		GenesisMusic._step = 140
 		GenesisMusic._process(0.02)
 		GenesisMusic._step = 280
@@ -201,9 +360,22 @@ func _run_smoke_test() -> void:
 	for e: Node in enemy_layer.get_children():
 		e.call("_process", 0.05)
 		e.call("take_damage", 1.5)
-	_pending_hyperspace = true
+	for e: Node in enemy_layer.get_children():
+		if e is GameEnemy and (e as GameEnemy).enemy_type == GameEnemy.Type.BOSS:
+			var boss_test: GameEnemy = e as GameEnemy
+			for step_i: int in range(8):
+				boss_test._process(0.45)
+			hud_bar.queue_redraw()
+			boss_test._shoot_from(Vector2(300.0, 134.0), Vector2(-140.0, 0.0), "bullet_enemy_pink")
+			for b_node: Node in bullet_layer.get_children():
+				b_node.call("_process", 0.12)
+			boss_test._start_boss_death_sequence()
+			boss_test._process(0.30)
+			break
 	_open_upgrade_draft()
+	_reroll_draft_cards()
 	_pick_draft_card(0)
+	_begin_hyperspace_jump()
 	_update_hyperspace(1.5)
 	_update_hyperspace(1.5)
 	player.invuln_timer = 0.0
@@ -258,10 +430,12 @@ func _style_menu_btn(btn: Button, accent: Color = Color("#dce6ff")) -> void:
 	btn.add_theme_color_override("font_color", Color.WHITE)
 	btn.add_theme_color_override("font_hover_color", Color("#ffe854"))
 	btn.add_theme_color_override("font_focus_color", Color("#ffe854"))
+	btn.add_theme_color_override("font_disabled_color", Color("#586c96"))
 	btn.add_theme_stylebox_override("normal", _make_ff6_box(Color("#0d1746"), Color("#9ab0de"), 1, 2.0))
 	btn.add_theme_stylebox_override("hover", _make_ff6_box(Color("#192b73"), accent, 2, 2.0))
 	btn.add_theme_stylebox_override("focus", _make_ff6_box(Color("#192b73"), accent, 2, 2.0))
 	btn.add_theme_stylebox_override("pressed", _make_ff6_box(Color("#253f9e"), Color.WHITE, 2, 2.0))
+	btn.add_theme_stylebox_override("disabled", _make_ff6_box(Color("#080d28"), Color("#3c4c70"), 1, 2.0))
 
 
 func _build_ui() -> void:
@@ -274,7 +448,6 @@ func _build_ui() -> void:
 	hud_bar.draw.connect(_draw_hud)
 	ui_layer.add_child(hud_bar)
 
-	# On-screen top-right Pause button (works for Mouse AND Phone Touch!)
 	pause_hud_btn = Button.new()
 	pause_hud_btn.position = Vector2(436.0, 2.0)
 	pause_hud_btn.size = Vector2(40.0, 15.0)
@@ -289,9 +462,8 @@ func _build_ui() -> void:
 	)
 	ui_layer.add_child(pause_hud_btn)
 
-	# On-screen bottom-right Focus Hold Pad for Phone / Tablet Touch Controls!
 	touch_focus_btn = Button.new()
-	touch_focus_btn.position = Vector2(412.0, 212.0)
+	touch_focus_btn.position = Vector2(412.0, 228.0)
 	touch_focus_btn.size = Vector2(62.0, 26.0)
 	touch_focus_btn.text = "FOCUS"
 	touch_focus_btn.focus_mode = Control.FOCUS_NONE
@@ -313,7 +485,8 @@ func _build_ui() -> void:
 	_build_title_ui()
 	_build_stats_ui()
 	_build_options_ui()
-	_build_hangar_ui()
+	_build_skill_tree_ui()
+	_build_loadout_ui()
 	_build_draft_ui()
 	_build_pause_ui()
 
@@ -324,7 +497,7 @@ func _build_title_ui() -> void:
 	ui_layer.add_child(title_panel)
 
 	var logo: Label = Label.new()
-	logo.position = Vector2(28.0, 28.0)
+	logo.position = Vector2(28.0, 22.0)
 	logo.size = Vector2(340.0, 30.0)
 	logo.text = "STAR VIPER"
 	logo.add_theme_font_size_override("font_size", 20)
@@ -332,7 +505,7 @@ func _build_title_ui() -> void:
 	title_panel.add_child(logo)
 
 	var sub: Label = Label.new()
-	sub.position = Vector2(30.0, 56.0)
+	sub.position = Vector2(30.0, 50.0)
 	sub.size = Vector2(320.0, 16.0)
 	sub.text = "16-BIT GALACTIC ROGUELITE"
 	sub.add_theme_font_size_override("font_size", FONT_SZ)
@@ -342,14 +515,15 @@ func _build_title_ui() -> void:
 	_title_ship_sprite = Sprite2D.new()
 	_title_ship_sprite.texture = PixelArt.tex("player_idle")
 	_title_ship_sprite.scale = Vector2(3.0, 3.0)
-	_title_ship_sprite.position = Vector2(356.0, 132.0)
+	_title_ship_sprite.position = Vector2(356.0, 134.0)
 	title_panel.add_child(_title_ship_sprite)
 
 	var menu_specs: Array[Dictionary] = [
 		{"label": "START RUN", "cb": _start_run, "accent": Color("#3ce878")},
-		{"label": "SHIP HANGAR", "cb": _open_hangar_from_title, "accent": Color("#ffe854")},
+		{"label": "SKILL TREE", "cb": _open_hangar_from_title, "accent": Color("#ffe854")},
+		{"label": "SHIP LOADOUT", "cb": _enter_loadout, "accent": Color("#ff64b8")},
 		{"label": "STATS", "cb": _enter_stats, "accent": Color("#28e8ff")},
-		{"label": "OPTIONS", "cb": _open_options_from_title, "accent": Color("#ff78d4")},
+		{"label": "OPTIONS", "cb": _open_options_from_title, "accent": Color("#d46bff")},
 		{"label": "QUIT GAME", "cb": _quit_desktop, "accent": Color("#ff4c68")},
 	]
 
@@ -357,8 +531,8 @@ func _build_title_ui() -> void:
 	for i: int in range(menu_specs.size()):
 		var spec: Dictionary = menu_specs[i]
 		var btn: Button = Button.new()
-		btn.position = Vector2(30.0, 78.0 + float(i) * 28.0)
-		btn.size = Vector2(196.0, 24.0)
+		btn.position = Vector2(30.0, 72.0 + float(i) * 25.0)
+		btn.size = Vector2(214.0, 22.0)
 		btn.text = String(spec["label"])
 		_style_menu_btn(btn, spec["accent"])
 		var callback: Callable = spec["cb"]
@@ -368,11 +542,15 @@ func _build_title_ui() -> void:
 		)
 		title_panel.add_child(btn)
 		_title_menu_btns.append(btn)
-		if i == 1:
-			_title_hangar_btn = btn
+		if i == 0:
+			_title_start_btn = btn
+		elif i == 1:
+			_title_tree_btn = btn
+		elif i == 2:
+			_title_loadout_btn = btn
 
 	var foot: Label = Label.new()
-	foot.position = Vector2(30.0, 226.0)
+	foot.position = Vector2(30.0, 232.0)
 	foot.size = Vector2(430.0, 14.0)
 	foot.text = "Keyboard / Controller / Touch Supported  |  Esc/Start: Pause"
 	foot.add_theme_font_size_override("font_size", FONT_SZ)
@@ -452,7 +630,6 @@ func _build_options_ui() -> void:
 	_style_menu_btn(m_minus)
 	m_minus.pressed.connect(func() -> void: _adjust_music(-0.10))
 	options_panel.add_child(m_minus)
-	_opt_first_btn = m_minus
 
 	var m_plus: Button = Button.new()
 	m_plus.position = Vector2(360.0, 38.0)
@@ -570,98 +747,612 @@ func _leave_options() -> void:
 		_enter_title()
 
 
-func _build_hangar_ui() -> void:
+# =================================================================================
+# ROGUE LEGACY-STYLE 30-NODE PANNABLE STARFORGE SKILL TREE!
+# =================================================================================
+func _build_skill_tree_ui() -> void:
 	hangar_panel = Control.new()
 	hangar_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	hangar_panel.visible = false
 	ui_layer.add_child(hangar_panel)
 
-	var h_bg: Panel = Panel.new()
-	h_bg.position = Vector2(14.0, 10.0)
-	h_bg.size = Vector2(452.0, 250.0)
-	h_bg.add_theme_stylebox_override("panel", _make_ff6_box())
-	hangar_panel.add_child(h_bg)
+	var top_bar: Panel = Panel.new()
+	top_bar.position = Vector2(6.0, 4.0)
+	top_bar.size = Vector2(468.0, 22.0)
+	top_bar.add_theme_stylebox_override("panel", _make_ff6_box(Color("#081030"), Color("#9ab6e8"), 1, 2.0))
+	hangar_panel.add_child(top_bar)
 
 	var title_lbl: Label = Label.new()
-	title_lbl.position = Vector2(26.0, 16.0)
-	title_lbl.size = Vector2(260.0, 16.0)
-	title_lbl.text = "SHIP HANGAR"
+	title_lbl.position = Vector2(14.0, 8.0)
+	title_lbl.size = Vector2(170.0, 14.0)
+	title_lbl.text = "STARFORGE SKILL TREE"
 	title_lbl.add_theme_font_size_override("font_size", FONT_SZ)
 	title_lbl.add_theme_color_override("font_color", Color("#ffe854"))
 	hangar_panel.add_child(title_lbl)
 
-	_hangar_scrap_lbl = Label.new()
-	_hangar_scrap_lbl.position = Vector2(276.0, 16.0)
-	_hangar_scrap_lbl.size = Vector2(176.0, 16.0)
-	_hangar_scrap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_hangar_scrap_lbl.add_theme_font_size_override("font_size", FONT_SZ)
-	_hangar_scrap_lbl.add_theme_color_override("font_color", Color("#3ce878"))
-	hangar_panel.add_child(_hangar_scrap_lbl)
+	_tree_summary_lbl = Label.new()
+	_tree_summary_lbl.position = Vector2(162.0, 8.0)
+	_tree_summary_lbl.size = Vector2(186.0, 14.0)
+	_tree_summary_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_tree_summary_lbl.add_theme_font_size_override("font_size", FONT_SZ)
+	_tree_summary_lbl.add_theme_color_override("font_color", Color("#9ab6e8"))
+	hangar_panel.add_child(_tree_summary_lbl)
 
-	_hangar_summary_lbl = Label.new()
-	_hangar_summary_lbl.position = Vector2(26.0, 33.0)
-	_hangar_summary_lbl.size = Vector2(428.0, 14.0)
-	_hangar_summary_lbl.add_theme_font_size_override("font_size", FONT_SZ)
-	_hangar_summary_lbl.add_theme_color_override("font_color", Color("#9ab6e8"))
-	hangar_panel.add_child(_hangar_summary_lbl)
+	_tree_scrap_lbl = Label.new()
+	_tree_scrap_lbl.position = Vector2(342.0, 8.0)
+	_tree_scrap_lbl.size = Vector2(124.0, 14.0)
+	_tree_scrap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_tree_scrap_lbl.add_theme_font_size_override("font_size", FONT_SZ)
+	_tree_scrap_lbl.add_theme_color_override("font_color", Color("#3ce878"))
+	hangar_panel.add_child(_tree_scrap_lbl)
 
-	for i: int in range(MetaSave.UPGRADE_DEFS.size()):
-		var def: Dictionary = MetaSave.UPGRADE_DEFS[i]
-		var ry: float = 52.0 + float(i) * 32.0
+	# Pannable Interactive Blueprint Canvas (y = 28..202)
+	var canvas_frame: Panel = Panel.new()
+	canvas_frame.position = Vector2(6.0, 28.0)
+	canvas_frame.size = Vector2(468.0, 174.0)
+	canvas_frame.add_theme_stylebox_override("panel", _make_ff6_box(Color(0.02, 0.04, 0.14, 0.94), Color("#5c7cc4"), 1, 0.0))
+	hangar_panel.add_child(canvas_frame)
 
-		var row_bg: Panel = Panel.new()
-		row_bg.position = Vector2(26.0, ry)
-		row_bg.size = Vector2(428.0, 29.0)
-		row_bg.add_theme_stylebox_override("panel", _make_ff6_box(Color("#081030"), Color("#4c6cb0"), 1))
-		hangar_panel.add_child(row_bg)
+	_tree_canvas = Control.new()
+	_tree_canvas.position = Vector2(7.0, 29.0)
+	_tree_canvas.size = Vector2(466.0, 172.0)
+	_tree_canvas.clip_contents = true
+	_tree_canvas.draw.connect(_draw_skill_tree_canvas)
+	_tree_canvas.gui_input.connect(_on_tree_canvas_gui_input)
+	hangar_panel.add_child(_tree_canvas)
 
-		var name_lbl: Label = Label.new()
-		name_lbl.position = Vector2(32.0, ry + 3.0)
-		name_lbl.size = Vector2(290.0, 13.0)
-		name_lbl.add_theme_font_size_override("font_size", FONT_SZ)
-		name_lbl.add_theme_color_override("font_color", Color.WHITE)
-		hangar_panel.add_child(name_lbl)
+	# Bottom Node Inspector & Action Dock (y = 204..266)
+	var bot_box: Panel = Panel.new()
+	bot_box.position = Vector2(6.0, 204.0)
+	bot_box.size = Vector2(468.0, 62.0)
+	bot_box.add_theme_stylebox_override("panel", _make_ff6_box(Color("#081034"), Color("#dce6ff"), 1, 3.0))
+	hangar_panel.add_child(bot_box)
 
-		var desc_lbl: Label = Label.new()
-		desc_lbl.position = Vector2(32.0, ry + 15.0)
-		desc_lbl.size = Vector2(290.0, 13.0)
-		desc_lbl.text = String(def["desc"])
-		desc_lbl.add_theme_font_size_override("font_size", FONT_SZ)
-		desc_lbl.add_theme_color_override("font_color", Color("#88a8dc"))
-		hangar_panel.add_child(desc_lbl)
+	_tree_node_title_lbl = Label.new()
+	_tree_node_title_lbl.position = Vector2(14.0, 208.0)
+	_tree_node_title_lbl.size = Vector2(310.0, 14.0)
+	_tree_node_title_lbl.add_theme_font_size_override("font_size", FONT_SZ)
+	_tree_node_title_lbl.add_theme_color_override("font_color", Color("#ffe854"))
+	hangar_panel.add_child(_tree_node_title_lbl)
 
-		var buy_btn: Button = Button.new()
-		buy_btn.position = Vector2(332.0, ry + 3.0)
-		buy_btn.size = Vector2(116.0, 23.0)
-		_style_menu_btn(buy_btn, Color("#ffe854"))
-		var upg_id: String = String(def["id"])
-		buy_btn.pressed.connect(func() -> void: _on_buy_permanent(upg_id))
-		hangar_panel.add_child(buy_btn)
+	_tree_node_desc_lbl = Label.new()
+	_tree_node_desc_lbl.position = Vector2(14.0, 222.0)
+	_tree_node_desc_lbl.size = Vector2(312.0, 16.0)
+	_tree_node_desc_lbl.add_theme_font_size_override("font_size", FONT_SZ)
+	_tree_node_desc_lbl.add_theme_color_override("font_color", Color.WHITE)
+	hangar_panel.add_child(_tree_node_desc_lbl)
 
-		_hangar_rows.append({
-			"id": upg_id,
-			"name_lbl": name_lbl,
-			"buy_btn": buy_btn,
-		})
+	_tree_buy_btn = Button.new()
+	_tree_buy_btn.position = Vector2(332.0, 208.0)
+	_tree_buy_btn.size = Vector2(136.0, 26.0)
+	_tree_buy_btn.focus_mode = Control.FOCUS_NONE
+	_style_menu_btn(_tree_buy_btn, Color("#ffe854"))
+	_tree_buy_btn.pressed.connect(_on_buy_tree_node)
+	hangar_panel.add_child(_tree_buy_btn)
 
-	var title_menu_btn: Button = Button.new()
-	title_menu_btn.position = Vector2(26.0, 218.0)
-	title_menu_btn.size = Vector2(146.0, 30.0)
-	title_menu_btn.text = "TITLE [ESC]"
-	_style_menu_btn(title_menu_btn)
-	title_menu_btn.pressed.connect(func() -> void:
+	var t_title_btn: Button = Button.new()
+	t_title_btn.position = Vector2(14.0, 239.0)
+	t_title_btn.size = Vector2(92.0, 22.0)
+	t_title_btn.focus_mode = Control.FOCUS_NONE
+	t_title_btn.text = "TITLE [ESC]"
+	_style_menu_btn(t_title_btn)
+	t_title_btn.pressed.connect(func() -> void:
 		RetroSfx.play("ui", -7.0, 0.02)
 		_enter_title()
 	)
-	hangar_panel.add_child(title_menu_btn)
+	hangar_panel.add_child(t_title_btn)
 
-	_hangar_launch_btn = Button.new()
-	_hangar_launch_btn.position = Vector2(288.0, 218.0)
-	_hangar_launch_btn.size = Vector2(166.0, 30.0)
-	_hangar_launch_btn.text = "LAUNCH [SPACE/START]"
-	_style_menu_btn(_hangar_launch_btn, Color("#3ce878"))
-	_hangar_launch_btn.pressed.connect(_start_run)
-	hangar_panel.add_child(_hangar_launch_btn)
+	var t_loadout_btn: Button = Button.new()
+	t_loadout_btn.position = Vector2(114.0, 239.0)
+	t_loadout_btn.size = Vector2(174.0, 22.0)
+	t_loadout_btn.focus_mode = Control.FOCUS_NONE
+	t_loadout_btn.text = "SHIP LOADOUT [TAB/X]"
+	_style_menu_btn(t_loadout_btn, Color("#ff64b8"))
+	t_loadout_btn.pressed.connect(func() -> void:
+		RetroSfx.play("ui", -7.0, 0.02)
+		_enter_loadout()
+	)
+	hangar_panel.add_child(t_loadout_btn)
+
+	var t_launch_btn: Button = Button.new()
+	t_launch_btn.position = Vector2(296.0, 239.0)
+	t_launch_btn.size = Vector2(172.0, 22.0)
+	t_launch_btn.focus_mode = Control.FOCUS_NONE
+	t_launch_btn.text = "LAUNCH RUN [START]"
+	_style_menu_btn(t_launch_btn, Color("#3ce878"))
+	t_launch_btn.pressed.connect(_start_run)
+	hangar_panel.add_child(t_launch_btn)
+
+
+func _draw_skill_tree_canvas() -> void:
+	var font: Font = PixelArt.ui_font if PixelArt.ui_font != null else ThemeDB.fallback_font
+	var c_size: Vector2 = _tree_canvas.size
+	var origin: Vector2 = (c_size * 0.5 - _tree_cam_offset).round()
+
+	# 1) Blueprint Coordinate Grid
+	var grid_step: float = 32.0
+	var gx_start: float = fposmod(origin.x, grid_step)
+	var gy_start: float = fposmod(origin.y, grid_step)
+	var gx: float = gx_start
+	while gx < c_size.x:
+		_tree_canvas.draw_line(Vector2(gx, 0.0), Vector2(gx, c_size.y), Color(0.14, 0.22, 0.45, 0.35), 1.0)
+		gx += grid_step
+	var gy: float = gy_start
+	while gy < c_size.y:
+		_tree_canvas.draw_line(Vector2(0.0, gy), Vector2(c_size.x, gy), Color(0.14, 0.22, 0.45, 0.35), 1.0)
+		gy += grid_step
+
+	# 2) Directional Wing Labels
+	_tree_canvas.draw_string(font, origin + Vector2(-46.0, -34.0), "NORTH: HULL & BIO", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(0.94, 0.35, 0.45, 0.55))
+	_tree_canvas.draw_string(font, origin + Vector2(30.0, -16.0), "EAST: WEAPONS", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.65, 0.25, 0.55))
+	_tree_canvas.draw_string(font, origin + Vector2(-46.0, 44.0), "SOUTH: SCRAP & XP", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.91, 0.33, 0.55))
+	_tree_canvas.draw_string(font, origin + Vector2(-132.0, -16.0), "WEST: WEIRD LAB", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.38, 0.78, 0.55))
+
+	# 3) Parent -> Child Conduits
+	for def: Dictionary in SkillTreeData.NODES:
+		var p_id: String = String(def["parent"])
+		if p_id == "":
+			continue
+		var p_def: Dictionary = SkillTreeData.get_node_def(p_id)
+		if p_def.is_empty():
+			continue
+		var id: String = String(def["id"])
+		var pa: Vector2 = origin + Vector2(p_def["pos"])
+		var pb: Vector2 = origin + Vector2(def["pos"])
+		var child_lvl: int = MetaSave.get_level(id)
+		var revealed: bool = MetaSave.is_node_revealed(id)
+		var line_col: Color = Color(0.18, 0.24, 0.42, 0.55)
+		var line_w: float = 1.0
+		if child_lvl > 0:
+			var ncol: Color = def["color"]
+			line_col = Color(ncol.r, ncol.g, ncol.b, 0.92)
+			line_w = 2.0
+		elif revealed:
+			line_col = Color(0.55, 0.75, 1.0, 0.72)
+			line_w = 1.5
+		_tree_canvas.draw_line(pa, pb, line_col, line_w)
+
+	# 4) Visual Skill Tree Nodes (24x24 icon boxes + rank indicators + selection cursor)
+	var pulse: float = 0.55 + 0.45 * sin(float(Time.get_ticks_msec()) * 0.008)
+	for def: Dictionary in SkillTreeData.NODES:
+		var id: String = String(def["id"])
+		var np: Vector2 = origin + Vector2(def["pos"])
+		if np.x < -30.0 or np.x > c_size.x + 30.0 or np.y < -30.0 or np.y > c_size.y + 30.0:
+			continue
+
+		var lvl: int = MetaSave.get_level(id)
+		var max_lvl: int = int(def["max_level"])
+		var revealed: bool = MetaSave.is_node_revealed(id)
+		var affordable: bool = MetaSave.can_buy_node(id)
+		var ncol: Color = def["color"]
+		var is_ship_node: bool = String(def.get("unlocks_ship", "")) != ""
+		var half: float = 13.0 if is_ship_node else 11.0
+		var box_r: Rect2 = Rect2(np.x - half, np.y - half, half * 2.0, half * 2.0)
+
+		var bg_col: Color = Color("#090f26")
+		var border_col: Color = Color("#2c3a60")
+		if lvl >= max_lvl:
+			bg_col = ncol.darkened(0.68)
+			border_col = ncol.lightened(0.25)
+		elif lvl > 0:
+			bg_col = Color("#122254")
+			border_col = ncol
+		elif affordable:
+			bg_col = Color("#122844")
+			border_col = Color("#3ce878").lerp(Color("#ffe854"), pulse)
+		elif revealed:
+			bg_col = Color("#0d1838")
+			border_col = Color("#6c88c4")
+
+		_tree_canvas.draw_rect(box_r, bg_col)
+		_tree_canvas.draw_rect(box_r, border_col, false, 2.0 if (lvl > 0 or affordable or is_ship_node) else 1.0)
+
+		if revealed or lvl > 0:
+			var icon_tex: Texture2D = PixelArt.tex(String(def["icon"]))
+			if icon_tex != null:
+				_tree_canvas.draw_texture(icon_tex, (np - Vector2(5.0, 5.0)).round())
+			if id != "core_root":
+				var r_str: String = "★" if lvl >= max_lvl else "%d/%d" % [lvl, max_lvl]
+				var r_col: Color = Color("#ffe854") if lvl >= max_lvl else (Color.WHITE if lvl > 0 else Color("#8ca8dc"))
+				_tree_canvas.draw_string(font, Vector2(np.x - 9.0, np.y + half + 9.0), r_str, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, r_col)
+		else:
+			_tree_canvas.draw_string(font, Vector2(np.x - 3.0, np.y + 4.0), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#4e6294"))
+
+		if id == _tree_selected_id:
+			var sel_r: Rect2 = box_r.grow(3.0)
+			_tree_canvas.draw_rect(sel_r, Color.WHITE, false, 2.0)
+
+
+func _on_tree_canvas_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb: InputEventMouseButton = event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			if mb.pressed:
+				_tree_dragging = true
+				_tree_drag_moved = false
+			else:
+				if _tree_dragging and not _tree_drag_moved:
+					_click_tree_at(mb.position)
+				_tree_dragging = false
+	elif event is InputEventMouseMotion and _tree_dragging:
+		var mm: InputEventMouseMotion = event as InputEventMouseMotion
+		if mm.relative.length_squared() > 1.5:
+			_tree_drag_moved = true
+		_tree_cam_offset -= mm.relative
+		_tree_canvas.queue_redraw()
+
+
+func _click_tree_at(local_pos: Vector2) -> void:
+	var origin: Vector2 = _tree_canvas.size * 0.5 - _tree_cam_offset
+	for def: Dictionary in SkillTreeData.NODES:
+		var id: String = String(def["id"])
+		var np: Vector2 = origin + Vector2(def["pos"])
+		if local_pos.distance_to(np) <= 15.0:
+			if _tree_selected_id == id and MetaSave.can_buy_node(id):
+				_on_buy_tree_node()
+			else:
+				_tree_selected_id = id
+				RetroSfx.play("ui", -10.0, 0.03)
+				_refresh_skill_tree_ui()
+			return
+
+
+func _move_tree_selection(dir: Vector2) -> void:
+	if dir.length_squared() < 0.05:
+		return
+	var cur_def: Dictionary = SkillTreeData.get_node_def(_tree_selected_id)
+	if cur_def.is_empty():
+		_tree_selected_id = "core_root"
+		_refresh_skill_tree_ui()
+		return
+	var cur_pos: Vector2 = cur_def["pos"]
+	var norm_dir: Vector2 = dir.normalized()
+	var best_id: String = ""
+	var best_score: float = 999999.0
+
+	for def: Dictionary in SkillTreeData.NODES:
+		var cid: String = String(def["id"])
+		if cid == _tree_selected_id:
+			continue
+		var delta_v: Vector2 = Vector2(def["pos"]) - cur_pos
+		var dist: float = delta_v.length()
+		if dist < 1.0:
+			continue
+		var align: float = norm_dir.dot(delta_v / dist)
+		if align < 0.36:
+			continue
+		var score_val: float = dist / (align * align)
+		if score_val < best_score:
+			best_score = score_val
+			best_id = cid
+
+	if best_id != "":
+		_tree_selected_id = best_id
+		RetroSfx.play("ui", -11.0, 0.03)
+		_refresh_skill_tree_ui()
+
+
+func _refresh_skill_tree_ui() -> void:
+	_tree_scrap_lbl.text = "SCRAP: %d" % MetaSave.scrap
+	var def: Dictionary = SkillTreeData.get_node_def(_tree_selected_id)
+	if def.is_empty():
+		return
+
+	var id: String = String(def["id"])
+	var lvl: int = MetaSave.get_level(id)
+	var max_lvl: int = int(def["max_level"])
+	var revealed: bool = MetaSave.is_node_revealed(id)
+
+	if revealed or lvl > 0:
+		var pips: String = ""
+		for p_i: int in range(max_lvl):
+			pips += "■" if p_i < lvl else "□"
+		_tree_node_title_lbl.text = "%s  [%s]  (%s)" % [String(def["name"]), pips, String(def["cat"])]
+		_tree_node_title_lbl.add_theme_color_override("font_color", def["color"])
+		_tree_node_desc_lbl.text = String(def["desc"])
+
+		if lvl >= max_lvl:
+			_tree_buy_btn.text = "UNLOCKED / MAX"
+			_tree_buy_btn.disabled = true
+		else:
+			var cost: int = MetaSave.get_node_cost(id)
+			_tree_buy_btn.text = "UNLOCK %d [A/SPC]" % cost
+			_tree_buy_btn.disabled = not MetaSave.can_buy_node(id)
+	else:
+		var p_def: Dictionary = SkillTreeData.get_node_def(String(def["parent"]))
+		var p_name: String = String(p_def.get("name", "PARENT NODE"))
+		_tree_node_title_lbl.text = "??? MYSTERY TECH NODE ???"
+		_tree_node_title_lbl.add_theme_color_override("font_color", Color("#7c96c8"))
+		_tree_node_desc_lbl.text = "Unlock [%s] first to reveal this branch!" % p_name
+		_tree_buy_btn.text = "LOCKED"
+		_tree_buy_btn.disabled = true
+
+	_tree_canvas.queue_redraw()
+
+
+func _on_buy_tree_node() -> void:
+	var def: Dictionary = SkillTreeData.get_node_def(_tree_selected_id)
+	var ship_id: String = String(def.get("unlocks_ship", ""))
+	if MetaSave.buy_node(_tree_selected_id):
+		if ship_id != "":
+			RetroSfx.play("unlock_ship", -5.0, 0.01)
+			var s_def: Dictionary = SkillTreeData.get_ship_def(ship_id)
+			_tree_summary_lbl.text = "NEW SHIP: %s!" % String(s_def["short"])
+		else:
+			RetroSfx.play("powerup", -6.5, 0.03)
+			_tree_summary_lbl.text = "NODES: %d / %d" % [MetaSave.get_unlocked_node_count(), SkillTreeData.NODES.size()]
+		_refresh_skill_tree_ui()
+
+
+# =================================================================================
+# FLEET SHIP LOADOUT BAY (Shows All 7 Ships, Signature Weapons & Starter Perks!)
+# =================================================================================
+func _build_loadout_ui() -> void:
+	loadout_panel = Control.new()
+	loadout_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	loadout_panel.visible = false
+	ui_layer.add_child(loadout_panel)
+
+	var bg: Panel = Panel.new()
+	bg.position = Vector2(8.0, 6.0)
+	bg.size = Vector2(464.0, 258.0)
+	bg.add_theme_stylebox_override("panel", _make_ff6_box())
+	loadout_panel.add_child(bg)
+
+	var hdr: Label = Label.new()
+	hdr.position = Vector2(18.0, 12.0)
+	hdr.size = Vector2(190.0, 16.0)
+	hdr.text = "FLEET SHIP LOADOUT"
+	hdr.add_theme_font_size_override("font_size", FONT_SZ)
+	hdr.add_theme_color_override("font_color", Color("#ffe854"))
+	loadout_panel.add_child(hdr)
+
+	_loadout_count_lbl = Label.new()
+	_loadout_count_lbl.position = Vector2(190.0, 12.0)
+	_loadout_count_lbl.size = Vector2(140.0, 16.0)
+	_loadout_count_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_loadout_count_lbl.add_theme_font_size_override("font_size", FONT_SZ)
+	_loadout_count_lbl.add_theme_color_override("font_color", Color("#54f4ff"))
+	loadout_panel.add_child(_loadout_count_lbl)
+
+	_loadout_scrap_lbl = Label.new()
+	_loadout_scrap_lbl.position = Vector2(336.0, 12.0)
+	_loadout_scrap_lbl.size = Vector2(126.0, 16.0)
+	_loadout_scrap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_loadout_scrap_lbl.add_theme_font_size_override("font_size", FONT_SZ)
+	_loadout_scrap_lbl.add_theme_color_override("font_color", Color("#3ce878"))
+	loadout_panel.add_child(_loadout_scrap_lbl)
+
+	# 7 Visual Ship Roster Slots across the top (y = 32..98)
+	_loadout_ship_btns.clear()
+	_loadout_ship_icons.clear()
+	_loadout_ship_names.clear()
+	for i: int in range(SkillTreeData.SHIPS.size()):
+		var sx: float = 15.0 + float(i) * 64.5
+		var btn: Button = Button.new()
+		btn.position = Vector2(sx, 32.0)
+		btn.size = Vector2(61.0, 66.0)
+		var slot_i: int = i
+		btn.focus_entered.connect(func() -> void: _select_loadout_slot(slot_i))
+		btn.pressed.connect(func() -> void: _activate_loadout_slot(slot_i))
+		loadout_panel.add_child(btn)
+		_loadout_ship_btns.append(btn)
+
+		var tex_r: TextureRect = TextureRect.new()
+		tex_r.position = Vector2(6.0, 8.0)
+		tex_r.size = Vector2(49.0, 34.0)
+		tex_r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tex_r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tex_r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(tex_r)
+		_loadout_ship_icons.append(tex_r)
+
+		var n_lbl: Label = Label.new()
+		n_lbl.position = Vector2(1.0, 47.0)
+		n_lbl.size = Vector2(59.0, 14.0)
+		n_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		n_lbl.add_theme_font_size_override("font_size", FONT_SZ)
+		n_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(n_lbl)
+		_loadout_ship_names.append(n_lbl)
+
+	# Live Ship Showcase & Loadout Spec Card (y = 104..224)
+	var spec_card: Panel = Panel.new()
+	spec_card.position = Vector2(15.0, 104.0)
+	spec_card.size = Vector2(450.0, 118.0)
+	spec_card.add_theme_stylebox_override("panel", _make_ff6_box(Color("#060c28"), Color("#5c7cc4"), 1, 4.0))
+	loadout_panel.add_child(spec_card)
+
+	_loadout_preview_ship = Sprite2D.new()
+	_loadout_preview_ship.position = Vector2(64.0, 152.0)
+	_loadout_preview_ship.scale = Vector2(3.0, 3.0)
+	loadout_panel.add_child(_loadout_preview_ship)
+
+	_loadout_preview_bullet = Sprite2D.new()
+	_loadout_preview_bullet.position = Vector2(128.0, 152.0)
+	_loadout_preview_bullet.scale = Vector2(2.0, 2.0)
+	loadout_panel.add_child(_loadout_preview_bullet)
+
+	_loadout_info_title = Label.new()
+	_loadout_info_title.position = Vector2(162.0, 110.0)
+	_loadout_info_title.size = Vector2(296.0, 15.0)
+	_loadout_info_title.add_theme_font_size_override("font_size", FONT_SZ)
+	loadout_panel.add_child(_loadout_info_title)
+
+	_loadout_info_weapon = Label.new()
+	_loadout_info_weapon.position = Vector2(162.0, 126.0)
+	_loadout_info_weapon.size = Vector2(296.0, 14.0)
+	_loadout_info_weapon.add_theme_font_size_override("font_size", FONT_SZ)
+	_loadout_info_weapon.add_theme_color_override("font_color", Color("#ffe854"))
+	loadout_panel.add_child(_loadout_info_weapon)
+
+	_loadout_info_desc = Label.new()
+	_loadout_info_desc.position = Vector2(162.0, 142.0)
+	_loadout_info_desc.size = Vector2(296.0, 34.0)
+	_loadout_info_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_loadout_info_desc.add_theme_font_size_override("font_size", FONT_SZ)
+	_loadout_info_desc.add_theme_color_override("font_color", Color.WHITE)
+	loadout_panel.add_child(_loadout_info_desc)
+
+	_loadout_info_perks = Label.new()
+	_loadout_info_perks.position = Vector2(22.0, 184.0)
+	_loadout_info_perks.size = Vector2(436.0, 34.0)
+	_loadout_info_perks.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_loadout_info_perks.add_theme_font_size_override("font_size", FONT_SZ)
+	_loadout_info_perks.add_theme_color_override("font_color", Color("#88e8ff"))
+	loadout_panel.add_child(_loadout_info_perks)
+
+	# Bottom Loadout Navigation Bar
+	var l_title_btn: Button = Button.new()
+	l_title_btn.position = Vector2(15.0, 229.0)
+	l_title_btn.size = Vector2(104.0, 26.0)
+	l_title_btn.text = "TITLE [ESC]"
+	_style_menu_btn(l_title_btn)
+	l_title_btn.pressed.connect(func() -> void:
+		RetroSfx.play("ui", -7.0, 0.02)
+		_enter_title()
+	)
+	loadout_panel.add_child(l_title_btn)
+
+	var l_tree_btn: Button = Button.new()
+	l_tree_btn.position = Vector2(128.0, 229.0)
+	l_tree_btn.size = Vector2(154.0, 26.0)
+	l_tree_btn.text = "SKILL TREE [TAB/X]"
+	_style_menu_btn(l_tree_btn, Color("#ffe854"))
+	l_tree_btn.pressed.connect(func() -> void:
+		RetroSfx.play("ui", -7.0, 0.02)
+		_enter_hangar("")
+	)
+	loadout_panel.add_child(l_tree_btn)
+
+	_loadout_action_btn = Button.new()
+	_loadout_action_btn.position = Vector2(290.0, 229.0)
+	_loadout_action_btn.size = Vector2(175.0, 26.0)
+	_style_menu_btn(_loadout_action_btn, Color("#3ce878"))
+	_loadout_action_btn.pressed.connect(func() -> void: _activate_loadout_slot(_loadout_cursor_idx))
+	loadout_panel.add_child(_loadout_action_btn)
+
+
+func _enter_loadout() -> void:
+	_unfreeze_world()
+	state = State.LOADOUT
+	_hide_all_menus()
+	loadout_panel.visible = true
+	starfield.hyperspace_active = false
+	starfield.speed_scale = 0.65
+	player.visible = false
+	player.controls_enabled = false
+	player.set_options_hidden()
+	_clear_entities()
+	GenesisMusic.play_title()
+
+	_loadout_cursor_idx = 0
+	for i: int in range(SkillTreeData.SHIPS.size()):
+		if String(SkillTreeData.SHIPS[i]["id"]) == MetaSave.selected_ship:
+			_loadout_cursor_idx = i
+			break
+
+	_refresh_loadout_ui()
+	_loadout_ship_btns[_loadout_cursor_idx].grab_focus()
+
+
+func _select_loadout_slot(idx: int) -> void:
+	_loadout_cursor_idx = clampi(idx, 0, SkillTreeData.SHIPS.size() - 1)
+	_refresh_loadout_ui()
+
+
+func _activate_loadout_slot(idx: int) -> void:
+	_loadout_cursor_idx = clampi(idx, 0, SkillTreeData.SHIPS.size() - 1)
+	var s_def: Dictionary = SkillTreeData.SHIPS[_loadout_cursor_idx]
+	var s_id: String = String(s_def["id"])
+	if MetaSave.is_ship_unlocked(s_id):
+		if MetaSave.selected_ship != s_id:
+			MetaSave.select_ship(s_id)
+			RetroSfx.play("powerup", -6.0, 0.02)
+			_refresh_loadout_ui()
+		else:
+			_start_run()
+	else:
+		RetroSfx.play("hit", -10.0, 0.02)
+		_enter_hangar("UNLOCK %s IN THE SKILL TREE!" % String(s_def["short"]))
+
+
+func _refresh_loadout_ui() -> void:
+	_loadout_count_lbl.text = "SHIPS: %d / %d" % [MetaSave.get_unlocked_ship_count(), SkillTreeData.SHIPS.size()]
+	_loadout_scrap_lbl.text = "SCRAP: %d" % MetaSave.scrap
+
+	for i: int in range(SkillTreeData.SHIPS.size()):
+		var sd: Dictionary = SkillTreeData.SHIPS[i]
+		var sid: String = String(sd["id"])
+		var unlocked: bool = MetaSave.is_ship_unlocked(sid)
+		var equipped: bool = (MetaSave.selected_ship == sid)
+		var col: Color = sd["color"]
+
+		var btn: Button = _loadout_ship_btns[i]
+		var b_border: Color = Color("#3ce878") if equipped else (col if unlocked else Color("#36466e"))
+		var b_bg: Color = Color("#132b5e") if equipped else (Color("#0c1640") if unlocked else Color("#070b1e"))
+		btn.add_theme_stylebox_override("normal", _make_ff6_box(b_bg, b_border, 2 if equipped else 1, 2.0))
+		btn.add_theme_stylebox_override("hover", _make_ff6_box(Color("#1b347a"), Color.WHITE, 2, 2.0))
+		btn.add_theme_stylebox_override("focus", _make_ff6_box(Color("#1b347a"), Color("#ffe854"), 2, 2.0))
+
+		var icon_r: TextureRect = _loadout_ship_icons[i]
+		icon_r.texture = PixelArt.tex(String(sd["sprite_0"]))
+		icon_r.modulate = Color.WHITE if unlocked else Color(0.08, 0.12, 0.24, 0.9)
+
+		var n_lbl: Label = _loadout_ship_names[i]
+		n_lbl.text = String(sd["short"]) if unlocked else "???"
+		n_lbl.add_theme_color_override("font_color", Color("#3ce878") if equipped else (Color.WHITE if unlocked else Color("#586c96")))
+
+	var cur: Dictionary = SkillTreeData.SHIPS[_loadout_cursor_idx]
+	var cur_id: String = String(cur["id"])
+	var cur_unlocked: bool = MetaSave.is_ship_unlocked(cur_id)
+	var cur_equipped: bool = (MetaSave.selected_ship == cur_id)
+
+	_loadout_preview_ship.texture = PixelArt.tex(String(cur["sprite_0"]))
+	_loadout_preview_ship.modulate = Color.WHITE if cur_unlocked else Color(0.06, 0.10, 0.22, 0.95)
+	_loadout_preview_bullet.texture = PixelArt.tex(String(cur["bullet_preview"]))
+	_loadout_preview_bullet.visible = cur_unlocked
+
+	if cur_unlocked:
+		var eq_tag: String = "  [EQUIPPED]" if cur_equipped else ""
+		_loadout_info_title.text = "%s%s" % [String(cur["name"]), eq_tag]
+		_loadout_info_title.add_theme_color_override("font_color", cur["color"])
+		_loadout_info_weapon.text = "BLASTER: %s" % String(cur["weapon_name"])
+		_loadout_info_desc.text = String(cur["weapon_desc"])
+		_loadout_info_perks.text = "SHIP PERK: %s\nTREE STARTERS: %s" % [String(cur["perk_desc"]), _format_active_starters()]
+		_loadout_action_btn.text = "LAUNCH RUN [A/START]" if cur_equipped else "EQUIP SHIP [A/ENTER]"
+	else:
+		_loadout_info_title.text = "LOCKED CLASSIFIED HULL"
+		_loadout_info_title.add_theme_color_override("font_color", Color("#7c96c8"))
+		_loadout_info_weapon.text = "BLASTER: ???"
+		_loadout_info_desc.text = String(cur["unlock_hint"])
+		_loadout_info_perks.text = "Spend Scrap in the Starforge Skill Tree to unlock this spacecraft!"
+		_loadout_action_btn.text = "GO TO SKILL TREE [A]"
+
+
+func _format_active_starters() -> String:
+	var tags: Array[String] = []
+	if MetaSave.get_starting_shields() > 0:
+		tags.append("Shield x%d" % MetaSave.get_starting_shields())
+	if MetaSave.get_level("starter_option") > 0:
+		tags.append("Option Orb")
+	if MetaSave.get_level("starter_turret") > 0:
+		tags.append("Auto-Turret")
+	if MetaSave.get_level("starter_missile") > 0:
+		tags.append("Homing Pods")
+	if MetaSave.get_level("starter_blades") > 0:
+		tags.append("Sawblades")
+	if MetaSave.get_level("starter_nova") > 0:
+		tags.append("Nova Coil")
+	if MetaSave.get_level("starter_bomb") > 0:
+		tags.append("Grav-Bombs")
+	if MetaSave.has_lazarus_revive():
+		tags.append("Lazarus Revive")
+	if MetaSave.get_starting_rerolls() > 0:
+		tags.append("%d Rerolls" % MetaSave.get_starting_rerolls())
+	if MetaSave.has_veteran_drop():
+		tags.append("Free Lv1 Drop")
+	return "None yet" if tags.is_empty() else ", ".join(tags)
 
 
 func _build_pause_ui() -> void:
@@ -671,19 +1362,21 @@ func _build_pause_ui() -> void:
 	ui_layer.add_child(pause_panel)
 
 	var dim: ColorRect = ColorRect.new()
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0.01, 0.02, 0.08, 0.72)
+	dim.position = Vector2(0.0, 23.0)
+	dim.size = Vector2(VIEW_W, VIEW_H - 23.0)
+	dim.color = Color(0.01, 0.02, 0.08, 0.78)
 	pause_panel.add_child(dim)
 
-	var box: Panel = Panel.new()
-	box.position = Vector2(126.0, 36.0)
-	box.size = Vector2(228.0, 186.0)
-	box.add_theme_stylebox_override("panel", _make_ff6_box())
-	pause_panel.add_child(box)
+	# --- LEFT SIDE: Small Individual FF6 Boxes for Pause Options + Active Ship Badge ---
+	var hdr_box: Panel = Panel.new()
+	hdr_box.position = Vector2(12.0, 30.0)
+	hdr_box.size = Vector2(136.0, 22.0)
+	hdr_box.add_theme_stylebox_override("panel", _make_ff6_box(Color("#081034"), Color("#ffe854"), 1, 2.0))
+	pause_panel.add_child(hdr_box)
 
 	var hdr: Label = Label.new()
-	hdr.position = Vector2(126.0, 48.0)
-	hdr.size = Vector2(228.0, 18.0)
+	hdr.position = Vector2(12.0, 34.0)
+	hdr.size = Vector2(136.0, 14.0)
 	hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hdr.text = "PAUSED"
 	hdr.add_theme_font_size_override("font_size", FONT_SZ)
@@ -693,15 +1386,15 @@ func _build_pause_ui() -> void:
 	var p_specs: Array[Dictionary] = [
 		{"label": "RESUME", "cb": _resume_game, "accent": Color("#3ce878")},
 		{"label": "OPTIONS", "cb": _open_options_from_pause, "accent": Color("#28e8ff")},
-		{"label": "RETIRE TO HANGAR", "cb": _retire_from_pause, "accent": Color("#ffe854")},
-		{"label": "QUIT TO TITLE", "cb": _quit_from_pause, "accent": Color("#ff4c68")},
+		{"label": "RETIRE RUN", "cb": _retire_from_pause, "accent": Color("#ffe854")},
+		{"label": "QUIT TITLE", "cb": _quit_from_pause, "accent": Color("#ff4c68")},
 	]
 
 	for i: int in range(p_specs.size()):
 		var spec: Dictionary = p_specs[i]
 		var btn: Button = Button.new()
-		btn.position = Vector2(148.0, 74.0 + float(i) * 34.0)
-		btn.size = Vector2(184.0, 26.0)
+		btn.position = Vector2(12.0, 58.0 + float(i) * 30.0)
+		btn.size = Vector2(136.0, 25.0)
 		btn.text = String(spec["label"])
 		_style_menu_btn(btn, spec["accent"])
 		var cb: Callable = spec["cb"]
@@ -712,6 +1405,145 @@ func _build_pause_ui() -> void:
 		pause_panel.add_child(btn)
 		if i == 0:
 			_pause_resume_btn = btn
+
+	var ship_card: Panel = Panel.new()
+	ship_card.position = Vector2(12.0, 182.0)
+	ship_card.size = Vector2(136.0, 78.0)
+	ship_card.add_theme_stylebox_override("panel", _make_ff6_box(Color("#081034"), Color("#6c88c4"), 1, 2.0))
+	pause_panel.add_child(ship_card)
+
+	_pause_ship_sprite = Sprite2D.new()
+	_pause_ship_sprite.position = Vector2(80.0, 206.0)
+	_pause_ship_sprite.scale = Vector2(2.0, 2.0)
+	pause_panel.add_child(_pause_ship_sprite)
+
+	# --- RIGHT SIDE: Current Ship Stats & Installed Upgrades Panel ---
+	var right_box: Panel = Panel.new()
+	right_box.position = Vector2(156.0, 30.0)
+	right_box.size = Vector2(312.0, 230.0)
+	right_box.add_theme_stylebox_override("panel", _make_ff6_box(Color("#060d2b"), Color("#dce6ff"), 2, 4.0))
+	pause_panel.add_child(right_box)
+
+	_pause_info_canvas = Control.new()
+	_pause_info_canvas.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pause_info_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pause_info_canvas.draw.connect(_draw_pause_stats_and_upgrades)
+	pause_panel.add_child(_pause_info_canvas)
+
+
+func _collect_installed_modules() -> Array[Dictionary]:
+	var modules: Array[Dictionary] = []
+	var main_lvl: int = player.beam_level if (player.signature_weapon == "vulcan" and player.active_beam != "vulcan") else (
+		1 + player.weapon_overclock
+	)
+	modules.append(_get_beam_badge_info(player.active_beam, main_lvl))
+	if player.aux_beam != "":
+		modules.append(_get_beam_badge_info(player.aux_beam, player.beam_level))
+	if player.option_count > 0:
+		modules.append({"icon": "badge_option", "name": "Option Drone", "val": "x%d" % player.option_count, "col": Color("#ff9624")})
+	if player.blade_level > 0:
+		modules.append({"icon": "badge_blades", "name": "Orbital Blades", "val": "Lv%d" % player.blade_level, "col": Color("#54f4ff")})
+	if player.turret_level > 0:
+		modules.append({"icon": "badge_turret", "name": "Auto-Turret", "val": "Lv%d" % player.turret_level, "col": Color("#6eff8c")})
+	if player.missile_level > 0:
+		modules.append({"icon": "badge_missile", "name": "Homing Pods", "val": "Lv%d" % player.missile_level, "col": Color("#ff4c68")})
+	if player.flank_level > 0:
+		modules.append({"icon": "badge_flank", "name": "Flank Guns", "val": "Lv%d" % player.flank_level, "col": Color("#ffe854")})
+	if player.bomb_level > 0:
+		modules.append({"icon": "badge_bomb", "name": "Gravity Bombs", "val": "Lv%d" % player.bomb_level, "col": Color("#d44cff")})
+	if player.nova_level > 0:
+		modules.append({"icon": "badge_nova", "name": "Nova Coil", "val": "Lv%d" % player.nova_level, "col": Color("#ffd84c")})
+	if player.spread_level > 0:
+		modules.append({"icon": "badge_spread", "name": "Spread Matrix", "val": "Lv%d" % player.spread_level, "col": Color("#ffe854")})
+	if player.max_shield > 0:
+		modules.append({"icon": "badge_shield", "name": "Force Shield", "val": "Lv%d" % player.max_shield, "col": Color("#3ce8ff")})
+	if player.rapid_level > 0:
+		modules.append({"icon": "badge_rapid", "name": "Rapid Coil", "val": "Lv%d" % player.rapid_level, "col": Color("#d46bff")})
+	if player.thruster_level > 0:
+		modules.append({"icon": "badge_thruster", "name": "Afterburner", "val": "Lv%d" % player.thruster_level, "col": Color("#3ce878")})
+	if int(run_ranks.get("repair", 0)) > 0:
+		modules.append({"icon": "badge_bio", "name": "Hull Overclock", "val": "Lv%d" % int(run_ranks.get("repair", 0)), "col": Color("#66ff99")})
+	return modules
+
+
+func _draw_pause_stats_and_upgrades() -> void:
+	var font: Font = PixelArt.ui_font if PixelArt.ui_font != null else ThemeDB.fallback_font
+	var s_def: Dictionary = MetaSave.get_selected_ship_def()
+
+	# Left Ship Mini-Card Text (under _pause_ship_sprite)
+	_pause_info_canvas.draw_string(font, Vector2(18.0, 234.0), String(s_def["short"]), HORIZONTAL_ALIGNMENT_CENTER, 124, FONT_SZ, s_def["color"])
+	_pause_info_canvas.draw_string(
+		font,
+		Vector2(18.0, 248.0),
+		"KILLS %d  |  REROLL %d" % [run_kills, rerolls_left],
+		HORIZONTAL_ALIGNMENT_CENTER,
+		124,
+		FONT_SZ,
+		Color("#9ab6e8")
+	)
+
+	# Right Panel: Section 1 — Current Ship Stats
+	var rx: float = 166.0
+	var ry: float = 44.0
+	_pause_info_canvas.draw_string(font, Vector2(rx, ry), "CURRENT SHIP STATS", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#ffe854"))
+	if player.has_revive_charge:
+		_pause_info_canvas.draw_string(font, Vector2(rx + 178.0, ry), "[LAZARUS READY]", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#3ce878"))
+
+	var dmg_pct: int = int(round(player.damage_bonus * 100.0))
+	var rate_pct: int = int(round(player.fire_rate_bonus * 100.0))
+	var crit_pct: int = int(round(player.crit_chance * 100.0))
+	var mag_px: int = int(round(MetaSave.get_magnet_radius()))
+	var xp_pct: int = int(round(MetaSave.get_xp_mult() * 100.0))
+	var scr_pct: int = int(round(MetaSave.get_scrap_mult() * 100.0))
+
+	var left_stats: Array[String] = [
+		"HULL:      %d / %d" % [player.hp, player.max_hp],
+		"SHIELD:    %d / %d" % [player.shield_charges, player.max_shield],
+		"DAMAGE:    %d%%" % dmg_pct,
+		"FIRE RATE: %d%%" % rate_pct,
+	]
+	var right_stats: Array[String] = [
+		"SPEED:     %d" % int(round(player.move_speed)),
+		"CRIT:      %d%%" % crit_pct,
+		"MAGNET:    %d px" % mag_px,
+		"XP/SCRAP:  %d%%/%d%%" % [xp_pct, scr_pct],
+	]
+
+	for row_i: int in range(4):
+		var sy: float = ry + 14.0 + float(row_i) * 12.0
+		_pause_info_canvas.draw_string(font, Vector2(rx, sy), left_stats[row_i], HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color.WHITE)
+		_pause_info_canvas.draw_string(font, Vector2(rx + 148.0, sy), right_stats[row_i], HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#dce8ff"))
+
+	# Divider & Section 2 — Installed Weapons & Upgrades (2-Column Pictorial Grid)
+	_pause_info_canvas.draw_line(Vector2(164.0, 99.0), Vector2(460.0, 99.0), Color("#4c6cb0"), 1.0)
+	_pause_info_canvas.draw_string(
+		font,
+		Vector2(rx, 112.0),
+		"INSTALLED WEAPONS & UPGRADES  (LV %d  |  XP %d/%d)" % [player_level, run_xp, xp_to_next],
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		FONT_SZ,
+		Color("#54f4ff")
+	)
+
+	var mods: Array[Dictionary] = _collect_installed_modules()
+	for m_i: int in range(mini(14, mods.size())):
+		var mod: Dictionary = mods[m_i]
+		var col_idx: int = m_i % 2
+		var row_idx: int = m_i / 2
+		var cx: float = 164.0 + float(col_idx) * 149.0
+		var cy: float = 118.0 + float(row_idx) * 19.0
+		var cw: float = 145.0
+		var ch: float = 16.0
+		var accent: Color = mod["col"]
+
+		_pause_info_canvas.draw_rect(Rect2(cx, cy, cw, ch), Color("#101c4a"))
+		_pause_info_canvas.draw_rect(Rect2(cx, cy + ch - 1.0, cw, 1.0), accent)
+		var icon_tex: Texture2D = PixelArt.tex(String(mod["icon"]))
+		if icon_tex != null:
+			_pause_info_canvas.draw_texture(icon_tex, Vector2(cx + 3.0, cy + 3.0))
+		var m_lbl: String = ("%s %s" % [String(mod["name"]), String(mod["val"])]).strip_edges()
+		_pause_info_canvas.draw_string(font, Vector2(cx + 17.0, cy + 12.0), m_lbl, HORIZONTAL_ALIGNMENT_LEFT, 124, FONT_SZ, Color.WHITE)
 
 
 func _open_hangar_from_title() -> void:
@@ -732,7 +1564,7 @@ func _open_options_from_pause() -> void:
 func _retire_from_pause() -> void:
 	_unfreeze_world()
 	MetaSave.record_run_end(wave, run_scrap, run_kills, score, run_bosses)
-	_enter_hangar("RETIRED ON STAGE %d  |  +%d SCRAP BANKED!" % [current_stage_idx + 1, run_scrap])
+	_enter_hangar("RETIRED S%d  |  +%d SCRAP!" % [current_stage_idx + 1, run_scrap])
 
 
 func _quit_from_pause() -> void:
@@ -756,21 +1588,21 @@ func _build_draft_ui() -> void:
 	dim.color = Color(0.02, 0.03, 0.10, 0.78)
 	draft_panel.add_child(dim)
 
-	var d_title: Label = Label.new()
-	d_title.position = Vector2(0.0, 28.0)
-	d_title.size = Vector2(VIEW_W, 16.0)
-	d_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	d_title.text = "SELECT MODULE  [1 / 2 / 3  or  D-PAD + A]"
-	d_title.add_theme_font_size_override("font_size", FONT_SZ)
-	d_title.add_theme_color_override("font_color", Color("#ffe854"))
-	draft_panel.add_child(d_title)
+	_draft_title_lbl = Label.new()
+	_draft_title_lbl.position = Vector2(0.0, 27.0)
+	_draft_title_lbl.size = Vector2(VIEW_W, 16.0)
+	_draft_title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_draft_title_lbl.text = "LEVEL UP! SELECT UPGRADE  [1 / 2 / 3  or  D-PAD + A]"
+	_draft_title_lbl.add_theme_font_size_override("font_size", FONT_SZ)
+	_draft_title_lbl.add_theme_color_override("font_color", Color("#ffe854"))
+	draft_panel.add_child(_draft_title_lbl)
 
 	_draft_cards.clear()
 	for i: int in range(3):
 		var cx: float = 20.0 + float(i) * 150.0
-		var cy: float = 52.0
+		var cy: float = 48.0
 		var cw: float = 140.0
-		var ch: float = 156.0
+		var ch: float = 158.0
 
 		var btn: Button = Button.new()
 		btn.position = Vector2(cx, cy)
@@ -811,8 +1643,8 @@ func _build_draft_ui() -> void:
 		btn.add_child(icon_rect)
 
 		var short_lbl: Label = Label.new()
-		short_lbl.position = Vector2(6.0, 118.0)
-		short_lbl.size = Vector2(cw - 12.0, 28.0)
+		short_lbl.position = Vector2(6.0, 116.0)
+		short_lbl.size = Vector2(cw - 12.0, 34.0)
 		short_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		short_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		short_lbl.add_theme_font_size_override("font_size", FONT_SZ)
@@ -828,12 +1660,21 @@ func _build_draft_ui() -> void:
 			"short_lbl": short_lbl,
 		})
 
+	_draft_reroll_btn = Button.new()
+	_draft_reroll_btn.position = Vector2(160.0, 214.0)
+	_draft_reroll_btn.size = Vector2(160.0, 24.0)
+	_draft_reroll_btn.focus_mode = Control.FOCUS_NONE
+	_style_menu_btn(_draft_reroll_btn, Color("#d46bff"))
+	_draft_reroll_btn.pressed.connect(_reroll_draft_cards)
+	draft_panel.add_child(_draft_reroll_btn)
+
 
 func _hide_all_menus() -> void:
 	title_panel.visible = false
 	stats_panel.visible = false
 	options_panel.visible = false
 	hangar_panel.visible = false
+	loadout_panel.visible = false
 	draft_panel.visible = false
 	pause_panel.visible = false
 	hud_bar.visible = false
@@ -859,6 +1700,11 @@ func _pause_game() -> void:
 	world_root.process_mode = Node.PROCESS_MODE_DISABLED
 	touch_focus_btn.visible = false
 	pause_panel.visible = true
+	if _pause_ship_sprite != null:
+		var s_def: Dictionary = MetaSave.get_selected_ship_def()
+		_pause_ship_sprite.texture = PixelArt.tex(String(s_def["sprite_0"]))
+	if _pause_info_canvas != null:
+		_pause_info_canvas.queue_redraw()
 	GenesisMusic.set_paused_duck(true)
 	RetroSfx.play("ui", -7.0, 0.02)
 	_pause_resume_btn.grab_focus()
@@ -896,12 +1742,18 @@ func _enter_title() -> void:
 	_clear_entities()
 	GenesisMusic.play_title()
 
+	var ship_def: Dictionary = MetaSave.get_selected_ship_def()
+	_title_start_btn.text = "START RUN [%s]" % String(ship_def["short"])
+	_title_ship_sprite.texture = PixelArt.tex(String(ship_def["sprite_0"]))
+
 	if MetaSave.has_any_affordable_upgrade():
-		_title_hangar_btn.text = "HANGAR (%d SCRAP!)" % MetaSave.scrap
+		_title_tree_btn.text = "SKILL TREE (%d SCRAP!)" % MetaSave.scrap
 	elif MetaSave.scrap > 0:
-		_title_hangar_btn.text = "HANGAR (%d)" % MetaSave.scrap
+		_title_tree_btn.text = "SKILL TREE (%d)" % MetaSave.scrap
 	else:
-		_title_hangar_btn.text = "SHIP HANGAR"
+		_title_tree_btn.text = "SKILL TREE"
+
+	_title_loadout_btn.text = "SHIP LOADOUT (%d/%d)" % [MetaSave.get_unlocked_ship_count(), SkillTreeData.SHIPS.size()]
 
 	_title_sel_idx = clampi(_title_sel_idx, 0, _title_menu_btns.size() - 1)
 	_title_menu_btns[_title_sel_idx].grab_focus()
@@ -920,7 +1772,12 @@ func _enter_stats() -> void:
 		+ "HOSTILES DOWNED:   %d\n" % MetaSave.total_kills
 		+ "BOSSES DEFEATED:   %d\n" % MetaSave.bosses_defeated
 		+ "BANKED SCRAP:      %d (TOTAL %d)\n" % [MetaSave.scrap, MetaSave.lifetime_scrap]
-		+ "HANGAR UPGRADES:   %d / %d" % [MetaSave.get_total_upgrade_ranks(), MetaSave.get_max_upgrade_ranks()]
+		+ "SKILL TREE RANKS:  %d / %d  |  SHIPS: %d / %d" % [
+			MetaSave.get_total_upgrade_ranks(),
+			MetaSave.get_max_upgrade_ranks(),
+			MetaSave.get_unlocked_ship_count(),
+			SkillTreeData.SHIPS.size(),
+		]
 	)
 	_stats_back_btn.grab_focus()
 
@@ -975,42 +1832,11 @@ func _enter_hangar(summary_msg: String) -> void:
 	GenesisMusic.play_title()
 
 	if summary_msg == "":
-		_hangar_summary_lbl.text = "Permanent ship upgrades kept across all runs."
+		_tree_summary_lbl.text = "NODES: %d / %d" % [MetaSave.get_unlocked_node_count(), SkillTreeData.NODES.size()]
 	else:
-		_hangar_summary_lbl.text = summary_msg
+		_tree_summary_lbl.text = summary_msg
 
-	_refresh_hangar_ui()
-	_hangar_launch_btn.grab_focus()
-
-
-func _refresh_hangar_ui() -> void:
-	_hangar_scrap_lbl.text = "SCRAP: %d" % MetaSave.scrap
-	for row: Dictionary in _hangar_rows:
-		var id: String = String(row["id"])
-		var def: Dictionary = MetaSave.get_upgrade_def(id)
-		var lvl: int = MetaSave.get_level(id)
-		var max_lvl: int = int(def["max_level"])
-		var pips: String = ""
-		for p: int in range(max_lvl):
-			pips += "■" if p < lvl else "□"
-
-		var n_lbl: Label = row["name_lbl"]
-		n_lbl.text = "%s  [%s]" % [String(def["name"]), pips]
-
-		var btn: Button = row["buy_btn"]
-		if lvl >= max_lvl:
-			btn.text = "MAXED"
-			btn.disabled = true
-		else:
-			var cost: int = MetaSave.get_upgrade_cost(id)
-			btn.text = "BUY %d" % cost
-			btn.disabled = not MetaSave.can_buy(id)
-
-
-func _on_buy_permanent(id: String) -> void:
-	if MetaSave.buy_upgrade(id):
-		RetroSfx.play("powerup", -7.0, 0.03)
-		_refresh_hangar_ui()
+	_refresh_skill_tree_ui()
 
 
 func _start_run() -> void:
@@ -1020,7 +1846,6 @@ func _start_run() -> void:
 	fx_layer.clear_all()
 	_hide_all_menus()
 
-	# Begin with an exciting Hyperspace Warp-In Arrival into Stage 1!
 	state = State.INTRO_WARP
 	_intro_timer = 0.0
 	_intro_flash_done = false
@@ -1037,6 +1862,11 @@ func _start_run() -> void:
 	run_scrap = 0
 	run_kills = 0
 	run_bosses = 0
+	player_level = 1
+	run_xp = 0
+	xp_to_next = _calc_xp_for_level(1)
+	rerolls_left = MetaSave.get_starting_rerolls()
+	_pending_level_ups = 1 if MetaSave.has_veteran_drop() else 0
 	_pending_hyperspace = false
 	run_ranks.clear()
 	_squad_counts.clear()
@@ -1044,11 +1874,19 @@ func _start_run() -> void:
 	player.reset_for_new_run()
 	player.controls_enabled = false
 	player.global_position = Vector2(-44.0, 134.0)
-	if MetaSave.has_starter_shield():
-		run_ranks["shield"] = 1
 
+	# Sync run_ranks with Skill Tree starter addons & shields!
+	var starters: Dictionary = MetaSave.get_starter_addons()
+	for k: String in starters.keys():
+		var v: int = int(starters[k])
+		if v > 0:
+			run_ranks[k] = v
+	if MetaSave.get_starting_shields() > 0:
+		run_ranks["shield"] = MetaSave.get_starting_shields()
+
+	var ship_def: Dictionary = MetaSave.get_selected_ship_def()
 	GenesisMusic.play_stage(0)
-	_show_banner("HYPERSPACE WARP EXIT\nSTAGE 1: OUTER ORBIT", Color("#28e8ff"), INTRO_DURATION)
+	_show_banner("%s LAUNCHING!\nSTAGE 1: OUTER ORBIT" % String(ship_def["name"]), ship_def["color"], INTRO_DURATION)
 	hud_bar.queue_redraw()
 
 
@@ -1057,7 +1895,6 @@ func _update_intro_warp(delta: float) -> void:
 	var prog: float = clampf(_intro_timer / INTRO_DURATION, 0.0, 1.0)
 
 	if prog < 0.58:
-		# Streak in at high velocity through blazing warp ribbons!
 		var t_in: float = prog / 0.58
 		starfield.hyperspace_progress = lerpf(0.25, 0.55, t_in)
 		player.global_position.x = lerpf(-44.0, 96.0, 1.0 - pow(1.0 - t_in, 2.4))
@@ -1115,9 +1952,9 @@ func _begin_next_wave() -> void:
 		_pending_hyperspace = true
 		starfield.speed_scale = 1.40
 		GenesisMusic.play_boss(current_stage_idx)
-		_show_banner("WARNING! %s!" % String(st["boss_name"]), Color("#ff4c68"), 2.6)
-		RetroSfx.play("big_explode", -7.0, 0.02)
-		_queue_enemy(0.8, GameEnemy.Type.BOSS, Vector2(520.0, 134.0), hp_mult, 0.0, -1)
+		_show_banner("WARNING! %s!" % String(st["boss_name"]), Color("#ff4c68"), 2.8)
+		RetroSfx.play("boss_siren", -5.5, 0.0)
+		_queue_enemy(0.35, GameEnemy.Type.BOSS, Vector2(420.0, -110.0), hp_mult, 0.0, -1)
 	else:
 		_pending_hyperspace = false
 		starfield.speed_scale = 1.15 + minf(0.35, float(wave) * 0.025)
@@ -1127,13 +1964,11 @@ func _begin_next_wave() -> void:
 		else:
 			_show_banner("STAGE %d-%d  //  %s" % [stage_display_num, sub_wave, String(st["name"])], Color("#ffe854"), 1.5)
 
-		# Full-length ~32-42 second arcade waves with 10-14 varied enemy formations!
 		var t: float = 0.65
 		var num_groups: int = mini(14, 10 + current_stage_idx / 2 + sub_wave - 1)
 		for g: int in range(num_groups):
 			var roll: int = (wave * 3 + g * 2) % 6
 			if roll == 0:
-				# 6-Ship Sine Squadron
 				var sq_id: int = _next_squad_id
 				_next_squad_id += 1
 				_squad_counts[sq_id] = 6
@@ -1142,7 +1977,6 @@ func _begin_next_wave() -> void:
 					_queue_enemy(t + float(k) * 0.24, GameEnemy.Type.SCOUT_SINE, Vector2(500.0, lane_y), hp_mult, float(k) * 0.52, sq_id)
 				t += 2.5
 			elif roll == 1:
-				# Pincer Swooper Dive (top & bottom simultaneous rush)
 				var count: int = 4 if wave < 3 else 5
 				var sq_id: int = _next_squad_id
 				_next_squad_id += 1
@@ -1152,7 +1986,6 @@ func _begin_next_wave() -> void:
 					_queue_enemy(t + float(k) * 0.30, GameEnemy.Type.SWOOPER, Vector2(504.0, sy), hp_mult, float(k), sq_id)
 				t += 2.4
 			elif roll == 2:
-				# Crossfire Sniper Wing + Center Scouts
 				var s_count: int = 2 if wave < 3 else 3
 				for k: int in range(s_count):
 					var py: float = lerpf(58.0, 204.0, float(k) / float(maxi(1, s_count - 1)))
@@ -1161,14 +1994,12 @@ func _begin_next_wave() -> void:
 				_queue_enemy(t + 0.8, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, 134.0), hp_mult, 0.8, -1)
 				t += 2.7
 			elif roll == 3:
-				# Heavy Cruiser + Escort Vipers
 				var cy: float = randf_range(74.0, 188.0)
 				_queue_enemy(t, GameEnemy.Type.CRUISER, Vector2(512.0, cy), hp_mult, 0.0, -1)
 				_queue_enemy(t + 0.35, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, clampf(cy - 34.0, 48.0, 214.0)), hp_mult, 0.0, -1)
 				_queue_enemy(t + 0.55, GameEnemy.Type.SCOUT_SINE, Vector2(504.0, clampf(cy + 34.0, 48.0, 214.0)), hp_mult, 1.0, -1)
 				t += 2.9
 			elif roll == 4:
-				# V-Formation Scout Swarm (7 ships)
 				var sq_id: int = _next_squad_id
 				_next_squad_id += 1
 				_squad_counts[sq_id] = 7
@@ -1178,7 +2009,6 @@ func _begin_next_wave() -> void:
 					_queue_enemy(t + float(absi(k - 3)) * 0.22, GameEnemy.Type.SCOUT_SINE, Vector2(502.0, clampf(center_y + wing_off, 48.0, 214.0)), hp_mult, float(k) * 0.4, sq_id)
 				t += 2.6
 			else:
-				# Dual Swooper + Cruiser Ambush (or Twin Cruisers on later stages!)
 				_queue_enemy(t, GameEnemy.Type.CRUISER, Vector2(512.0, randf_range(72.0, 120.0)), hp_mult, 0.0, -1)
 				if current_stage_idx >= 1 or sub_wave >= 2:
 					_queue_enemy(t + 0.7, GameEnemy.Type.CRUISER, Vector2(518.0, randf_range(148.0, 196.0)), hp_mult, 1.5, -1)
@@ -1220,6 +2050,11 @@ func _begin_hyperspace_jump() -> void:
 	starfield.hyperspace_progress = 0.0
 	starfield.speed_scale = 2.0
 
+	var stage_heal: int = MetaSave.get_stage_heal_amount()
+	if stage_heal > 0 and player.hp < player.max_hp:
+		player.heal(stage_heal)
+		fx_layer.spawn_popup(player.global_position + Vector2(-18.0, -16.0), "NANITE +%d HP!" % stage_heal, Color("#3ce878"))
+
 	var next_stage: Dictionary = StageData.get_stage(current_stage_idx + 1)
 	_show_banner("HYPERSPACE JUMP!\nNEXT: %s" % String(next_stage["name"]), Color("#28e8ff"), _hyper_duration)
 	GenesisMusic.play_hyperspace()
@@ -1254,14 +2089,32 @@ func _process(delta: float) -> void:
 		if _banner_timer <= 0.0:
 			banner_label.visible = false
 
-	# Analog left-stick menu navigation support for controllers!
 	_poll_controller_menu_stick(delta)
 
 	if state == State.TITLE and _title_ship_sprite != null:
 		var t: float = float(Time.get_ticks_msec()) * 0.003
-		_title_ship_sprite.position = Vector2(352.0 + cos(t * 0.7) * 8.0, 132.0 + sin(t) * 10.0)
-		var alt: bool = (int(Time.get_ticks_msec() / 65) % 2 == 0)
-		_title_ship_sprite.texture = PixelArt.tex("player_flame_2" if alt else "player_idle")
+		_title_ship_sprite.position = Vector2(354.0 + cos(t * 0.7) * 8.0, 134.0 + sin(t) * 10.0)
+		var alt: bool = (int(Time.get_ticks_msec() / 75) % 2 == 0)
+		var s_def: Dictionary = MetaSave.get_selected_ship_def()
+		_title_ship_sprite.texture = PixelArt.tex(String(s_def["sprite_1" if alt else "sprite_0"]))
+
+	elif state == State.HANGAR:
+		if not _tree_dragging:
+			var sel_def: Dictionary = SkillTreeData.get_node_def(_tree_selected_id)
+			if not sel_def.is_empty():
+				_tree_cam_offset = _tree_cam_offset.lerp(Vector2(sel_def["pos"]), clampf(10.0 * delta, 0.0, 1.0))
+		_tree_canvas.queue_redraw()
+
+	elif state == State.LOADOUT and _loadout_preview_ship != null:
+		var lt: float = float(Time.get_ticks_msec()) * 0.004
+		_loadout_preview_ship.position = Vector2(64.0, 148.0 + sin(lt) * 4.5)
+		var cur_s: Dictionary = SkillTreeData.SHIPS[_loadout_cursor_idx]
+		var l_alt: bool = (int(Time.get_ticks_msec() / 85) % 2 == 0)
+		_loadout_preview_ship.texture = PixelArt.tex(String(cur_s["sprite_1" if l_alt else "sprite_0"]))
+		if _loadout_preview_bullet.visible:
+			_loadout_preview_bullet.position = Vector2(120.0 + fposmod(lt * 22.0, 26.0), 148.0 + sin(lt * 2.5) * 3.0)
+			if String(cur_s["id"]) == "neko":
+				_loadout_preview_bullet.texture = PixelArt.tex("bullet_cat_1" if l_alt else "bullet_cat_0")
 
 	if state != State.PAUSED and fx_layer.shake_strength > 0.1:
 		var s: float = fx_layer.shake_strength
@@ -1274,6 +2127,9 @@ func _process(delta: float) -> void:
 		hud_bar.queue_redraw()
 	elif state == State.PLAYING:
 		_update_wave_director(delta)
+		if _pending_level_ups > 0 and not _any_boss_dying():
+			_pending_level_ups -= 1
+			_open_upgrade_draft()
 		hud_bar.queue_redraw()
 	elif state == State.HYPERSPACE:
 		_update_hyperspace(delta)
@@ -1282,7 +2138,7 @@ func _process(delta: float) -> void:
 		_death_timer -= delta
 		if _death_timer <= 0.0:
 			MetaSave.record_run_end(wave, run_scrap, run_kills, score, run_bosses)
-			var msg: String = "FELL ON STAGE %d (WAVE %d)  |  +%d SCRAP!" % [current_stage_idx + 1, wave, run_scrap]
+			var msg: String = "FELL ON S%d-W%d  |  +%d SCRAP!" % [current_stage_idx + 1, wave, run_scrap]
 			_enter_hangar(msg)
 
 
@@ -1292,9 +2148,22 @@ func _poll_controller_menu_stick(delta: float) -> void:
 	_joy_nav_cooldown = maxf(0.0, _joy_nav_cooldown - delta)
 	if _joy_nav_cooldown > 0.0 or Input.get_connected_joypads().is_empty():
 		return
-	var pad: int = Input.get_connected_joypads()[0]
-	var ax: float = Input.get_joy_axis(pad, JOY_AXIS_LEFT_X)
-	var ay: float = Input.get_joy_axis(pad, JOY_AXIS_LEFT_Y)
+	var ax: float = 0.0
+	var ay: float = 0.0
+	for pad: int in Input.get_connected_joypads():
+		var px: float = Input.get_joy_axis(pad, JOY_AXIS_LEFT_X)
+		var py: float = Input.get_joy_axis(pad, JOY_AXIS_LEFT_Y)
+		if absf(px) > absf(ax):
+			ax = px
+		if absf(py) > absf(ay):
+			ay = py
+
+	if state == State.HANGAR:
+		if absf(ax) > 0.52 or absf(ay) > 0.52:
+			_move_tree_selection(Vector2(ax, ay))
+			_joy_nav_cooldown = 0.19
+		return
+
 	var focused: Control = get_viewport().gui_get_focus_owner()
 	if focused == null:
 		return
@@ -1314,7 +2183,6 @@ func _poll_controller_menu_stick(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Gamepad button handling across gameplay & menus
 	if event is InputEventJoypadButton:
 		var jb: InputEventJoypadButton = event as InputEventJoypadButton
 		if not jb.pressed:
@@ -1324,15 +2192,43 @@ func _unhandled_input(event: InputEvent) -> void:
 				_pause_game()
 			elif state == State.PAUSED:
 				_resume_game()
-			elif state == State.TITLE or state == State.HANGAR:
+			elif state == State.TITLE or state == State.HANGAR or state == State.LOADOUT:
 				_start_run()
 			return
+		if jb.button_index == JOY_BUTTON_X:
+			if state == State.HANGAR:
+				RetroSfx.play("ui", -7.0, 0.02)
+				_enter_loadout()
+				return
+			elif state == State.LOADOUT:
+				RetroSfx.play("ui", -7.0, 0.02)
+				_enter_hangar("")
+				return
+		if jb.button_index == JOY_BUTTON_Y and state == State.DRAFT:
+			_reroll_draft_cards()
+			return
+		if state == State.HANGAR:
+			if jb.button_index == JOY_BUTTON_DPAD_UP:
+				_move_tree_selection(Vector2.UP)
+				return
+			elif jb.button_index == JOY_BUTTON_DPAD_DOWN:
+				_move_tree_selection(Vector2.DOWN)
+				return
+			elif jb.button_index == JOY_BUTTON_DPAD_LEFT:
+				_move_tree_selection(Vector2.LEFT)
+				return
+			elif jb.button_index == JOY_BUTTON_DPAD_RIGHT:
+				_move_tree_selection(Vector2.RIGHT)
+				return
+			elif jb.button_index == JOY_BUTTON_A:
+				_on_buy_tree_node()
+				return
 		if jb.button_index == JOY_BUTTON_B and state != State.PLAYING:
 			if state == State.PAUSED:
 				_resume_game()
 			elif state == State.OPTIONS:
 				_leave_options()
-			elif state == State.STATS or state == State.HANGAR:
+			elif state == State.STATS or state == State.HANGAR or state == State.LOADOUT:
 				RetroSfx.play("ui", -7.0, 0.02)
 				_enter_title()
 			return
@@ -1372,8 +2268,36 @@ func _unhandled_input(event: InputEvent) -> void:
 			if k == KEY_ESCAPE or k == KEY_BACKSPACE:
 				_leave_options()
 		elif state == State.HANGAR:
-			if k == KEY_SPACE or k == KEY_ENTER:
-				_start_run()
+			if k == KEY_W or k == KEY_UP:
+				_move_tree_selection(Vector2.UP)
+			elif k == KEY_S or k == KEY_DOWN:
+				_move_tree_selection(Vector2.DOWN)
+			elif k == KEY_A or k == KEY_LEFT:
+				_move_tree_selection(Vector2.LEFT)
+			elif k == KEY_D or k == KEY_RIGHT:
+				_move_tree_selection(Vector2.RIGHT)
+			elif k == KEY_SPACE or k == KEY_ENTER:
+				_on_buy_tree_node()
+			elif k == KEY_TAB:
+				RetroSfx.play("ui", -7.0, 0.02)
+				_enter_loadout()
+			elif k == KEY_ESCAPE:
+				RetroSfx.play("ui", -7.0, 0.02)
+				_enter_title()
+		elif state == State.LOADOUT:
+			if k == KEY_A or k == KEY_LEFT:
+				_select_loadout_slot((_loadout_cursor_idx - 1 + SkillTreeData.SHIPS.size()) % SkillTreeData.SHIPS.size())
+				_loadout_ship_btns[_loadout_cursor_idx].grab_focus()
+				RetroSfx.play("ui", -11.0, 0.03)
+			elif k == KEY_D or k == KEY_RIGHT:
+				_select_loadout_slot((_loadout_cursor_idx + 1) % SkillTreeData.SHIPS.size())
+				_loadout_ship_btns[_loadout_cursor_idx].grab_focus()
+				RetroSfx.play("ui", -11.0, 0.03)
+			elif k == KEY_SPACE or k == KEY_ENTER:
+				_activate_loadout_slot(_loadout_cursor_idx)
+			elif k == KEY_TAB:
+				RetroSfx.play("ui", -7.0, 0.02)
+				_enter_hangar("")
 			elif k == KEY_ESCAPE:
 				RetroSfx.play("ui", -7.0, 0.02)
 				_enter_title()
@@ -1384,6 +2308,52 @@ func _unhandled_input(event: InputEvent) -> void:
 				_pick_draft_card(1)
 			elif k == KEY_3:
 				_pick_draft_card(2)
+			elif k == KEY_R:
+				_reroll_draft_cards()
+
+
+func _any_boss_dying() -> bool:
+	for node: Node in enemy_layer.get_children():
+		if node is GameEnemy:
+			var ge: GameEnemy = node as GameEnemy
+			if ge.enemy_type == GameEnemy.Type.BOSS and ge._boss_dying:
+				return true
+	return false
+
+
+func _calc_xp_for_level(lvl: int) -> int:
+	return int(18.0 + float(lvl - 1) * 12.0 + pow(float(lvl - 1), 1.42) * 4.5)
+
+
+func _gain_xp(raw_amount: int) -> void:
+	var boosted: int = maxi(1, int(round(float(raw_amount) * MetaSave.get_xp_mult())))
+	run_xp += boosted
+	while run_xp >= xp_to_next:
+		run_xp -= xp_to_next
+		player_level += 1
+		xp_to_next = _calc_xp_for_level(player_level)
+		_pending_level_ups += 1
+		RetroSfx.play("level_up", -5.0, 0.02)
+		if fx_layer != null and player != null:
+			fx_layer.spawn_ring_blast(player.global_position, 44.0, Color("#ffe854"))
+			fx_layer.spawn_popup(player.global_position + Vector2(-24.0, -18.0), "LEVEL %d!" % player_level, Color("#ffe854"))
+
+
+func _spawn_xp_burst(origin: Vector2, total_xp: int) -> void:
+	if total_xp <= 0:
+		return
+	var remaining: int = total_xp
+	while remaining > 0:
+		var chunk: int = remaining
+		if remaining >= 16:
+			chunk = 8
+		elif remaining >= 8:
+			chunk = 5
+		elif remaining >= 5:
+			chunk = 5
+		remaining -= chunk
+		var offset: Vector2 = Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0))
+		_spawn_pickup_deferred(origin + offset, GamePickup.Kind.XP, chunk)
 
 
 func _update_wave_director(delta: float) -> void:
@@ -1399,9 +2369,18 @@ func _update_wave_director(delta: float) -> void:
 			i += 1
 
 	if _spawn_queue.is_empty() and enemy_layer.get_child_count() == 0:
-		_wave_clear_delay -= delta
-		if _wave_clear_delay <= 0.0:
-			_open_upgrade_draft()
+		if _pending_hyperspace:
+			for p_node: Node in pickup_layer.get_children():
+				if p_node is GamePickup:
+					(p_node as GamePickup).force_vacuum = true
+			_wave_clear_delay -= delta
+			if (pickup_layer.get_child_count() == 0 and _wave_clear_delay <= 0.15) or _wave_clear_delay <= -0.9:
+				if _pending_level_ups == 0:
+					_begin_hyperspace_jump()
+		else:
+			_wave_clear_delay -= delta
+			if _wave_clear_delay <= 0.0:
+				_begin_next_wave()
 
 
 func _spawn_enemy_now(item: Dictionary) -> void:
@@ -1420,6 +2399,12 @@ func _spawn_enemy_now(item: Dictionary) -> void:
 		int(item.get("stage", current_stage_idx))
 	)
 	e.destroyed.connect(_on_enemy_destroyed)
+	e.boss_phase_broken.connect(_on_boss_phase_broken)
+
+
+func _on_boss_phase_broken(enemy: GameEnemy, bonus_xp: int) -> void:
+	var b_xp: int = int(round(float(bonus_xp) * MetaSave.get_boss_bounty_mult()))
+	_spawn_xp_burst(enemy.global_position + Vector2(-28.0, 0.0), b_xp)
 
 
 func _on_enemy_destroyed(enemy: GameEnemy, killed_by_player: bool) -> void:
@@ -1430,19 +2415,21 @@ func _on_enemy_destroyed(enemy: GameEnemy, killed_by_player: bool) -> void:
 		return
 
 	run_kills += 1
-	if enemy.enemy_type == GameEnemy.Type.BOSS:
+	var is_boss_kill: bool = (enemy.enemy_type == GameEnemy.Type.BOSS)
+	if is_boss_kill:
 		run_bosses += 1
 	score += enemy.score_value
 	var e_pos: Vector2 = enemy.global_position
 
-	var drops: int = enemy.scrap_drop
-	var crystal_count: int = mini(8, drops)
-	var val_each: int = maxi(1, drops / maxi(1, crystal_count))
-	for i: int in range(crystal_count):
-		var offset: Vector2 = Vector2(randf_range(-8.0, 8.0), randf_range(-8.0, 8.0))
-		_spawn_pickup_deferred(e_pos + offset, GamePickup.Kind.SCRAP, val_each)
+	# Automatic Scrap banking on kill!
+	var bounty_mult: float = MetaSave.get_boss_bounty_mult() if is_boss_kill else 1.0
+	var auto_scrap: int = maxi(1, int(round(float(enemy.scrap_drop) * MetaSave.get_scrap_mult() * bounty_mult)))
+	run_scrap += auto_scrap
 
-	if player.hp < player.max_hp and (enemy.enemy_type == GameEnemy.Type.BOSS or randf() < 0.10):
+	var drop_xp: int = int(round(float(enemy.xp_drop) * bounty_mult))
+	_spawn_xp_burst(e_pos, drop_xp)
+
+	if player.hp < player.max_hp and (is_boss_kill or randf() < MetaSave.get_heal_drop_chance()):
 		_spawn_pickup_deferred(e_pos, GamePickup.Kind.HEAL, 1)
 
 	if sq > 0 and _squad_counts.has(sq):
@@ -1450,10 +2437,11 @@ func _on_enemy_destroyed(enemy: GameEnemy, killed_by_player: bool) -> void:
 		if left <= 0:
 			_squad_counts.erase(sq)
 			score += 500
-			fx_layer.spawn_popup(e_pos + Vector2(-24.0, -10.0), "SQUAD +4!", Color("#28e8ff"))
+			var sq_scrap: int = maxi(1, int(round(4.0 * MetaSave.get_scrap_mult())))
+			run_scrap += sq_scrap
+			fx_layer.spawn_popup(e_pos + Vector2(-26.0, -10.0), "SQUAD +XP!", Color("#28e8ff"))
 			RetroSfx.play("powerup", -8.0, 0.03)
-			for b: int in range(4):
-				_spawn_pickup_deferred(e_pos + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)), GamePickup.Kind.SCRAP, 1)
+			_spawn_xp_burst(e_pos, 8)
 		else:
 			_squad_counts[sq] = left
 
@@ -1467,52 +2455,69 @@ func _do_spawn_pickup(pos: Vector2, kind_int: int, amount: int) -> void:
 		return
 	var p: GamePickup = GamePickup.new()
 	pickup_layer.add_child(p)
-	var k: GamePickup.Kind = GamePickup.Kind.SCRAP if kind_int == int(GamePickup.Kind.SCRAP) else GamePickup.Kind.HEAL
+	var k: GamePickup.Kind = GamePickup.Kind.XP if kind_int == int(GamePickup.Kind.XP) else GamePickup.Kind.HEAL
 	p.setup(pos, k, amount, player)
 	p.collected.connect(_on_pickup_collected)
 
 
 func _on_pickup_collected(kind_val: int, amount: int, pos: Vector2) -> void:
-	if kind_val == int(GamePickup.Kind.SCRAP):
-		var gained: int = maxi(1, int(round(float(amount) * MetaSave.get_scrap_mult())))
-		run_scrap += gained
-		score += gained * 25
-		RetroSfx.play("scrap", -11.0, 0.06)
-		fx_layer.spawn_popup(pos + Vector2(-6.0, -8.0), "+%d" % gained, Color("#ffe854"))
+	if kind_val == int(GamePickup.Kind.XP):
+		score += amount * 15
+		RetroSfx.play("xp", -13.5, 0.08)
+		_gain_xp(amount)
 	else:
 		player.heal(amount)
 		RetroSfx.play("powerup", -7.0, 0.03)
 		fx_layer.spawn_popup(pos + Vector2(-12.0, -8.0), "HULL +1", Color("#3ce878"))
 
 
-func _open_upgrade_draft() -> void:
-	for b: Node in bullet_layer.get_children():
-		b.queue_free()
+func _roll_draft_choices() -> void:
+	var beams: Array[Dictionary] = []
+	var addons: Array[Dictionary] = []
+	var others: Array[Dictionary] = []
+	var committed_beam: String = player.get_committed_tech_beam()
 
-	var available: Array[Dictionary] = []
 	for def: Dictionary in RUN_UPGRADE_POOL:
 		var id: String = String(def["id"])
+		var cat: String = String(def["cat"])
 		var cur_rank: int = int(run_ranks.get(id, 0))
-		if cur_rank < int(def["max_rank"]):
-			available.append(def)
+		if cur_rank >= int(def["max_rank"]):
+			continue
+		if cat == "BEAM" and committed_beam != "" and id != committed_beam:
+			continue
+		if cat == "BEAM":
+			beams.append(def)
+		elif cat == "ADDON":
+			addons.append(def)
+		else:
+			others.append(def)
 
-	available.shuffle()
+	beams.shuffle()
+	addons.shuffle()
+	others.shuffle()
+
 	_draft_choices.clear()
-	for i: int in range(mini(3, available.size())):
-		_draft_choices.append(available[i])
+	if committed_beam == "" and not beams.is_empty() and not addons.is_empty():
+		_draft_choices.append(beams.pop_back())
+		_draft_choices.append(addons.pop_back())
 
-	if _draft_choices.is_empty():
-		_proceed_after_draft()
-		return
+	var combined: Array[Dictionary] = []
+	combined.append_array(beams)
+	combined.append_array(addons)
+	combined.append_array(others)
+	combined.shuffle()
+	for entry: Dictionary in combined:
+		if _draft_choices.size() >= 3:
+			break
+		_draft_choices.append(entry)
 
-	state = State.DRAFT
-	player.controls_enabled = false
-	player.clear_touch_drag()
-	touch_focus_btn.visible = false
-	pause_hud_btn.visible = false
-	starfield.speed_scale = 1.65
-	draft_panel.visible = true
-	RetroSfx.play("ui", -7.0, 0.02)
+
+func _populate_draft_cards_ui() -> void:
+	if _draft_title_lbl != null:
+		_draft_title_lbl.text = "LEVEL %d! CHOOSE POWERUP  [1 / 2 / 3  or  D-PAD + A]" % player_level
+	if _draft_reroll_btn != null:
+		_draft_reroll_btn.visible = rerolls_left > 0
+		_draft_reroll_btn.text = "REROLL [R / Y] (%d)" % rerolls_left
 
 	for i: int in range(3):
 		var card: Dictionary = _draft_cards[i]
@@ -1520,6 +2525,7 @@ func _open_upgrade_draft() -> void:
 		if i < _draft_choices.size():
 			var choice: Dictionary = _draft_choices[i]
 			var id: String = String(choice["id"])
+			var cat_tag: String = String(choice["cat"])
 			var cur: int = int(run_ranks.get(id, 0))
 			var max_r: int = int(choice["max_rank"])
 			var col: Color = choice["color"]
@@ -1534,13 +2540,10 @@ func _open_upgrade_draft() -> void:
 			title_lbl.add_theme_color_override("font_color", col)
 
 			var pips_lbl: Label = card["pips_lbl"]
-			if max_r <= 6:
-				var pips: String = ""
-				for r: int in range(max_r):
-					pips += "■" if r <= cur else "□"
-				pips_lbl.text = pips
-			else:
-				pips_lbl.text = "LV %d" % (cur + 1)
+			var pips: String = ""
+			for r: int in range(max_r):
+				pips += "■" if r <= cur else "□"
+			pips_lbl.text = "%s  %s" % [cat_tag, pips]
 			pips_lbl.add_theme_color_override("font_color", Color("#b8ccf2"))
 
 			var icon_rect: TextureRect = card["icon_rect"]
@@ -1551,10 +2554,37 @@ func _open_upgrade_draft() -> void:
 		else:
 			btn.visible = false
 
-	# Focus middle or first card so Gamepad D-Pad Left/Right + A works immediately!
 	var focus_idx: int = 1 if _draft_choices.size() >= 2 else 0
-	var first_btn: Button = _draft_cards[focus_idx]["btn"]
-	first_btn.grab_focus()
+	if not _draft_choices.is_empty():
+		var first_btn: Button = _draft_cards[focus_idx]["btn"]
+		first_btn.grab_focus()
+
+
+func _reroll_draft_cards() -> void:
+	if state != State.DRAFT or rerolls_left <= 0:
+		return
+	rerolls_left -= 1
+	RetroSfx.play("ui", -6.0, 0.04)
+	_roll_draft_choices()
+	_populate_draft_cards_ui()
+
+
+func _open_upgrade_draft() -> void:
+	_roll_draft_choices()
+	if _draft_choices.is_empty():
+		return
+
+	state = State.DRAFT
+	_draft_pre_speed = starfield.speed_scale
+	starfield.speed_scale = 0.22
+	player.controls_enabled = false
+	player.clear_touch_drag()
+	world_root.process_mode = Node.PROCESS_MODE_DISABLED
+	GenesisMusic.set_paused_duck(true)
+	touch_focus_btn.visible = false
+	pause_hud_btn.visible = false
+	draft_panel.visible = true
+	_populate_draft_cards_ui()
 
 
 func _pick_draft_card(index: int) -> void:
@@ -1564,23 +2594,19 @@ func _pick_draft_card(index: int) -> void:
 	var id: String = String(chosen["id"])
 	run_ranks[id] = int(run_ranks.get(id, 0)) + 1
 	player.apply_run_upgrade(id)
+	player.invuln_timer = maxf(player.invuln_timer, 0.65)
 
 	RetroSfx.play("powerup", -6.0, 0.02)
 	fx_layer.spawn_popup(player.global_position + Vector2(-20.0, -16.0), "+%s" % String(chosen["title"]), chosen["color"])
 
 	draft_panel.visible = false
-	_proceed_after_draft()
-
-
-func _proceed_after_draft() -> void:
-	if _pending_hyperspace:
-		_begin_hyperspace_jump()
-	else:
-		state = State.PLAYING
-		pause_hud_btn.visible = true
-		player.controls_enabled = true
-		_sync_touch_hud_visibility()
-		_begin_next_wave()
+	_unfreeze_world()
+	starfield.speed_scale = _draft_pre_speed
+	state = State.PLAYING
+	pause_hud_btn.visible = true
+	player.controls_enabled = true
+	_sync_touch_hud_visibility()
+	hud_bar.queue_redraw()
 
 
 func _on_player_hp_changed(_hp: int, _max_hp: int, _sh: int, _max_sh: int) -> void:
@@ -1598,6 +2624,35 @@ func _on_player_died() -> void:
 	_show_banner("SHIP DESTROYED! SALVAGING SCRAP...", Color("#ff4c68"), 1.6)
 
 
+func _get_beam_badge_info(mode: String, lvl: int) -> Dictionary:
+	var lv_s: String = "Lv%d" % maxi(1, lvl) if lvl > 0 else ""
+	match mode:
+		"laser":
+			return {"icon": "badge_laser", "name": "Pierce", "val": lv_s, "col": Color("#28e8ff")}
+		"wave":
+			return {"icon": "badge_wave", "name": "Wave", "val": lv_s, "col": Color("#3ce878")}
+		"prism":
+			return {"icon": "badge_prism", "name": "Prism", "val": lv_s, "col": Color("#ff4cd4")}
+		"tesla":
+			return {"icon": "badge_tesla", "name": "Tesla", "val": lv_s, "col": Color("#b86bff")}
+		"plasma":
+			return {"icon": "badge_plasma", "name": "Plasma", "val": lv_s, "col": Color("#ff6820")}
+		"biowave":
+			return {"icon": "badge_bio", "name": "BioWave", "val": lv_s, "col": Color("#3ce878")}
+		"rail":
+			return {"icon": "badge_laser", "name": "Rail", "val": lv_s, "col": Color("#54f4ff")}
+		"flak":
+			return {"icon": "badge_plasma", "name": "Flak", "val": lv_s, "col": Color("#ff9624")}
+		"saucer":
+			return {"icon": "badge_ufo", "name": "Rings", "val": lv_s, "col": Color("#6eff8c")}
+		"ocular":
+			return {"icon": "badge_eye", "name": "Gaze", "val": lv_s, "col": Color("#d44cff")}
+		"cat":
+			return {"icon": "badge_cat", "name": "Cats!", "val": lv_s, "col": Color("#ff64b8")}
+		_:
+			return {"icon": "badge_vulcan", "name": "Vulcan", "val": lv_s, "col": Color("#ffe854")}
+
+
 func _draw_hud() -> void:
 	var font: Font = PixelArt.ui_font if PixelArt.ui_font != null else ThemeDB.fallback_font
 
@@ -1608,100 +2663,93 @@ func _draw_hud() -> void:
 	hud_bar.draw_string(font, Vector2(6.0, 14.0), "HP", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#dce8ff"))
 
 	var px: float = 23.0
+	var hp_step: float = 7.0 if player.max_hp >= 8 else 8.5
+	var hp_w: float = 5.5 if player.max_hp >= 8 else 7.0
 	for i: int in range(player.max_hp):
 		var filled: bool = i < player.hp
-		hud_bar.draw_rect(Rect2(px, 6.0, 7.0, 7.0), Color("#f03c4e") if filled else Color("#281c36"))
+		hud_bar.draw_rect(Rect2(px, 6.0, hp_w, 7.0), Color("#f03c4e") if filled else Color("#281c36"))
 		if filled:
-			hud_bar.draw_rect(Rect2(px + 1.0, 7.0, 5.0, 2.0), Color("#ff9aa6"))
-		px += 9.0
+			hud_bar.draw_rect(Rect2(px + 1.0, 7.0, maxf(2.0, hp_w - 2.0), 2.0), Color("#ff9aa6"))
+		px += hp_step
 
 	if player.max_shield > 0:
 		px += 2.0
 		for i: int in range(player.max_shield):
 			var s_on: bool = i < player.shield_charges
 			hud_bar.draw_rect(Rect2(px, 6.0, 6.0, 7.0), Color("#28e8ff") if s_on else Color("#142c4a"))
-			px += 8.0
+			px += 7.5
 
 	var st: Dictionary = StageData.get_stage(current_stage_idx)
 	var sub_w: int = StageData.get_wave_in_stage(wave)
+	var lv_txt: String = "LV %d" % player_level
+	hud_bar.draw_string(font, Vector2(120.0, 14.0), lv_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#54f4ff"))
+
 	var st_txt: String = "%d-%s %s" % [
 		current_stage_idx + 1,
 		"BOSS" if StageData.is_boss_wave(wave) else str(sub_w),
 		String(st["name"]),
 	]
-	hud_bar.draw_string(font, Vector2(142.0, 14.0), st_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, st["accent"])
+	hud_bar.draw_string(font, Vector2(158.0, 14.0), st_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, st["accent"])
 
 	var scrap_txt: String = "SCRAP %d" % run_scrap
-	hud_bar.draw_string(font, Vector2(288.0, 14.0), scrap_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#ffe854"))
+	hud_bar.draw_string(font, Vector2(294.0, 14.0), scrap_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#ffe854"))
 
 	var score_txt: String = "%07d" % score
-	hud_bar.draw_string(font, Vector2(368.0, 14.0), score_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color.WHITE)
+	hud_bar.draw_string(font, Vector2(370.0, 14.0), score_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color.WHITE)
 
-	# --- 1b) Prominent 3-Phase Top Boss Health Bar when fighting any Stage Boss! ---
+	# --- 1a) Full-Width Glowing XP Progress Bar Ribbon (y = 19..23) ---
+	var xp_ratio: float = clampf(float(run_xp) / float(maxi(1, xp_to_next)), 0.0, 1.0)
+	hud_bar.draw_rect(Rect2(0.0, 19.0, VIEW_W, 4.0), Color("#070c24"))
+	if xp_ratio > 0.0:
+		var xp_w: float = VIEW_W * xp_ratio
+		hud_bar.draw_rect(Rect2(0.0, 19.0, xp_w, 3.0), Color("#28e8ff"))
+		hud_bar.draw_rect(Rect2(0.0, 19.0, xp_w, 1.0), Color("#bffaff"))
+	hud_bar.draw_line(Vector2(0.0, 22.0), Vector2(VIEW_W, 22.0), Color("#4c6cb0"), 1.0)
+
+	# --- 1b) Mega Man-Style 28-Pip Segmented Top Boss Health Bar! ---
 	for node: Node in enemy_layer.get_children():
 		if node is GameEnemy:
 			var ge: GameEnemy = node as GameEnemy
-			if ge.enemy_type == GameEnemy.Type.BOSS and ge.hp > 0.0:
-				var b_ratio: float = clampf(ge.hp / ge.max_hp, 0.0, 1.0)
+			if ge.enemy_type == GameEnemy.Type.BOSS and ge.boss_hp_bar_visible:
+				var b_ratio: float = ge.boss_hp_bar_fill if ge.boss_intro_active else clampf(ge.hp / ge.max_hp, 0.0, 1.0)
 				var bar_col: Color = Color("#28e8ff") if ge.boss_shield_timer > 0.0 else (
 					Color("#ff3868") if ge.boss_phase == 3 else (Color("#ff9624") if ge.boss_phase == 2 else Color("#ffe854"))
 				)
-				hud_bar.draw_rect(Rect2(98.0, 22.0, 284.0, 8.0), Color("#0b1029"))
-				hud_bar.draw_rect(Rect2(99.0, 23.0, 282.0 * b_ratio, 6.0), bar_col)
-				# 33% and 66% Phase Threshold Divider Notches
-				hud_bar.draw_line(Vector2(99.0 + 94.0, 22.0), Vector2(99.0 + 94.0, 30.0), Color("#dce6ff"), 1.0)
-				hud_bar.draw_line(Vector2(99.0 + 188.0, 22.0), Vector2(99.0 + 188.0, 30.0), Color("#dce6ff"), 1.0)
-				hud_bar.draw_rect(Rect2(98.0, 22.0, 284.0, 8.0), Color("#dce6ff"), false, 1.0)
+				var hi_col: Color = bar_col.lightened(0.55)
+				var bar_x: float = 108.0
+				var bar_y: float = 24.0
+				var total_pips: int = GameEnemy.BOSS_HP_PIPS
+
+				hud_bar.draw_rect(Rect2(72.0, bar_y, 318.0, 9.0), Color("#0b1029"))
+				hud_bar.draw_string(font, Vector2(75.0, bar_y + 8.0), "BOSS", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#ff4c68"))
+
+				var exact_pips: float = b_ratio * float(total_pips)
+				var full_pips: int = int(floorf(exact_pips))
+				var frac_pip: float = exact_pips - float(full_pips)
+
+				for p_idx: int in range(total_pips):
+					var px_pip: float = bar_x + float(p_idx) * 10.0
+					hud_bar.draw_rect(Rect2(px_pip, bar_y + 1.0, 8.0, 7.0), Color("#182042"))
+					if p_idx < full_pips:
+						var is_leading_intro_pip: bool = ge.boss_intro_active and (p_idx == full_pips - 1) and full_pips < total_pips
+						var pip_c: Color = Color.WHITE if is_leading_intro_pip else bar_col
+						hud_bar.draw_rect(Rect2(px_pip, bar_y + 1.0, 8.0, 7.0), pip_c)
+						hud_bar.draw_rect(Rect2(px_pip, bar_y + 1.0, 8.0, 2.0), hi_col)
+					elif p_idx == full_pips and frac_pip > 0.05 and not ge.boss_intro_active:
+						var part_w: float = maxf(1.0, roundf(8.0 * frac_pip))
+						hud_bar.draw_rect(Rect2(px_pip, bar_y + 1.0, part_w, 7.0), bar_col)
+						hud_bar.draw_rect(Rect2(px_pip, bar_y + 1.0, part_w, 2.0), hi_col)
+
+				hud_bar.draw_line(Vector2(bar_x + 93.0, bar_y), Vector2(bar_x + 93.0, bar_y + 9.0), Color("#dce6ff"), 1.0)
+				hud_bar.draw_line(Vector2(bar_x + 186.0, bar_y), Vector2(bar_x + 186.0, bar_y + 9.0), Color("#dce6ff"), 1.0)
+				hud_bar.draw_rect(Rect2(72.0, bar_y, 318.0, 9.0), Color("#dce6ff"), false, 1.0)
+				hud_bar.draw_line(Vector2(105.0, bar_y), Vector2(105.0, bar_y + 9.0), Color("#dce6ff"), 1.0)
 				break
 
-	# --- 2) Virtual Touch Thumbstick Feedback Ring (when dragging on Phone / Touch) ---
+	# --- 2) Virtual Touch Thumbstick Feedback Ring ---
 	if player.is_touch_dragging():
 		var orig: Vector2 = player.get_touch_origin()
 		var cur: Vector2 = player.get_touch_current()
 		var knob: Vector2 = orig + (cur - orig).limit_length(22.0)
 		hud_bar.draw_arc(orig, 20.0, 0.0, TAU, 24, Color(0.16, 0.91, 1.0, 0.35), 1.0)
 		hud_bar.draw_circle(knob, 6.0, Color(0.16, 0.91, 1.0, 0.55))
-
-	# --- 3) Clear Pictorial Bottom Ship Upgrades Dock (y = 250..270, NO cryptic abbreviations!) ---
-	hud_bar.draw_rect(Rect2(0.0, 250.0, VIEW_W, 20.0), Color("#081032"))
-	hud_bar.draw_line(Vector2(0.0, 250.0), Vector2(VIEW_W, 250.0), Color("#9ab4e8"), 1.0)
-
-	var modules: Array[Dictionary] = []
-	if player.option_count > 0:
-		modules.append({"icon": "badge_option", "name": "Option", "val": "x%d" % player.option_count, "col": Color("#ff9624")})
-	if player.spread_level > 0:
-		modules.append({"icon": "badge_spread", "name": "Spread", "val": "Lv%d" % player.spread_level, "col": Color("#ffe854")})
-	if player.laser_level > 0:
-		modules.append({"icon": "badge_laser", "name": "Laser", "val": "Lv%d" % player.laser_level, "col": Color("#28e8ff")})
-	if player.missile_level > 0:
-		modules.append({"icon": "badge_missile", "name": "Missile", "val": "Lv%d" % player.missile_level, "col": Color("#ff4c68")})
-	if player.max_shield > 0:
-		modules.append({"icon": "badge_shield", "name": "Shield", "val": "Lv%d" % player.max_shield, "col": Color("#3ce8ff")})
-	if player.rapid_level > 0:
-		modules.append({"icon": "badge_rapid", "name": "Rapid", "val": "Lv%d" % player.rapid_level, "col": Color("#d46bff")})
-	if player.thruster_level > 0:
-		modules.append({"icon": "badge_thruster", "name": "Speed", "val": "Lv%d" % player.thruster_level, "col": Color("#3ce878")})
-
-	if modules.is_empty():
-		hud_bar.draw_string(font, Vector2(8.0, 264.0), "Upgrades: None yet (clear wave to install modules)", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#7c96c8"))
-		return
-
-	var compact: bool = modules.size() >= 7
-	var bx: float = 4.0
-	for mod: Dictionary in modules:
-		var label_str: String = "%s %s" % [
-			String(mod["name"]),
-			String(mod["val"]).replace("Lv", "") if compact else String(mod["val"]),
-		]
-		var text_w: float = font.get_string_size(label_str, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x
-		var chip_w: float = 16.0 + text_w + 5.0
-		var col: Color = mod["col"]
-
-		# Framed module pill with colored accent bar + 11x11 pixel picture + full readable English name!
-		hud_bar.draw_rect(Rect2(bx, 252.0, chip_w, 16.0), Color("#111d4a"))
-		hud_bar.draw_rect(Rect2(bx, 267.0, chip_w, 1.0), col)
-		var icon_tex: Texture2D = PixelArt.tex(String(mod["icon"]))
-		if icon_tex != null:
-			hud_bar.draw_texture(icon_tex, Vector2(bx + 2.0, 255.0))
-		hud_bar.draw_string(font, Vector2(bx + 15.0, 264.0), label_str, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color.WHITE)
-		bx += chip_w + 4.0

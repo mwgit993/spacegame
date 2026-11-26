@@ -173,22 +173,22 @@ func _draw_space_scenery() -> void:
 	for p: Dictionary in _pillars:
 		var px: float = floorf(float(p["x"]))
 		var ph: float = floorf(float(p["h"]) * 0.55)
-		draw_rect(Rect2(px, 242.0 - ph, floorf(float(p["w"])), ph), Color("#132044"))
+		draw_rect(Rect2(px, 258.0 - ph, floorf(float(p["w"])), ph), Color("#132044"))
 
 
 func _draw_starcruiser_scenery() -> void:
 	# Interior corridor conduit pipes & glowing reactor windows
 	draw_rect(Rect2(0.0, 62.0, VIEW_W, 6.0), Color("#1e293d"))
-	draw_rect(Rect2(0.0, 190.0, VIEW_W, 6.0), Color("#1e293d"))
+	draw_rect(Rect2(0.0, 204.0, VIEW_W, 6.0), Color("#1e293d"))
 	for m: Dictionary in _mid_props:
 		var x: float = floorf(float(m["x"]))
-		draw_rect(Rect2(x, 84.0, 38.0, 84.0), Color("#081424"))
-		draw_rect(Rect2(x + 2.0, 86.0, 34.0, 80.0), Color(0.12, 0.65, 0.95, 0.22))
+		draw_rect(Rect2(x, 86.0, 38.0, 92.0), Color("#081424"))
+		draw_rect(Rect2(x + 2.0, 88.0, 34.0, 88.0), Color(0.12, 0.65, 0.95, 0.22))
 	# Rushing vertical steel I-beams
 	for p: Dictionary in _pillars:
 		var px: float = floorf(float(p["x"]))
-		draw_rect(Rect2(px, 26.0, 10.0, 216.0), Color("#1a2233"))
-		draw_rect(Rect2(px + 2.0, 26.0, 2.0, 216.0), Color("#2f3e5c"))
+		draw_rect(Rect2(px, 28.0, 10.0, 230.0), Color("#1a2233"))
+		draw_rect(Rect2(px + 2.0, 28.0, 2.0, 230.0), Color("#2f3e5c"))
 	_draw_fast_stars(Color("#ff9624"), Color("#ffe888"))
 
 
@@ -196,7 +196,7 @@ func _draw_planet_base_scenery() -> void:
 	# Giant alien moon & curved bright planetary atmosphere horizon
 	draw_circle(Vector2(370.0, 72.0), 28.0, Color(0.55, 0.82, 1.0, 0.28))
 	draw_circle(Vector2(364.0, 68.0), 24.0, Color(0.12, 0.28, 0.54, 0.45))
-	draw_rect(Rect2(0.0, 212.0, VIEW_W, 30.0), Color(0.45, 0.85, 1.0, 0.22))
+	draw_rect(Rect2(0.0, 224.0, VIEW_W, 34.0), Color(0.45, 0.85, 1.0, 0.22))
 	# Fast 16-bit cumulus cloud decks
 	for m: Dictionary in _mid_props:
 		var x: float = floorf(float(m["x"]))
@@ -208,8 +208,8 @@ func _draw_planet_base_scenery() -> void:
 	for p: Dictionary in _pillars:
 		var px: float = floorf(float(p["x"]))
 		var ph: float = floorf(float(p["h"]))
-		draw_rect(Rect2(px, 242.0 - ph, 14.0, ph), Color("#182c4d"))
-		draw_rect(Rect2(px + 5.0, 242.0 - ph - 8.0, 4.0, 8.0), Color("#38689c"))
+		draw_rect(Rect2(px, 258.0 - ph, 14.0, ph), Color("#182c4d"))
+		draw_rect(Rect2(px + 5.0, 258.0 - ph - 8.0, 4.0, 8.0), Color("#38689c"))
 
 
 func _draw_forest_scenery() -> void:
@@ -217,13 +217,13 @@ func _draw_forest_scenery() -> void:
 	for p: Dictionary in _pillars:
 		var px: float = floorf(float(p["x"]))
 		var tw: float = floorf(float(p["w"]) * 0.7)
-		draw_rect(Rect2(px, 26.0, tw, 216.0), Color("#0c2418"))
-		draw_rect(Rect2(px + 2.0, 26.0, 3.0, 216.0), Color("#18452c"))
+		draw_rect(Rect2(px, 28.0, tw, 230.0), Color("#0c2418"))
+		draw_rect(Rect2(px + 2.0, 28.0, 3.0, 230.0), Color("#18452c"))
 	# Canopy leaf clusters
 	for m: Dictionary in _mid_props:
 		var x: float = floorf(float(m["x"]))
-		draw_rect(Rect2(x, 26.0, 56.0, 14.0), Color("#164f2c"))
-		draw_rect(Rect2(x + 8.0, 230.0, 56.0, 14.0), Color("#1a5c32"))
+		draw_rect(Rect2(x, 28.0, 56.0, 14.0), Color("#164f2c"))
+		draw_rect(Rect2(x + 8.0, 246.0, 56.0, 14.0), Color("#1a5c32"))
 	# Glowing floating bio-spores
 	for a: Dictionary in _ambient:
 		var ax: float = floorf(float(a["x"]))
@@ -242,11 +242,11 @@ func _draw_ice_scenery() -> void:
 		var ph: float = floorf(float(p["h"]))
 		var th: float = floorf(float(p["top_h"]))
 		var pts_bot: PackedVector2Array = PackedVector2Array([
-			Vector2(px, 242.0), Vector2(px + 12.0, 242.0 - ph), Vector2(px + 24.0, 242.0)
+			Vector2(px, 258.0), Vector2(px + 12.0, 258.0 - ph), Vector2(px + 24.0, 258.0)
 		])
 		draw_colored_polygon(pts_bot, Color("#245c8f"))
 		var pts_top: PackedVector2Array = PackedVector2Array([
-			Vector2(px + 4.0, 26.0), Vector2(px + 12.0, 26.0 + th), Vector2(px + 20.0, 26.0)
+			Vector2(px + 4.0, 28.0), Vector2(px + 12.0, 28.0 + th), Vector2(px + 20.0, 28.0)
 		])
 		draw_colored_polygon(pts_top, Color("#3478b0"))
 	_draw_fast_stars(Color("#88e8ff"), Color("#ffffff"))
@@ -259,11 +259,11 @@ func _draw_volcano_scenery() -> void:
 		var ph: float = floorf(float(p["h"]) * 1.1)
 		var th: float = floorf(float(p["top_h"]))
 		var cone: PackedVector2Array = PackedVector2Array([
-			Vector2(px - 8.0, 242.0), Vector2(px + 10.0, 242.0 - ph), Vector2(px + 28.0, 242.0)
+			Vector2(px - 8.0, 258.0), Vector2(px + 10.0, 258.0 - ph), Vector2(px + 28.0, 258.0)
 		])
 		draw_colored_polygon(cone, Color("#2b0d0e"))
 		var stal: PackedVector2Array = PackedVector2Array([
-			Vector2(px, 26.0), Vector2(px + 9.0, 26.0 + th), Vector2(px + 18.0, 26.0)
+			Vector2(px, 28.0), Vector2(px + 9.0, 28.0 + th), Vector2(px + 18.0, 28.0)
 		])
 		draw_colored_polygon(stal, Color("#361112"))
 	# Rising glowing magma embers
@@ -279,14 +279,14 @@ func _draw_abyss_scenery() -> void:
 	for i: int in range(4):
 		var lx: float = fmod(90.0 + float(i) * 115.0 - _grid_offset * 1.5 + VIEW_W, VIEW_W)
 		var beam: PackedVector2Array = PackedVector2Array([
-			Vector2(lx, 20.0), Vector2(lx + 26.0, 20.0), Vector2(lx - 18.0, 242.0), Vector2(lx - 48.0, 242.0)
+			Vector2(lx, 22.0), Vector2(lx + 26.0, 22.0), Vector2(lx - 18.0, 258.0), Vector2(lx - 48.0, 258.0)
 		])
 		draw_colored_polygon(beam, Color(0.20, 0.88, 0.92, 0.09))
 	# Sunken temple columns
 	for p: Dictionary in _pillars:
 		var px: float = floorf(float(p["x"]))
 		var ph: float = floorf(float(p["h"]))
-		draw_rect(Rect2(px, 242.0 - ph, 12.0, ph), Color("#0c324a"))
+		draw_rect(Rect2(px, 258.0 - ph, 12.0, ph), Color("#0c324a"))
 	# Rising shimmering bubbles
 	for a: Dictionary in _ambient:
 		var ax: float = floorf(float(a["x"]))
@@ -330,9 +330,9 @@ func _draw_stage_decks(st: Dictionary, id: String) -> void:
 	var fill: Color = st["deck_fill"]
 	var line_col: Color = st["deck_line"]
 
-	# Bottom deck / terrain (sits cleanly above y=250 bottom HUD dock)
-	var deck_y: float = 242.0
-	draw_rect(Rect2(0.0, deck_y, VIEW_W, 28.0), fill)
+	# Bottom deck / terrain flush with bottom of screen (y = 258..270)
+	var deck_y: float = 258.0
+	draw_rect(Rect2(0.0, deck_y, VIEW_W, 12.0), fill)
 	draw_line(Vector2(0.0, deck_y), Vector2(VIEW_W, deck_y), line_col, 1.0)
 
 	var gx: float = -_grid_offset
@@ -341,18 +341,18 @@ func _draw_stage_decks(st: Dictionary, id: String) -> void:
 		if id == "volcano":
 			draw_rect(Rect2(ix, deck_y + 1.0, 12.0, 3.0), Color("#ffe854"))
 		else:
-			draw_line(Vector2(ix, deck_y + 1.0), Vector2(ix - 8.0, 250.0), line_col.darkened(0.35), 1.0)
+			draw_line(Vector2(ix, deck_y + 1.0), Vector2(ix - 8.0, 270.0), line_col.darkened(0.35), 1.0)
 		gx += 24.0
 
-	# Top ceiling deck on enclosed stages (Starcruiser, Forest, Ice, Volcano, Cyber)
+	# Top ceiling deck on enclosed stages (sits cleanly below y = 19..22 XP bar)
 	if bool(st["has_ceiling"]):
-		var ceil_y: float = 26.0
-		draw_rect(Rect2(0.0, 19.0, VIEW_W, 7.0), fill)
+		var ceil_y: float = 28.0
+		draw_rect(Rect2(0.0, 22.0, VIEW_W, 6.0), fill)
 		draw_line(Vector2(0.0, ceil_y), Vector2(VIEW_W, ceil_y), line_col, 1.0)
 		var cx: float = -_grid_offset
 		while cx < VIEW_W + 24.0:
 			var icx: float = floorf(cx)
-			draw_line(Vector2(icx, 20.0), Vector2(icx + 8.0, ceil_y), line_col.darkened(0.35), 1.0)
+			draw_line(Vector2(icx, 23.0), Vector2(icx + 8.0, ceil_y), line_col.darkened(0.35), 1.0)
 			cx += 24.0
 
 

@@ -1,34 +1,35 @@
 # CLAUDE.md — Star Viper Architecture & Collaboration Guide
 
-Welcome! This repository is a self-contained **Godot 4.7** (`GDScript`) 16-bit horizontal roguelite space shooter. Almost all art, bitmap fonts, SFX, and multi-instrument music are generated procedurally in GDScript so there are no external binary asset dependencies to break across machines.
+Welcome! This repository is a self-contained **Godot 4.7** (`GDScript`) 16-bit horizontal roguelite space shooter built for easy collaboration across PCs (Antigravity + Claude + Godot 4.7.2). Almost all sprites, giant 3-frame bosses, upgrade diagrams, SFX, and multi-instrument music are generated procedurally in GDScript so there are no fragile binary asset dependencies.
 
 ## Core Viewport & Rendering Conventions
 - **Native Resolution:** `480x270` (`16:9` widescreen pixel art), scaled `3x` (`1440x810`) windowed or integer-scaled fullscreen (`project.godot`).
 - **Playfield Vertical Bounds:**
-  - Top HUD bar: `y = 0..19`
-  - Active flight corridor: `y = 28..234` (Stage floor deck renders at `y = 242..250`)
-  - Bottom Pictorial Ship Upgrades Dock: `y = 250..270`
-- **Typography:** Custom SNES *Final Fantasy VI*-inspired serif bitmap font at `res://assets/fonts/ff6_font.fnt` (`ff6_font.png`). Always render text at `font_size = 10` (or integer multiples like `20`) for crisp 1:1 pixel alignment.
+  - Top FF6 Status Bar: `y = 0..19` (`HP`, `Shields`, `LV`, `Stage`, `Scrap`, `Score`, `II` Pause)
+  - Full-Width Glowing XP Bar: `y = 19..23` (Mega Man 28-pip Boss HP Bar renders below it at `y = 24..33`)
+  - Active Flight Corridor: `y = 30..249` (Scrolling stage floor deck renders flush at `y = 258..270`; no bottom HUD bar!)
+  - Tactical Split-Screen Pause Menu: Left column shows compact FF6 option boxes; Right panel displays Current Ship Stats & a 2-column pictorial grid of Installed Weapons & Upgrades.
+- **Typography:** Custom SNES *Final Fantasy VI*-inspired serif bitmap font at `res://assets/fonts/ff6_font.fnt` (`ff6_font.png`). Always render text at `font_size = 10` (or integer multiples like `20`).
 
-## Project Structure & Autoloads
+## Project Structure, Autoloads & Gameplay Systems
 Autoload singletons (configured in `project.godot` in load order):
-1. `MetaSave` (`scripts/autoload/meta_save.gd`) — Persists permanent Hangar upgrades, banked Scrap, pilot stats, and audio/display/touch settings to `user://star_viper_save.json`.
+1. `MetaSave` (`scripts/autoload/meta_save.gd`) — Persists the 30-node Starforge Skill Tree (`tree_levels`), `selected_ship`, banked Scrap, pilot stats, and settings to `user://star_viper_save.json`.
 2. `StageData` (`scripts/autoload/stage_data.gd`) — Defines the 8 campaign stages (`Outer Orbit`, `Starcruiser`, `Cloud Base`, `Xeno Forest`, `Cryo Glacier`, `Magma Core`, `Abyssal Trench`, `Cyber Nexus`), 4 waves per stage (`Wave 4` = Stage Boss).
-3. `PixelArt` (`scripts/autoload/pixel_art.gd` + `scripts/boss_painter.gd`) — Builds and caches all 16-bit `ImageTexture` sprites, `28x18` upgrade card diagrams, `11x11` bottom HUD module icons, and the 8 giant native-pixel bosses (`BossPainter`).
-4. `RetroSfx` (`scripts/autoload/retro_sfx.gd`) — Synthesizes 16-bit PCM `AudioStreamWAV` sound effects at startup with a 12-voice `AudioStreamPlayer` pool.
-5. `GenesisMusic` (`scripts/autoload/genesis_music.gd`) — Real-time `44.1 kHz` stereo `AudioStreamGenerator` synthesizer using pure diatonic scale-degree indexing (zero out-of-key accidentals), featuring 8 distinct stage instrument ensembles + 1 universal dark-synthwave Boss theme.
+3. `PixelArt` (`scripts/autoload/pixel_art.gd` + `scripts/boss_painter.gd`) — Builds and caches all 16-bit `ImageTexture` sprites, 7 playable 2-frame starships, exotic projectiles (including animated Flying Space Cats!), red enemy-bullet danger halos, `28x18` upgrade diagrams, `11x11` badges, and 3-frame animated bosses (`BossPainter`).
+4. `RetroSfx` (`scripts/autoload/retro_sfx.gd`) — Synthesizes 16-bit PCM `AudioStreamWAV` sound effects at startup (including Mega Man boss intro beam/pose/HP-tick, XP chimes, level-up fanfare, electric zaps, prism bounces, and space-cat meows).
+5. `GenesisMusic` (`scripts/autoload/genesis_music.gd`) — Real-time `44.1 kHz` stereo `AudioStreamGenerator` synthesizer locked to pure diatonic scales, with 8 stage ensembles + 1 universal darksynth Boss theme.
 
-Gameplay & Scene Scripts:
-- `scenes/main.tscn` + `scripts/main.gd` — State machine (`TITLE`, `STATS`, `OPTIONS`, `HANGAR`, `INTRO_WARP`, `PLAYING`, `PAUSED`, `DRAFT`, `HYPERSPACE`, `GAME_OVER_DELAY`), wave director, FF6-styled menus, controller/touch UI, and HUD.
-- `scripts/starfield.gd` (`StarfieldBg`) — Multi-biome parallax stage renderer and Hyperspace Warp tunnel.
-- `scripts/player.gd` (`PlayerShip`) — Keyboard, full Gamepad, and multi-touch drag flight, Focus slow-dodge (`3px` core hurtbox), *Gradius* trailing Option drones, and weapon emitters.
-- `scripts/enemy.gd` (`GameEnemy`) — 4 regular enemy archetypes + 8 giant 3-phase stage bosses with adaptive burst-DPS plating.
-- `scripts/bullet.gd` (`GameBullet`), `scripts/pickup.gd` (`GamePickup`), `scripts/fx_layer.gd` (`FxLayer`).
+Gameplay & Data Scripts:
+- `scripts/skill_tree_data.gd` (`SkillTreeData`) — Defines all **7 Playable Ships** (`viper`, `beetle`, `phantom`, `dread`, `saucer`, `eyeball`, `neko`) and the **30-Node Branching Skill Tree**.
+- `scenes/main.tscn` + `scripts/main.gd` — Master state machine (`TITLE`, `STATS`, `OPTIONS`, `HANGAR` [Skill Tree], `LOADOUT` [Ship Fleet Bay], `INTRO_WARP`, `PLAYING`, `PAUSED`, `DRAFT`, `HYPERSPACE`, `GAME_OVER_DELAY`), seamless wave director, *BALL x PIT*-style XP gem leveling & auto-Scrap banking, and UI.
+- `scripts/player.gd` (`PlayerShip`) — Multi-controller + Keyboard + Touch flight, 7 ship hulls & signature blasters, 5 Tech Beam cores (co-axial on exotic ships), 7 visible hull-mounted/orbiting Ship Addons, crits, and Lazarus Revive.
+- `scripts/enemy.gd` (`GameEnemy`) — 4 regular enemy archetypes + 8 giant 3-phase animated bosses with Mega Man teleport intros, signature taunt poses, 28-pip HP bar fills, and chain-explosion deaths.
+- `scripts/bullet.gd` (`GameBullet`), `scripts/pickup.gd` (`GamePickup`), `scripts/fx_layer.gd` (`FxLayer`), `scripts/starfield.gd` (`StarfieldBg`).
 
 ## Verification & Headless Smoke Testing
-GDScript 4 strict typing is used throughout (avoid `:=` type inference on `Variant` / untyped `Array` lookups; use explicit types).
-
-To run the automated headless smoke test (exercises menus, pause flow, all 8 stages, music synthesis, all 40 enemy/boss variants, draft cards, and hyperspace transitions, then exits with `STAR_VIPER_SMOKE_TEST_PASSED`):
+GDScript 4 strict typing is used throughout (avoid `:=` type inference on `Variant` / untyped `Array` lookups; use explicit types). When adding new `class_name` scripts on a fresh clone, run `--headless --import` once before `--smoke-test`:
 ```bash
+godot --headless --path . --import
 godot --headless --path . --quit-after 30 -- --smoke-test
 ```
+*(Must print `STAR_VIPER_SMOKE_TEST_PASSED` with zero script errors.)*

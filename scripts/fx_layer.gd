@@ -4,6 +4,7 @@ extends Node2D
 var _particles: Array[Dictionary] = []
 var _popups: Array[Dictionary] = []
 var _rings: Array[Dictionary] = []
+var _bolts: Array[Dictionary] = []
 var shake_strength: float = 0.0
 
 
@@ -26,6 +27,29 @@ func spawn_hit_sparks(pos: Vector2, col: Color = Color("#ffe854"), count: int = 
 			"col_a": Color.WHITE,
 			"col_b": col,
 		})
+
+
+func spawn_ring_blast(pos: Vector2, max_r: float, col: Color = Color("#ff7828")) -> void:
+	_rings.append({
+		"pos": pos,
+		"radius": 4.0,
+		"max_radius": max_r,
+		"life": 0.22,
+		"max_life": 0.22,
+		"color": col,
+	})
+	spawn_hit_sparks(pos, col, 10)
+
+
+func spawn_lightning(a: Vector2, b: Vector2, col: Color = Color("#9c6bff")) -> void:
+	var mid1: Vector2 = a.lerp(b, 0.33) + Vector2(randf_range(-6.0, 6.0), randf_range(-9.0, 9.0))
+	var mid2: Vector2 = a.lerp(b, 0.67) + Vector2(randf_range(-6.0, 6.0), randf_range(-9.0, 9.0))
+	_bolts.append({
+		"pts": [a, mid1, mid2, b],
+		"col": col,
+		"life": 0.11,
+		"max_life": 0.11,
+	})
 
 
 func spawn_explosion(pos: Vector2, big: bool = false) -> void:
@@ -68,6 +92,7 @@ func clear_all() -> void:
 	_particles.clear()
 	_popups.clear()
 	_rings.clear()
+	_bolts.clear()
 	shake_strength = 0.0
 	queue_redraw()
 
@@ -101,6 +126,16 @@ func _process(delta: float) -> void:
 			r["radius"] = lerpf(3.0, float(r["max_radius"]), t)
 		i -= 1
 
+	i = _bolts.size() - 1
+	while i >= 0:
+		var b: Dictionary = _bolts[i]
+		var life: float = float(b["life"]) - delta
+		if life <= 0.0:
+			_bolts.remove_at(i)
+		else:
+			b["life"] = life
+		i -= 1
+
 	i = _popups.size() - 1
 	while i >= 0:
 		var pop: Dictionary = _popups[i]
@@ -119,7 +154,17 @@ func _draw() -> void:
 	for r: Dictionary in _rings:
 		var alpha: float = clampf(float(r["life"]) / float(r["max_life"]), 0.0, 1.0)
 		var col: Color = r["color"]
-		draw_arc(Vector2(r["pos"]), float(r["radius"]), 0.0, TAU, 20, Color(col.r, col.g, col.b, alpha), 1.0)
+		draw_arc(Vector2(r["pos"]), float(r["radius"]), 0.0, TAU, 24, Color(col.r, col.g, col.b, alpha), 1.5)
+
+	for b: Dictionary in _bolts:
+		var b_alpha: float = clampf(float(b["life"]) / float(b["max_life"]), 0.0, 1.0)
+		var b_col: Color = b["col"]
+		var pts: Array = b["pts"]
+		for seg_i: int in range(pts.size() - 1):
+			var pa: Vector2 = pts[seg_i]
+			var pb: Vector2 = pts[seg_i + 1]
+			draw_line(pa, pb, Color(b_col.r, b_col.g, b_col.b, b_alpha), 2.5)
+			draw_line(pa, pb, Color(1.0, 1.0, 1.0, b_alpha), 1.0)
 
 	for p: Dictionary in _particles:
 		var ratio: float = clampf(float(p["life"]) / float(p["max_life"]), 0.0, 1.0)
