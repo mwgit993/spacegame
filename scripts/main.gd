@@ -549,12 +549,101 @@ func _ready() -> void:
 	_build_world()
 	_build_ui()
 	_enter_title()
+	_build_splash()
 	if OS.get_cmdline_user_args().has("--smoke-test"):
 		_run_smoke_test()
 
 
+# --- Intro splash ("PRESENTED BY CLAUDE", a placeholder until there's a studio name) ---------
+# Drawn on its own CanvasLayer above everything while the title screen sets up behind it.
+# Any key, click, tap or gamepad button skips it.
+const SPLASH_IN: float = 0.7
+const SPLASH_HOLD: float = 1.8
+const SPLASH_OUT: float = 0.7
+var _splash_layer: CanvasLayer
+var _splash_root: Control
+var _splash_t: float = -1.0 # < 0 = not showing
+
+
+func _build_splash() -> void:
+	_splash_layer = CanvasLayer.new()
+	_splash_layer.layer = 100
+	add_child(_splash_layer)
+	_splash_root = Control.new()
+	_splash_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_splash_root.mouse_filter = Control.MOUSE_FILTER_STOP
+	_splash_root.gui_input.connect(func(ev: InputEvent) -> void:
+		if (ev is InputEventMouseButton and (ev as InputEventMouseButton).pressed) or (ev is InputEventScreenTouch and (ev as InputEventScreenTouch).pressed):
+			_end_splash()
+	)
+	_splash_root.draw.connect(_draw_splash)
+	_splash_layer.add_child(_splash_root)
+	_splash_t = 0.0
+
+
+func _splash_showing() -> bool:
+	return _splash_t >= 0.0
+
+
+func _end_splash() -> void:
+	if _splash_t < 0.0:
+		return
+	_splash_t = -1.0
+	_splash_layer.visible = false
+	_splash_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+func _update_splash(delta: float) -> void:
+	if _splash_t < 0.0:
+		return
+	_splash_t += delta
+	if _splash_t >= SPLASH_IN + SPLASH_HOLD + SPLASH_OUT:
+		_end_splash()
+		return
+	_splash_root.queue_redraw()
+
+
+func _draw_splash() -> void:
+	var t: float = _splash_t
+	# Background stays black until the fade-out, then lets the title show through.
+	var bg_a: float = 1.0 - clampf((t - SPLASH_IN - SPLASH_HOLD) / SPLASH_OUT, 0.0, 1.0)
+	# The text fades out first (end of the hold), so it never ghosts over the title behind.
+	var txt_a: float = clampf(t / SPLASH_IN, 0.0, 1.0) * clampf((SPLASH_IN + SPLASH_HOLD + 0.1 - t) / 0.5, 0.0, 1.0)
+	_splash_root.draw_rect(Rect2(0.0, 0.0, 480.0, 270.0), Color(0.0, 0.0, 0.02, bg_a))
+	# A few twinkling stars.
+	for i: int in range(48):
+		var sx: float = fmod(float(i) * 97.31, 480.0)
+		var sy: float = fmod(float(i) * 53.77 + float(i * i) * 0.37, 270.0)
+		var tw: float = 0.35 + 0.65 * absf(sin(t * 2.2 + float(i) * 1.7))
+		var sc: Color = Color("#9ab6e8") if i % 3 != 0 else Color("#ffe854")
+		_splash_root.draw_rect(Rect2(floorf(sx), floorf(sy), 1.0, 1.0), Color(sc.r, sc.g, sc.b, tw * bg_a * 0.8))
+	var font: Font = PixelArt.ui_font if PixelArt.ui_font != null else ThemeDB.fallback_font
+	var top: String = "PRESENTED BY"
+	var name_txt: String = "CLAUDE"
+	var w1: float = font.get_string_size(top, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x
+	var w2: float = font.get_string_size(name_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ * 3).x
+	var rise: float = (1.0 - clampf(t / SPLASH_IN, 0.0, 1.0)) * 6.0
+	_splash_root.draw_string(font, Vector2(round((480.0 - w1) * 0.5), 112.0 + rise), top, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(0.6, 0.71, 0.91, txt_a))
+	var y2: float = 150.0 + rise
+	_splash_root.draw_string(font, Vector2(round((480.0 - w2) * 0.5) + 2.0, y2 + 2.0), name_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ * 3, Color(0.24, 0.1, 0.0, txt_a))
+	_splash_root.draw_string(font, Vector2(round((480.0 - w2) * 0.5), y2), name_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ * 3, Color(1.0, 0.91, 0.33, txt_a))
+	var line_w: float = w2 * clampf((t - 0.2) / SPLASH_IN, 0.0, 1.0)
+	_splash_root.draw_rect(Rect2(round((480.0 - line_w) * 0.5), y2 + 10.0, line_w, 1.0), Color(1.0, 0.59, 0.14, txt_a))
+
+
 func _run_smoke_test() -> void:
 	var smoke_ok: bool = true
+	if not _splash_showing():
+		push_error("SMOKE: the intro splash did not open at startup")
+		smoke_ok = false
+	_update_splash(1.0)
+	var skip_key: InputEventKey = InputEventKey.new()
+	skip_key.pressed = true
+	skip_key.physical_keycode = KEY_SPACE
+	_unhandled_input(skip_key)
+	if _splash_showing() or _splash_layer.visible:
+		push_error("SMOKE: a key press did not skip the intro splash")
+		smoke_ok = false
 	_enter_stats()
 	_enter_options()
 	if not _smoke_check_input_prompts():
@@ -3662,6 +3751,7 @@ func _update_hyperspace(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	_update_splash(delta)
 	_update_speed_up(Input.is_physical_key_pressed(KEY_F), _read_speed_trigger())
 
 	if state != State.PAUSED and _banner_timer > 0.0:
@@ -3789,6 +3879,12 @@ func _move_menu_focus(side: Side) -> bool:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _splash_showing():
+		var skip: bool = (event is InputEventKey and (event as InputEventKey).pressed) or (event is InputEventJoypadButton and (event as InputEventJoypadButton).pressed)
+		if skip:
+			_end_splash()
+			get_viewport().set_input_as_handled()
+		return
 	if event is InputEventJoypadButton:
 		var jb: InputEventJoypadButton = event as InputEventJoypadButton
 		if not jb.pressed:
