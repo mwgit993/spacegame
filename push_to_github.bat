@@ -1,4 +1,5 @@
 @echo off
+set "PATH=C:\Program Files\Git\cmd;%PATH%"
 cd /d "%~dp0"
 echo Pushing Star Viper to https://github.com/mwgit993/spacegame ...
 echo (If a GitHub Sign-In window appears, click "Sign in with your browser"!)
