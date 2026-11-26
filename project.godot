@@ -22,6 +22,7 @@ StageData="*res://scripts/autoload/stage_data.gd"
 PixelArt="*res://scripts/autoload/pixel_art.gd"
 RetroSfx="*res://scripts/autoload/retro_sfx.gd"
 GenesisMusic="*res://scripts/autoload/genesis_music.gd"
+InputPrompts="*res://scripts/autoload/input_prompts.gd"
 
 [display]
 

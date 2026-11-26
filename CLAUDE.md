@@ -23,6 +23,7 @@ godot --path .                                             # play the game
 - Use explicit static types everywhere. Don't use `:=` when the right-hand side is a `Variant`, such as a `Dictionary` lookup or an element of an untyped `Array`. Cast instead, for example `String(d["id"])` or `int(d.get("x", 0))`. The codebase does this consistently.
 - Nearly the whole scene tree is built in code. `scenes/main.tscn` contains a single `Node2D` with `main.gd`, and all UI is laid out with literal pixel coordinates. Don't go looking for `.tscn` files or a theme resource.
 - Input is polled directly with `Input.is_physical_key_pressed(KEY_*)` and joypad button and axis checks, in `player.gd` and in `main.gd` (`_unhandled_input`, `_poll_controller_menu_stick`). The project defines no InputMap actions. Touch and mouse-drag flight is handled in `player.gd`.
+- On-screen button prompts follow the last device used. `InputPrompts` switches between keyboard/mouse and gamepad on each real press (stick drift and small mouse nudges are ignored) and draws key caps or Xbox button glyphs. Never write key names into UI text. Use `InputPrompts.bind_button(btn, action)` for a button, or a `PromptBar` (`scripts/prompt_bar.gd`) for a line of text with glyphs. Actions are listed in `InputPrompts.ACTIONS`. If you change a binding in `_unhandled_input` or `player.gd`, update its entry there too.
 - Text uses the FF6-style bitmap font at `font_size = 10`, or an integer multiple of it. Texture filtering is nearest-neighbor and antialiasing is off.
 
 ## Screen layout (480×270 native, integer-scaled)
@@ -42,6 +43,7 @@ godot --path .                                             # play the game
 | `PixelArt` | Texture cache. |
 | `RetroSfx` | Pool of synthesized `AudioStreamWAV` effects. |
 | `GenesisMusic` | Real-time synth that feeds an `AudioStreamGenerator`. |
+| `InputPrompts` | Tracks the last-used input device and builds the button-prompt glyphs. |
 
 `SkillTreeData` is a `class_name` with const data only (`SHIPS`, `NODES`). It is not an autoload.
 
