@@ -6,6 +6,12 @@ const VIEW_W: float = 480.0
 const VIEW_H: float = 270.0
 const FONT_SZ: int = 10
 
+# Stage modules (stages 9+, scripts/stages/) queue their wave recipes through this.
+const WaveBuilder = preload("res://scripts/stages/wave_builder.gd")
+# The smoke test reads their lists of missing sprites and background layers.
+const StageEnemyBase = preload("res://scripts/stages/stage_enemy.gd")
+const StageBackgroundBase = preload("res://scripts/stages/stage_background.gd")
+
 const RUN_UPGRADE_POOL: Array[Dictionary] = [
 	# --- 5 Signature Elemental / Tech Beam Cores ---
 	{
@@ -433,14 +439,17 @@ var _reset_armed_until_ms: int = 0
 var _opt_back_btn: Button
 
 # Soundtrack picker (Options > SOUNDTRACK): one row per place music plays
-# (GenesisMusic.SLOT_KEYS); left/right picks the original or one of its alternatives.
+# (GenesisMusic.get_slot_keys()); left/right picks the original or one of its alternatives.
+# SND_ROWS rows are on screen; with more slots (stage modules) the list scrolls with the cursor.
+const SND_ROWS: int = 11
 var soundtrack_panel: Control
 var _snd_row_btns: Array[Button] = []
 var _snd_value_lbls: Array[Label] = []
 var _snd_info_lbl: Label
 var _snd_cursor: ColorRect
 var _snd_back_btn: Button
-var _snd_row_idx: int = 0
+var _snd_row_idx: int = 0      # selected slot
+var _snd_scroll: int = 0       # slot shown in the top row
 var _snd_hyper_timer: float = 0.0
 var _snd_resume_mode: GenesisMusic.Mode = GenesisMusic.Mode.TITLE
 var _snd_resume_stage: int = 0
@@ -707,6 +716,8 @@ func _run_smoke_test() -> void:
 	_resume_game()
 	if not _smoke_check_themed_enemies():
 		smoke_ok = false
+	if not _smoke_check_stage_modules():
+		smoke_ok = false
 	# Exercise all 7 ship signature blasters, beams, addons, rerolls, and Lazarus revive!
 	for ship_d: Dictionary in SkillTreeData.SHIPS:
 		MetaSave.tree_levels["ship_" + String(ship_d["id"])] = 1
@@ -769,7 +780,9 @@ func _run_smoke_test() -> void:
 		smoke_ok = false
 	_gain_xp(55)
 	hud_bar.queue_redraw()
-	for st_i: int in range(8):
+	# Every registered stage, built-in and module: background, song, the generic enemies, the
+	# boss and the stage's own enemies.
+	for st_i: int in range(StageData.stage_count()):
 		starfield.set_stage(st_i)
 		starfield._process(0.02)
 		GenesisMusic.play_stage(st_i)
@@ -783,6 +796,10 @@ func _run_smoke_test() -> void:
 		for t_key: int in GameEnemy.THEMED.keys():
 			if int((GameEnemy.THEMED[t_key] as Dictionary)["stage"]) == st_i:
 				_spawn_enemy_now({"type": t_key as GameEnemy.Type, "pos": Vector2(330.0, 120.0), "hp_mult": 1.0, "phase": 0.0, "squad": -1, "stage": st_i})
+		var st_module: RefCounted = StageData.get_module(st_i)
+		if st_module != null:
+			for kind: String in st_module.call("get_enemy_kinds"):
+				_spawn_enemy_now({"type": GameEnemy.Type.MODULE, "kind": kind, "pos": Vector2(330.0, 120.0), "hp_mult": 1.0, "phase": 0.0, "squad": -1, "stage": st_i})
 	GenesisMusic.play_boss(2)
 	GenesisMusic._step = 150
 	GenesisMusic._process(0.02)
@@ -849,6 +866,20 @@ func _run_smoke_test() -> void:
 	MetaSave.reset_save()
 	if not _smoke_speed_is(false, "at the end of the smoke test"):
 		smoke_ok = false
+	_smoke_finish(smoke_ok)
+
+
+# The last checks need real frames (draw hooks only run inside a frame's draw pass), so the
+# result is printed a couple of frames later. Audio is stopped first: sounds that start
+# playing in those frames would still be held by the audio server at exit and get reported
+# as leaked instances.
+func _smoke_finish(smoke_ok: bool) -> void:
+	GenesisMusic.stop_music()
+	RetroSfx.muted = true
+	for p: AudioStreamPlayer in RetroSfx._players:
+		p.stop()
+	if not await _smoke_check_module_draws():
+		smoke_ok = false
 	if not smoke_ok:
 		push_error("STAR_VIPER_SMOKE_TEST_FAILED")
 		get_tree().quit(1)
@@ -876,7 +907,8 @@ func _smoke_check_themed_enemies() -> bool:
 	if float(prev["hp"]) != 1.0 or float(prev["shot_speed"]) != 1.0 or float(prev["fire_rate"]) != 1.0 or float(prev["pace"]) != 1.0:
 		push_error("SMOKE: stage 1 must stay the 1.0 difficulty baseline")
 		ok = false
-	for st_i: int in range(1, 9):
+	# Every stage, built-in and module, then the first stage of the next loop.
+	for st_i: int in range(1, StageData.stage_count() + 1):
 		var row: Dictionary = StageData.get_difficulty(st_i)
 		for k: String in ["hp", "shot_speed", "fire_rate", "groups"]:
 			if float(row[k]) < float(prev[k]):
@@ -892,7 +924,7 @@ func _smoke_check_themed_enemies() -> bool:
 		var home: int = int((GameEnemy.THEMED[t_key] as Dictionary)["stage"])
 		for loop_i: int in range(2):
 			for v: int in range(2):
-				var e: GameEnemy = _smoke_spawn(t_key as GameEnemy.Type, Vector2(330.0, 110.0 + 40.0 * float(v)), home + loop_i * 8, v)
+				var e: GameEnemy = _smoke_spawn(t_key as GameEnemy.Type, Vector2(330.0, 110.0 + 40.0 * float(v)), home + loop_i * StageData.stage_count(), v)
 				for step: int in range(70):
 					if e._dead:
 						break
@@ -1049,8 +1081,312 @@ func _smoke_check_themed_enemies() -> bool:
 	return ok
 
 
+# Stage modules (stages 9+): every module in the registry loads and registers, and every module
+# plus the 09_example template (registered only for these checks) is wired end to end: its
+# tables, every sprite it refers to, each enemy type through its behaviour and its death, the
+# boss through its intro, three phases and death, the background painted and animated, the song
+# rendered, and the wave director queueing its four waves.
+func _smoke_check_stage_modules() -> bool:
+	var ok: bool = true
+	var listed: int = 0
+	for path: String in StageData.Registry.MODULES:
+		if path != "":
+			listed += 1
+	if StageData.stage_count() != StageData.BUILTIN_STAGES + listed:
+		push_error("SMOKE: %d stages registered, expected %d (a module in registry.gd failed to load)" % [StageData.stage_count(), StageData.BUILTIN_STAGES + listed])
+		ok = false
+	var example: RefCounted = _smoke_register_example()
+	if example == null:
+		return false
+	var saved_wave: int = wave
+	var saved_stage: int = current_stage_idx
+	for m: RefCounted in StageData.get_modules():
+		if not _smoke_check_module(m):
+			ok = false
+	if not _smoke_no_missing_module_art():
+		ok = false
+	StageData.unregister_module(example)
+	if StageData.stage_count() != StageData.BUILTIN_STAGES + listed:
+		push_error("SMOKE: unregistering the example module left %d stages" % StageData.stage_count())
+		ok = false
+	wave = saved_wave
+	current_stage_idx = saved_stage
+	_pending_hyperspace = false
+	_smoke_clear_enemies()
+	_spawn_queue.clear()
+	starfield.set_stage(current_stage_idx)
+	GenesisMusic.play_stage(current_stage_idx)
+	return ok
+
+
+# A behaviour asked for a sprite, or a background for a layer, that doesn't exist.
+func _smoke_no_missing_module_art() -> bool:
+	var ok: bool = true
+	for key: Variant in StageEnemyBase.missing_sprites.keys():
+		push_error("SMOKE: a stage enemy used missing sprite '%s'" % String(key))
+		ok = false
+	for key2: Variant in StageBackgroundBase.missing_layers.keys():
+		push_error("SMOKE: a stage background used missing layer '%s'" % String(key2))
+		ok = false
+	return ok
+
+
+func _smoke_register_example() -> RefCounted:
+	var example: RefCounted = StageData.load_module(StageData.Registry.EXAMPLE)
+	if example == null or StageData.register_module(example) < 0:
+		push_error("SMOKE: the example stage module did not load and register")
+		return null
+	return example
+
+
+func _smoke_check_module(m: RefCounted) -> bool:
+	var ok: bool = true
+	var st_i: int = int(m.get("stage_index"))
+	var st: Dictionary = StageData.get_stage(st_i)
+	var id: String = String(st["id"])
+	var tag: String = "stage %d (%s)" % [st_i + 1, id]
+	for err: String in StageData.validate_module(m):
+		push_error("SMOKE: " + err)
+		ok = false
+	if StageData.get_module(st_i) != m or not StageData.is_module_stage(st_i):
+		push_error("SMOKE: %s is not where the registry put it" % tag)
+		ok = false
+	# The HUD label must fit at the boss wave, even once the stage number has two digits.
+	var font: Font = PixelArt.ui_font
+	var hud_head: String = "%d-BOSS " % maxi(st_i + 1, 10)
+	if _fit_hud_stage_text(font, hud_head, String(st["name"])) != hud_head + String(st["name"]):
+		push_error("SMOKE: %s name '%s' is too long for the HUD (keep '%sNAME' within %d px)" % [tag, String(st["name"]), hud_head, int(HUD_STAGE_TEXT_W)])
+		ok = false
+
+	# Sprites: everything the stage refers to exists, and its own keys carry its id.
+	StageData.prepare_stage(st_i)
+	if not StageData.is_stage_art_ready(st_i):
+		push_error("SMOKE: %s sprites were not installed" % tag)
+		ok = false
+	for key: Variant in (m.call("build_art") as Dictionary).keys():
+		if not String(key).contains(id):
+			push_error("SMOKE: %s sprite key '%s' must contain the stage id" % [tag, String(key)])
+			ok = false
+	var need: Array[String] = []
+	for k: String in ["scout_tex", "swooper_tex", "sniper_tex", "cruiser_tex", "bullet_a", "bullet_b"]:
+		need.append(String(st[k]))
+	for f: int in range(3):
+		need.append("%s_%d" % [String(st["boss_tex"]), f])
+	var kinds: Array[String] = m.call("get_enemy_kinds")
+	for kind: String in kinds:
+		need.append(String(StageData.get_enemy_def(st_i, kind)["tex"]))
+	for key2: String in need:
+		if not PixelArt._cache.has(key2):
+			push_error("SMOKE: %s is missing sprite %s" % [tag, key2])
+			ok = false
+
+	# Background: the module's layers are painted, active and animate.
+	starfield.set_stage(st_i)
+	if starfield._theme != id or starfield._module_bg == null or starfield._tex.is_empty():
+		push_error("SMOKE: %s background did not activate" % tag)
+		ok = false
+	for i: int in range(40):
+		starfield._process(0.05)
+
+	# Music: the stage's song (and any alternatives) render finite, audible audio.
+	GenesisMusic.play_stage(st_i)
+	if GenesisMusic.current_stage_idx != st_i or GenesisMusic._song.is_empty():
+		push_error("SMOKE: %s song did not load" % tag)
+		ok = false
+	if not _smoke_song_renders(tag):
+		ok = false
+	var slot: String = "stage_%d" % (st_i + 1)
+	if not GenesisMusic.get_slot_keys().has(slot):
+		push_error("SMOKE: %s has no soundtrack slot" % tag)
+		ok = false
+	for alt: int in range(1, GenesisMusic.candidate_count(slot) + 1):
+		GenesisMusic.preview(slot, alt)
+		if not _smoke_song_renders("%s alternative #%d" % [tag, alt]):
+			ok = false
+	GenesisMusic.end_preview()
+
+	# Every enemy type runs its behaviour (home stage and first loop, both variants).
+	_smoke_clear_enemies()
+	for kind: String in kinds:
+		for loop_i: int in range(2):
+			for v: int in range(2):
+				var e: GameEnemy = _smoke_spawn_module(kind, Vector2(330.0, 110.0 + 40.0 * float(v)), st_i + loop_i * StageData.stage_count(), v)
+				if e.enemy_type != GameEnemy.Type.MODULE or e._behaviour == null or e.max_hp <= 0.0:
+					push_error("SMOKE: %s enemy '%s' did not set up" % [tag, kind])
+					ok = false
+				for step: int in range(70):
+					if e._dead:
+						break
+					e._process(0.05)
+					if e.global_position.x < 140.0 and e.global_position.x > -20.0:
+						e.global_position.x = 330.0
+			_update_wave_director(0.0)
+	for b_node: Node in bullet_layer.get_children():
+		if b_node is GameBullet and not (b_node as GameBullet).is_player_bullet:
+			(b_node as GameBullet)._process(0.6)
+	_smoke_clear_enemies()
+
+	# A kill pays out exactly once; children it spawns give no Scrap.
+	for kind: String in kinds:
+		var e2: GameEnemy = _smoke_spawn_module(kind, Vector2(300.0, 130.0), st_i, 0)
+		for step2: int in range(60):
+			if e2._warn_timer <= 0.0:
+				break
+			e2._process(0.05)
+		var kills_0: int = run_kills
+		e2.take_damage(1.0e9)
+		e2.take_damage(1.0e9)
+		if not e2._dead or run_kills != kills_0 + 1:
+			push_error("SMOKE: %s enemy '%s' kill counted %d times" % [tag, kind, run_kills - kills_0])
+			ok = false
+		_update_wave_director(0.0)
+		for node: Node in enemy_layer.get_children():
+			var child: GameEnemy = node as GameEnemy
+			if child != null and child.gen > 0 and child.scrap_drop != 0:
+				push_error("SMOKE: %s child enemy '%s' gives Scrap" % [tag, child.module_kind])
+				ok = false
+		_smoke_clear_enemies()
+
+	# The boss: intro, attacks, all three phases, death.
+	var boss: GameEnemy = _spawn_enemy_now({"type": GameEnemy.Type.BOSS, "pos": Vector2(420.0, -110.0), "hp_mult": 1.0, "phase": 0.0, "squad": -1, "stage": st_i})
+	if boss._boss_ai == null or boss.max_hp <= 0.0:
+		push_error("SMOKE: %s boss has no AI" % tag)
+		ok = false
+	for step3: int in range(60):
+		boss._process(0.05)
+	if boss.boss_intro_active:
+		push_error("SMOKE: %s boss intro did not finish" % tag)
+		ok = false
+	var shots_0: int = bullet_layer.get_child_count()
+	for step4: int in range(40):
+		boss._process(0.1)
+	if bullet_layer.get_child_count() <= shots_0:
+		push_error("SMOKE: %s boss never fired" % tag)
+		ok = false
+	for want_phase: int in [2, 3]:
+		boss.take_damage(boss.max_hp * 0.4)
+		for step5: int in range(30):
+			boss._process(0.1)
+		if boss.boss_phase != want_phase:
+			push_error("SMOKE: %s boss did not reach phase %d" % [tag, want_phase])
+			ok = false
+	boss._start_boss_death_sequence()
+	for step6: int in range(20):
+		if not boss._dead:
+			boss._process(0.1)
+	if not boss._dead:
+		push_error("SMOKE: %s boss did not die" % tag)
+		ok = false
+	_smoke_clear_enemies()
+	for b2: Node in bullet_layer.get_children():
+		b2.queue_free()
+
+	# The wave director queues the stage's own enemies in its three waves and the boss in the fourth.
+	for w: int in range(1, StageData.WAVES_PER_STAGE + 1):
+		wave = st_i * StageData.WAVES_PER_STAGE + w - 1
+		_begin_next_wave()
+		var own: int = 0
+		var bosses: int = 0
+		for item: Dictionary in _spawn_queue:
+			if item.has("kind"):
+				own += 1
+			if GameEnemy.Type.BOSS == item["type"]:
+				bosses += 1
+		if current_stage_idx != st_i or (w < StageData.WAVES_PER_STAGE and own == 0) or (w == StageData.WAVES_PER_STAGE and bosses != 1):
+			push_error("SMOKE: %s wave %d queued %d own enemies, %d bosses" % [tag, w, own, bosses])
+			ok = false
+		for step7: int in range(60):
+			_update_wave_director(0.1)
+		for node2: Node in enemy_layer.get_children():
+			if node2 is GameEnemy:
+				(node2 as GameEnemy)._process(0.1)
+		_smoke_clear_enemies()
+		_spawn_queue.clear()
+	for b3: Node in bullet_layer.get_children():
+		b3.queue_free()
+	return ok
+
+
+# The current song renders finite, audible audio from its start and from mid-song.
+func _smoke_song_renders(what: String) -> bool:
+	var loudest: float = 0.0
+	for start: int in [0, 300]:
+		GenesisMusic._step = start
+		var buf: PackedVector2Array = GenesisMusic._render_block(2048)
+		if buf.size() != 2048:
+			push_error("SMOKE: %s song failed to render" % what)
+			return false
+		for v: Vector2 in buf:
+			if is_nan(v.x) or is_nan(v.y) or absf(v.x) > 1.0 or absf(v.y) > 1.0:
+				push_error("SMOKE: %s song rendered a bad sample" % what)
+				return false
+			loudest = maxf(loudest, absf(v.x))
+	if loudest < 0.01:
+		push_error("SMOKE: %s song is silent" % what)
+		return false
+	return true
+
+
+# Draw hooks only run inside a frame's draw pass: one background per module stage, plus every
+# module enemy (sampled at several ages, to catch its different telegraphs) and boss, are drawn
+# together over two frames. A broken draw() shows up as a script error, and a node that was
+# never drawn, or a missing sprite or layer, fails the test.
+func _smoke_check_module_draws() -> bool:
+	var ok: bool = true
+	var example: RefCounted = _smoke_register_example()
+	if example == null:
+		return false
+	var holder: Node2D = Node2D.new()
+	add_child(holder)
+	var drawn: Dictionary = {}
+	var nodes: Array[CanvasItem] = []
+	for m: RefCounted in StageData.get_modules():
+		var st_i: int = int(m.get("stage_index"))
+		var sb: StarfieldBg = StarfieldBg.new()
+		sb.stage_idx = st_i
+		holder.add_child(sb)
+		sb.set_process(false)
+		sb._process(0.05)
+		nodes.append(sb)
+		for kind: String in m.call("get_enemy_kinds"):
+			for age_i: int in range(8):
+				var e: GameEnemy = _smoke_spawn_module(kind, Vector2(330.0, 70.0 + 18.0 * float(age_i)), st_i, age_i % 2)
+				for step0: int in range(1 + age_i * 8):
+					if e._dead:
+						break
+					e._process(0.05)
+					if e.global_position.x < 140.0:
+						e.global_position.x = 330.0
+				e.set_process(false)
+				nodes.append(e)
+		var boss: GameEnemy = _spawn_enemy_now({"type": GameEnemy.Type.BOSS, "pos": Vector2(420.0, -110.0), "hp_mult": 1.0, "phase": 0.0, "squad": -1, "stage": st_i})
+		for step: int in range(60):
+			boss._process(0.05)
+		boss.set_process(false)
+		nodes.append(boss)
+	for n: CanvasItem in nodes:
+		n.draw.connect(func() -> void: drawn[n.get_instance_id()] = true)
+		n.queue_redraw()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	for n2: CanvasItem in nodes:
+		if is_instance_valid(n2) and n2.is_inside_tree() and not drawn.has(n2.get_instance_id()):
+			push_error("SMOKE: %s was never drawn" % n2.name)
+			ok = false
+	if not _smoke_no_missing_module_art():
+		ok = false
+	holder.queue_free()
+	_smoke_clear_enemies()
+	StageData.unregister_module(example)
+	return ok
+
+
 func _smoke_spawn(t: GameEnemy.Type, pos: Vector2, stage: int, variant: int) -> GameEnemy:
 	return _spawn_enemy_now({"type": t, "pos": pos, "hp_mult": 1.0, "phase": 0.0, "squad": -1, "stage": stage, "variant": variant})
+
+
+func _smoke_spawn_module(kind: String, pos: Vector2, stage: int, variant: int) -> GameEnemy:
+	return _spawn_enemy_now({"type": GameEnemy.Type.MODULE, "kind": kind, "pos": pos, "hp_mult": 1.0, "phase": 0.0, "squad": -1, "stage": stage, "variant": variant})
 
 
 func _smoke_live_enemies(t: GameEnemy.Type) -> Array[GameEnemy]:
@@ -1347,9 +1683,10 @@ func _smoke_check_speed_up() -> bool:
 func _smoke_check_soundtrack() -> bool:
 	var ok: bool = true
 	var saved_picks: Dictionary = MetaSave.music_picks.duplicate()
-	for slot: String in GenesisMusic.SLOT_KEYS:
+	for slot: String in GenesisMusic.get_slot_keys():
 		var count: int = GenesisMusic.candidate_count(slot)
-		if count != 5:
+		# The built-in slots ship 5 alternatives each; a stage module's are optional.
+		if count != 5 and not GenesisMusic.is_module_slot(slot):
 			push_error("SMOKE: soundtrack slot %s has %d alternatives, expected 5" % [slot, count])
 			ok = false
 		for idx: int in range(count + 1):
@@ -1893,7 +2230,7 @@ func _build_soundtrack_ui() -> void:
 	_snd_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	soundtrack_panel.add_child(_snd_cursor)
 
-	for i: int in range(GenesisMusic.SLOT_KEYS.size()):
+	for i: int in range(SND_ROWS):
 		var y: float = 32.0 + float(i) * 16.0
 		var row: Button = Button.new()
 		row.position = Vector2(46.0, y)
@@ -1901,7 +2238,8 @@ func _build_soundtrack_ui() -> void:
 		row.flat = true
 		row.focus_mode = Control.FOCUS_NONE
 		row.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		row.text = _snd_slot_label(i)
+		# Labels are filled in by _refresh_soundtrack_ui() (asking for them here would make
+		# StageData register the stage modules during startup).
 		row.add_theme_font_size_override("font_size", FONT_SZ)
 		row.add_theme_color_override("font_color", Color("#dce6ff"))
 		row.add_theme_color_override("font_hover_color", Color.WHITE)
@@ -1945,7 +2283,7 @@ func _build_soundtrack_ui() -> void:
 
 
 func _snd_slot_label(i: int) -> String:
-	var slot: String = GenesisMusic.SLOT_KEYS[i]
+	var slot: String = GenesisMusic.get_slot_keys()[i]
 	if slot.begins_with("stage_"):
 		var st: int = int(slot.substr(6))
 		var st_def: Dictionary = StageData.get_stage(st - 1)
@@ -1989,27 +2327,43 @@ func _leave_soundtrack() -> void:
 
 
 func _refresh_soundtrack_ui() -> void:
+	var keys: Array[String] = GenesisMusic.get_slot_keys()
+	_snd_row_idx = clampi(_snd_row_idx, 0, keys.size() - 1)
+	# Scroll just enough to keep the selected slot on screen.
+	_snd_scroll = clampi(_snd_scroll, maxi(0, _snd_row_idx - SND_ROWS + 1), mini(_snd_row_idx, maxi(0, keys.size() - SND_ROWS)))
 	for i: int in range(_snd_row_btns.size()):
-		var slot: String = GenesisMusic.SLOT_KEYS[i]
+		var si: int = _snd_scroll + i
+		_snd_row_btns[i].visible = si < keys.size()
+		_snd_value_lbls[i].visible = si < keys.size()
+		if si >= keys.size():
+			continue
+		var slot: String = keys[si]
 		var idx: int = GenesisMusic.get_pick(slot)
-		var sel: bool = i == _snd_row_idx
+		var sel: bool = si == _snd_row_idx
 		var name_txt: String = GenesisMusic.candidate_name(slot, idx)
+		_snd_row_btns[i].text = _snd_slot_label(si)
 		_snd_value_lbls[i].text = ("< %s >" % name_txt) if idx == 0 else ("< #%d  %s >" % [idx, name_txt])
 		_snd_value_lbls[i].add_theme_color_override("font_color", Color("#ffe854") if sel else (Color("#9ab6e8") if idx == 0 else Color("#dce6ff")))
-	_snd_cursor.position = Vector2(46.0, 32.0 + float(_snd_row_idx) * 16.0)
-	var cur_slot: String = GenesisMusic.SLOT_KEYS[_snd_row_idx]
+	_snd_cursor.position = Vector2(46.0, 32.0 + float(_snd_row_idx - _snd_scroll) * 16.0)
+	var cur_slot: String = keys[_snd_row_idx]
 	var cur_idx: int = GenesisMusic.get_pick(cur_slot)
 	_snd_info_lbl.text = "%d/%d  %s" % [cur_idx, GenesisMusic.candidate_count(cur_slot), GenesisMusic.candidate_info(cur_slot, cur_idx)]
 
 
+# The selected soundtrack slot.
+func _snd_slot() -> String:
+	var keys: Array[String] = GenesisMusic.get_slot_keys()
+	return keys[clampi(_snd_row_idx, 0, keys.size() - 1)]
+
+
 func _snd_preview_current() -> void:
-	var slot: String = GenesisMusic.SLOT_KEYS[_snd_row_idx]
+	var slot: String = _snd_slot()
 	GenesisMusic.preview(slot, GenesisMusic.get_pick(slot))
 	_snd_hyper_timer = 0.0
 
 
 func _snd_move_row(dir: int) -> void:
-	var n: int = GenesisMusic.SLOT_KEYS.size()
+	var n: int = GenesisMusic.get_slot_keys().size()
 	_snd_row_idx = posmod(_snd_row_idx + dir, n)
 	RetroSfx.play("ui", -11.0, 0.03)
 	_refresh_soundtrack_ui()
@@ -2017,7 +2371,7 @@ func _snd_move_row(dir: int) -> void:
 
 
 func _snd_change_track(dir: int) -> void:
-	var slot: String = GenesisMusic.SLOT_KEYS[_snd_row_idx]
+	var slot: String = _snd_slot()
 	var count: int = GenesisMusic.candidate_count(slot) + 1
 	var idx: int = posmod(GenesisMusic.get_pick(slot) + dir, count)
 	MetaSave.music_picks[slot] = idx
@@ -2028,11 +2382,13 @@ func _snd_change_track(dir: int) -> void:
 
 
 # Mouse / touch: tap a row to select it (and hear it); tap the selected row again for its next track.
+# i is the on-screen row; the list may be scrolled.
 func _on_snd_row_clicked(i: int) -> void:
-	if i == _snd_row_idx:
+	var si: int = _snd_scroll + i
+	if si == _snd_row_idx:
 		_snd_change_track(1)
 	else:
-		_snd_row_idx = i
+		_snd_row_idx = si
 		RetroSfx.play("ui", -11.0, 0.03)
 		_refresh_soundtrack_ui()
 		_snd_preview_current()
@@ -3388,6 +3744,10 @@ func _clear_entities() -> void:
 func _begin_next_wave() -> void:
 	wave += 1
 	current_stage_idx = StageData.get_stage_index_for_wave(wave)
+	# Stage modules (stages 9+): this stage's sprites must be ready, and the next stage's are
+	# built on a worker thread meanwhile (no-ops for stages 1-8).
+	StageData.prepare_stage(current_stage_idx)
+	StageData.prefetch_stage(current_stage_idx + 1)
 	starfield.set_stage(current_stage_idx)
 
 	var st: Dictionary = StageData.get_stage(current_stage_idx)
@@ -3495,11 +3855,16 @@ func _new_squad(count: int) -> int:
 # Recipe C unlocks from the stage's second wave, and the third wave adds an extra unit to
 # most recipes. Returns the time until the next group.
 func _queue_themed_group(idx: int, sub_wave: int, t: float, hp_mult: float) -> float:
+	var stage_k: int = StageData.wrap_stage(current_stage_idx)
+	var module: RefCounted = StageData.get_module(stage_k)
+	if module != null:
+		# Stages 9+: the stage module queues its own recipes through a WaveBuilder.
+		return float(module.call("queue_themed_group", WaveBuilder.new(self, idx, sub_wave, t, hp_mult)))
 	var recipes: int = 3 if sub_wave >= 2 else 2
 	var r: int = (idx + sub_wave - 1) % recipes
 	var extra: int = 1 if sub_wave >= 3 else 0
 	var top: bool = idx % 2 == 0
-	match posmod(current_stage_idx, 8):
+	match stage_k:
 		0: # OUTER ORBIT: drifting asteroids that split, mine layers
 			if r == 0:
 				var n: int = 3 + extra
@@ -3684,8 +4049,9 @@ func _queue_firewall(t: float, hp_mult: float) -> void:
 		var y: float = 40.0 + float(k) * 24.5
 		_queue_enemy(t, GameEnemy.Type.FIREWALL, Vector2(500.0, y), hp_mult, float(k), sq_id, links)
 
-func _queue_enemy(spawn_time: float, e_type: GameEnemy.Type, pos: Vector2, hp_mult: float, phase: float, sq_id: int, variant: int = 0) -> void:
-	_spawn_queue.append({
+# kind names a stage module's enemy (e_type GameEnemy.Type.MODULE).
+func _queue_enemy(spawn_time: float, e_type: GameEnemy.Type, pos: Vector2, hp_mult: float, phase: float, sq_id: int, variant: int = 0, kind: String = "") -> void:
+	var item: Dictionary = {
 		"time": spawn_time,
 		"type": e_type,
 		"pos": pos,
@@ -3694,7 +4060,10 @@ func _queue_enemy(spawn_time: float, e_type: GameEnemy.Type, pos: Vector2, hp_mu
 		"squad": sq_id,
 		"stage": current_stage_idx,
 		"variant": variant,
-	})
+	}
+	if kind != "":
+		item["kind"] = kind
+	_spawn_queue.append(item)
 
 
 func _show_banner(txt: String, col: Color, duration: float) -> void:
@@ -3761,7 +4130,7 @@ func _process(delta: float) -> void:
 
 	_poll_controller_menu_stick(delta)
 
-	if state == State.SOUNDTRACK and GenesisMusic.SLOT_KEYS[_snd_row_idx] == "hyperspace":
+	if state == State.SOUNDTRACK and _snd_slot() == "hyperspace":
 		_snd_hyper_timer += delta
 		if _snd_hyper_timer >= 3.4:
 			_snd_preview_current()
@@ -4126,6 +4495,7 @@ func _spawn_enemy_now(item: Dictionary) -> GameEnemy:
 	var e: GameEnemy = GameEnemy.new()
 	enemy_layer.add_child(e)
 	var e_type: GameEnemy.Type = item["type"]
+	e.module_kind = String(item.get("kind", ""))
 	e.setup(
 		e_type,
 		Vector2(item["pos"]),
@@ -4468,6 +4838,22 @@ func _get_beam_badge_info(mode: String, lvl: int) -> Dictionary:
 			return {"icon": "badge_vulcan", "name": "Vulcan", "val": lv_s, "col": Color("#ffe854")}
 
 
+# The HUD's "S-W NAME" label runs from x 158 and must stop short of SCRAP at x 294. Two-digit
+# stage numbers (stage 10+, and every loop) and long names can overflow it, so the name loses
+# whole words from the end (then letters) until it fits.
+const HUD_STAGE_TEXT_W: float = 132.0
+
+
+func _fit_hud_stage_text(font: Font, head: String, stage_name: String) -> String:
+	var txt: String = head + stage_name
+	var name_part: String = stage_name
+	while name_part != "" and font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x > HUD_STAGE_TEXT_W:
+		var cut: int = name_part.rfind(" ")
+		name_part = name_part.substr(0, cut) if cut > 0 else name_part.substr(0, name_part.length() - 1)
+		txt = head + name_part
+	return txt
+
+
 func _draw_hud() -> void:
 	var font: Font = PixelArt.ui_font if PixelArt.ui_font != null else ThemeDB.fallback_font
 
@@ -4499,11 +4885,11 @@ func _draw_hud() -> void:
 	var lv_txt: String = "LV %d" % player_level
 	hud_bar.draw_string(font, Vector2(120.0, 14.0), lv_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#54f4ff"))
 
-	var st_txt: String = "%d-%s %s" % [
+	var st_head: String = "%d-%s " % [
 		current_stage_idx + 1,
 		"BOSS" if StageData.is_boss_wave(wave) else str(sub_w),
-		String(st["name"]),
 	]
+	var st_txt: String = _fit_hud_stage_text(font, st_head, String(st["name"]))
 	hud_bar.draw_string(font, Vector2(158.0, 14.0), st_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, st["accent"])
 
 	var scrap_txt: String = "SCRAP %d" % run_scrap

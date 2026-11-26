@@ -40,7 +40,7 @@ var screen_shake_enabled: bool = true
 var default_autofire: bool = true
 var fullscreen_enabled: bool = false
 var touch_mode: int = 0 # 0 = AUTO (shows on touch), 1 = ALWAYS ON (phone/mouse test), 2 = OFF
-var music_picks: Dictionary = {} # soundtrack slot -> chosen track (0 = original), see GenesisMusic.SLOT_KEYS
+var music_picks: Dictionary = {} # soundtrack slot -> chosen track (0 = original), see GenesisMusic.get_slot_keys()
 var speed_up_toggle: bool = false # Speed-up button (RT / F): false = HOLD for 2x, true = press to TOGGLE 2x
 
 # Rogue Legacy-style Skill Tree node levels & Fleet Loadout!
