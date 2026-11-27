@@ -21,13 +21,13 @@
 2. **Scarab Bio-Cruiser** *(North Wing)* — Living xeno-beetle firing weaving, piercing **Corrosive Bio-Waves** (`+2 Hull` & post-boss nanite regen).
 3. **Chrono Phantom** *(East Wing)* — High-speed stealth needle-wing firing **Hyper-Phase Railgun** slugs (`+20% Crit`, skewers 3 targets).
 4. **Titan Gunship** *(East Wing)* — Heavy twin-prow corvette firing AoE **Cluster Flak Mortars** + built-in Flank Blasters.
-5. **Cosmic Saucer X-99** *(West Wing)* — Spinning alien UFO firing wall-bouncing **Psychic Mind-Rings** + starts with **Orbital Sawblades**.
+5. **Cosmic Saucer X-99** *(West Wing)* — Spinning alien UFO firing weaving, piercing **Abduction Rings** + starts with **Orbital Sawblades**.
 6. **Ocularis Void-Spawn** *(West Wing)* — Floating cosmic eyeball w/ writhing tentacles firing homing **Eldritch Gaze Eyeballs** that chain void lightning (`+18% XP`).
-7. **S.S. Meow-zer** *(West Wing)* — Cat-eared starfighter with wagging thruster tail and **Yarn-Ball Option Orbs** that shoots leaping, meowing **Flying Space Cats** bouncing from foe to foe!
+7. **S.S. Meow-zer** *(West Wing)* — Chibi white kitten ship (big eyes, blush, collar bell, jet-flame tail) with **Yarn-Ball Option Orbs** that shoots big leaping, meowing **Flying Space Cats** (orange, white and blue coats) that claw through lines of foes!
 *(Note: Exotic ships NEVER lose their signature weapon when drafting Tech Beams mid-run; drafted Tech Beams mount as a co-axial bonus barrel!)*
 
 ### 5 Tech Beam Cores & 7 Visible Hull Addons
-- **Beams (`[BEAM]`):** *Pierce Laser*, *Sonic Wave Beam* (double-helix), *Ricochet Prism* (wall & enemy bounce), *Tesla Arc Beam* (chain lightning), *Solar Plasma* (explosive AoE fireballs).
+- **Beams (`[BEAM]`):** *Pierce Laser*, *Sonic Wave Beam* (double-helix), *Prism Shards* (zigzag piercing crystals), *Tesla Arc Beam* (chain lightning), *Solar Plasma* (explosive AoE fireballs).
 - **Ship Addons (`[ADDON]` — visibly rendered on/around your hull):** *Option Drone* (`x1..4`), *Orbital Blades* (`2..5` spinning saws that slice enemies & enemy bullets), *360° Roof Auto-Turret*, *Homing Wing Pods*, *Tail & Flank Guns*, *Belly Gravity Bombs*, and *Wing Nova Shock Coils*.
 - **Core Systems (`[CORE]`):** *Blaster Overclock*, *Spread Matrix*, *Rapid Coil*, *Force Shield*, *Afterburner*, *Hull Overclock*.
 
@@ -54,7 +54,7 @@
 | `scripts/enemy.gd` | 4 generic enemy types (re-skinned per stage) + 20 stage-signature enemies (`THEMED`: asteroids, turrets, blimps, spore pods, ice crystals, golems, jellyfish, viruses...) + 8 animated 3-phase Stage Bosses (Mega Man intro, 28-pip HP fill, adaptive plating, death meltdown) |
 | `scripts/enemy_art.gd` | Sprites for the stage-signature enemies and their special shots (bombs, spores, ice shards, frost puffs) |
 | `scripts/boss_painter.gd` | Procedural 3-frame native-pixel painter for all 8 giant bosses (`_0`, `_1`, `_2`) |
-| `scripts/bullet.gd` | Enemy danger-glow bullets + player piercing, wave-helix, wall-ricochet, chain-lightning, AoE, and animated pouncing Space Cats |
+| `scripts/bullet.gd` | Enemy danger-glow bullets + player piercing, wave-helix, chain-lightning, AoE, and animated pouncing Space Cats (player shots never bounce; they are freed at the screen edge) |
 | `scripts/pickup.gd` / `fx_layer.gd` | Magnetized tiered XP Gems & Hull Heals, lightning arcs, blast rings, screen shake, popups |
 | `scripts/starfield.gd` | 8 biome parallax worlds + Hyperspace Warp tunnel |
 | `scripts/autoload/meta_save.gd` | JSON save/load (`user://star_viper_save.json`) for Skill Tree ranks, unlocked ships, Scrap, stats, and options |

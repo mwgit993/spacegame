@@ -285,33 +285,36 @@ func _build_all() -> void:
 		"..........pppppp..........",
 	]))
 
-	# 6) S.S. MEOW-ZER (Cat-eared starfighter w/ whiskers, kitty eyes & thruster tail!)
-	_cache["ship_neko_0"] = _make_tex(PackedStringArray([
-		".......MM....MM...........",
-		"......MWWM..MWWM..........",
-		".....MWMMWLLWMMWM.........",
-		".OO..MLLLLLLLLLLM.........",
-		"OYYO..LLWWWWWWWWLL........",
-		"...OOLLWWYYYYWWYYLLWW.....",
-		"..CYOLLWWWWWWWWWWLLWWWW...",
-		".WCYOLLWWWWWWWWMMLLWWWW...",
-		"..CYOLLWWYYYYWWYYLLWW.....",
-		"...OO.LLWWWWWWWWLL........",
-		".......LLLLLLLLLL.........",
-	]))
-	_cache["ship_neko_1"] = _make_tex(PackedStringArray([
-		".......MM....MM...........",
-		"......MWWM..MWWM..........",
-		".....MWMMWLLWMMWM.........",
-		".....MLLLLLLLLLLM.........",
-		"...OO.LLWWWWWWWWLL........",
-		".OYYOLLWWYYYYWWYYLLWW.....",
-		"WWYYOLLWWWWWWWWWWLLWWWW...",
-		"WWCYOLLWWWWWWWWMMLLWWWW...",
-		".OYYOLLWWYYYYWWYYLLWW.....",
-		".....OLLWWWWWWWWLL........",
-		"...OO..LLLLLLLLLL.........",
-	]))
+	# 6) S.S. MEOW-ZER: a chibi white kitten ship. Big round head, pink ears, big shiny eyes,
+	# blush, a pink collar with a gold bell, paws reaching forward and a curled tail; a little
+	# jet flame flickers behind it. q = plum outline, m = blush.
+	var neko_pal: Dictionary = {"q": Color("#4a1f45"), "m": Color("#ff9ccc")}
+	var neko_rows: PackedStringArray = PackedStringArray([
+		"...........q...........q..",
+		"..........qWq.qqqqqqq.qWq.",
+		"....q.....qMWqWWWWWWWqWMq.",
+		"...qMq....qWMWWWWWWWWWMWq.",
+		"..qWMq....qWWWWWWWWWWWWWq.",
+		"..qWq.....qWWWWWWWWWWWWWq.",
+		".qWq.....qWWWWNNWWWWNNWWWq",
+		".qWq.....qWWWNWNWWWNWNWWWq",
+		".qWq..qqqqWWWNNNWWWNNNWWWq",
+		".qWWqqWWWWWWWCNWWMWCNWWWWq",
+		"..qWWWWLWLWmmWWWqWqWWWmmWq",
+		"..OqWWWLWLWWWWWWWqWWWWWWq.",
+		"OOYqWWWWWWWWWWWWWWWWWWWWq.",
+		"..O.qWWWWWWWMMMMMYMMMMqq..",
+		"...qWWWWWWWWWqWWYYYWWqqqq.",
+		"....qqqqqqqqq.qqqqqqqWWWWq",
+		".....................qqqq.",
+	])
+	_cache["ship_neko_0"] = _make_tex(neko_rows, neko_pal)
+	# Frame 1 only changes the jet flame, so the kitten itself never jitters.
+	var neko_rows_1: PackedStringArray = neko_rows.duplicate()
+	neko_rows_1[11] = "..YqWWWLWLWWWWWWWqWWWWWWq."
+	neko_rows_1[12] = "OYWqWWWWWWWWWWWWWWWWWWWWq."
+	neko_rows_1[13] = "..Y.qWWWWWWWMMMMMYMMMMqq.."
+	_cache["ship_neko_1"] = _make_tex(neko_rows_1, neko_pal)
 
 	# --- Base Enemy Silhouettes (re-paletted & specialized per biome!) ---
 	var scout_disc: PackedStringArray = PackedStringArray([
@@ -582,27 +585,48 @@ func _build_all() -> void:
 		".....CC....",
 	]))
 
-	# --- Exotic Ship Signature Projectiles (Flying Space Cats, Bio-Waves, Mind-Rings, Ocular Gaze!) ---
-	_cache["bullet_cat_0"] = _make_tex(PackedStringArray([
-		".......O...O.",
-		".OO...OWO.OWO",
-		"OYYO..OYYYYYO",
-		"..OO.OYWGYWGY",
-		"...OOYYYYYYMO",
-		"..OYYYYWWWWYO",
-		".OWW..OYY..WW",
-		"......WW.....",
-	]))
-	_cache["bullet_cat_1"] = _make_tex(PackedStringArray([
-		".......O...O.",
-		"...OO.OWO.OWO",
-		"..OYYOOYYYYYO",
-		"...OOOYWGYWGY",
-		"...OOYYYYYYMO",
-		"..OYYYYWWWWYO",
-		"...WW.OYY.WW.",
-		".....WW....WW",
-	]))
+	# --- Exotic Ship Signature Projectiles (Flying Space Cats, Bio-Waves, Abduction Rings, Ocular Gaze!) ---
+	# Flying space cats (S.S. MEOW-ZER): big leaping kittens with a bold outline, ears, eyes and a
+	# tail, drawn upright so they read as cats at full speed. Frame 1 only moves the legs and tail.
+	# Three coats from the same rows: orange tabby, snow white and blue tabby
+	# (O = fur, o = stripes, c = muzzle/paws, m = blush).
+	var cat_rows_0: PackedStringArray = PackedStringArray([
+		"........k........k..",
+		".......kOk......kOk.",
+		".......kMOkkkkkkOMk.",
+		"..kk...kOOOOOOOOOOk.",
+		".kOOk..kONNOOOONNOk.",
+		".kOk...kONNOOOONNOk.",
+		"..kOk.kkmOOOMMOOOmk.",
+		"...kOOOOOccckkcccOk.",
+		"...kOoOoOOccccccckk.",
+		"...kOoOoOkkkkkkkkcck",
+		"kcckkkkkk.......kkk.",
+		".kk.................",
+	])
+	var cat_rows_1: PackedStringArray = PackedStringArray([
+		"........k........k..",
+		".......kOk......kOk.",
+		".......kMOkkkkkkOMk.",
+		".......kOOOOOOOOOOk.",
+		".kk....kONNOOOONNOk.",
+		"kOOk...kONNOOOONNOk.",
+		".kOOk.kkmOOOMMOOOmk.",
+		"..kOOOOOOccckkcccOk.",
+		"...kOoOoOOccccccckk.",
+		"...kOoOoOkkkkkkkk...",
+		"..kcckkkkk....kcck..",
+		"...kk..........kk...",
+	])
+	var cat_coats: Dictionary = {
+		"bullet_cat": {"O": Color("#ff9624"), "o": Color("#d86a10"), "c": Color("#fff4dc"), "m": Color("#ff9ccc")},
+		"bullet_cat_snow": {"O": Color("#ffffff"), "o": Color("#b8c4e0"), "c": Color("#ffffff"), "m": Color("#ff9ccc")},
+		"bullet_cat_blue": {"O": Color("#8ca6d8"), "o": Color("#3b5284"), "c": Color("#ffffff"), "m": Color("#ff9ccc")},
+	}
+	for coat: String in cat_coats.keys():
+		var coat_pal: Dictionary = cat_coats[coat]
+		_cache[coat + "_0"] = _make_tex(cat_rows_0, coat_pal)
+		_cache[coat + "_1"] = _make_tex(cat_rows_1, coat_pal)
 
 	_cache["bullet_biowave"] = _make_tex(PackedStringArray([
 		"...ggGGG..",
@@ -960,17 +984,18 @@ func _build_all() -> void:
 		"...........",
 	]))
 
+	# The S.S. MEOW-ZER kitten's face (skill-tree node and pause-screen badge).
 	_cache["badge_cat"] = _make_tex(PackedStringArray([
-		".OO.....OO.",
-		".OWO...OWO.",
-		".OYYYYYYYO.",
-		"OYYWYYYWYYO",
-		"OYYYYMYYYYO",
-		".OYYWWWYYO.",
-		"..OOOOOOO..",
-		"...........",
-		"...........",
-	]))
+		".q.......q.",
+		"qMq.....qMq",
+		"qWMqqqqqMWq",
+		"qWWWWWWWWWq",
+		"qWNWWWWWNWq",
+		"qmNWWMWWNmq",
+		"qWWWqWqWWWq",
+		".qWWWWWWWq.",
+		"..qqqqqqq..",
+	]), {"q": Color("#4a1f45"), "m": Color("#ff9ccc")})
 
 	_cache["badge_scrap"] = _make_tex(PackedStringArray([
 		"....YYY....",

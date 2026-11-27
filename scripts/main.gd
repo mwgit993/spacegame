@@ -35,11 +35,11 @@ const RUN_UPGRADE_POOL: Array[Dictionary] = [
 	{
 		"id": "prism",
 		"cat": "BEAM",
-		"title": "RICOCHET PRISM",
+		"title": "PRISM SHARDS",
 		"icon": "upg_prism",
 		"color": Color("#ff4cd4"),
 		"max_rank": 4,
-		"desc": "Bounces off walls & enemy to enemy!",
+		"desc": "Zigzag crystal shards pierce foes",
 	},
 	{
 		"id": "tesla",
@@ -726,6 +726,8 @@ func _run_smoke_test() -> void:
 		player._fire_primary()
 	MetaSave.select_ship("neko")
 	player.reset_for_new_run()
+	if not _smoke_check_ship_shots():
+		smoke_ok = false
 	for upg_id: String in ["overclock", "prism", "wave", "tesla", "plasma", "laser", "option", "blades", "turret", "missile", "flank", "bomb", "nova", "spread", "shield", "rapid", "thruster", "repair"]:
 		player.apply_run_upgrade(upg_id)
 		player._fire_primary()
@@ -1378,6 +1380,73 @@ func _smoke_check_module_draws() -> bool:
 	holder.queue_free()
 	_smoke_clear_enemies()
 	StageData.unregister_module(example)
+	return ok
+
+
+# Ships and their shots. Every ship's sprites, shot preview and tree icon exist (texture lookups
+# fail silently), and no player shot bounces (Matt's call): each signature weapon and the prism
+# beam fly straight on, are freed just past the screen edge, and keep their heading through a hit.
+func _smoke_check_ship_shots() -> bool:
+	var ok: bool = true
+	var modes: Array[String] = ["prism"]
+	for ship_d: Dictionary in SkillTreeData.SHIPS:
+		var ship_id: String = String(ship_d["id"])
+		modes.append(String(ship_d["weapon_id"]))
+		var keys: Array[String] = [String(ship_d["sprite_0"]), String(ship_d["sprite_1"]), String(ship_d["bullet_preview"])]
+		for def: Dictionary in SkillTreeData.NODES:
+			if String(def.get("unlocks_ship", "")) == ship_id:
+				keys.append(String(def["icon"]))
+		for key: String in keys:
+			if not PixelArt._cache.has(key):
+				push_error("SMOKE: ship %s refers to missing sprite %s" % [ship_id, key])
+				ok = false
+	for coat: String in PlayerShip.CAT_SHOT_COATS:
+		for key: String in [coat + "_0", coat + "_1"]:
+			if not PixelArt._cache.has(key):
+				push_error("SMOKE: missing cat shot sprite " + key)
+				ok = false
+	# Off the right, top and bottom edges, with nothing on screen for homing shots to chase.
+	_smoke_clear_enemies()
+	var playfield: Rect2 = Rect2(0.0, 30.0, 480.0, 220.0)
+	var near_screen: Rect2 = Rect2(-20.0, -20.0, 520.0, 310.0)
+	var starts: Array[Vector2] = [Vector2(466.0, 134.0), Vector2(240.0, 40.0), Vector2(240.0, 240.0)]
+	var dirs: Array[Vector2] = [Vector2.RIGHT, Vector2(1.0, -1.0).normalized(), Vector2(1.0, 1.0).normalized()]
+	for mode: String in modes:
+		var p: Dictionary = player._get_mode_params(mode, 4)
+		for i: int in range(starts.size()):
+			var shot: GameBullet = player._spawn_mode_shot(mode, 4, starts[i], dirs[i] * float(p["spd"]), 1.0, String(p["tex"]), int(p["pierce"]), 1.0)
+			var turned: bool = false
+			for step_i: int in range(40):
+				shot._process(0.02)
+				if shot.is_queued_for_deletion():
+					break
+				if shot.velocity.dot(dirs[i]) <= 0.0:
+					turned = true
+			var pos: Vector2 = shot.global_position
+			if turned or not shot.is_queued_for_deletion() or playfield.has_point(pos) or not near_screen.has_point(pos):
+				push_error("SMOKE: %s shot from %s turned back or was not freed at the screen edge (at %s)" % [mode, str(starts[i]), str(pos)])
+				ok = false
+			shot.queue_free()
+	# An enemy hit: piercing shots fly on with the same heading, the rest are spent.
+	var target: GameEnemy = _smoke_spawn(GameEnemy.Type.CRUISER, Vector2(300.0, 134.0), 0, 0)
+	for mode: String in modes:
+		var p: Dictionary = player._get_mode_params(mode, 4)
+		var shot: GameBullet = player._spawn_mode_shot(mode, 4, target.global_position - Vector2(4.0, 0.0), Vector2(float(p["spd"]), 0.0), 0.01, String(p["tex"]), int(p["pierce"]), 1.0)
+		var pierce_before: int = shot.pierce_left
+		target.hp = target.max_hp
+		shot._on_area_entered(target)
+		if pierce_before > 0:
+			if shot.is_queued_for_deletion() or shot.pierce_left != pierce_before - 1 or shot.velocity.x <= 0.0 or absf(shot.velocity.y) > 1.0:
+				push_error("SMOKE: an enemy hit stopped or turned a piercing %s shot" % mode)
+				ok = false
+		elif not shot.is_queued_for_deletion():
+			push_error("SMOKE: a spent %s shot was not freed on its hit" % mode)
+			ok = false
+		shot.queue_free()
+	if int(player._get_mode_params("prism", 1)["pierce"]) < 2 or int(player._get_mode_params("cat", 1)["pierce"]) < 2 or int(player._get_mode_params("saucer", 1)["pierce"]) < 2:
+		push_error("SMOKE: prism / cat / saucer shots should pierce instead of bouncing")
+		ok = false
+	_smoke_clear_enemies()
 	return ok
 
 
@@ -4159,7 +4228,12 @@ func _process(delta: float) -> void:
 		if _loadout_preview_bullet.visible:
 			_loadout_preview_bullet.position = Vector2(120.0 + fposmod(lt * 22.0, 26.0), 148.0 + sin(lt * 2.5) * 3.0)
 			if String(cur_s["id"]) == "neko":
-				_loadout_preview_bullet.texture = PixelArt.tex("bullet_cat_1" if l_alt else "bullet_cat_0")
+				# The cat is wider than the other shots: a shorter slide keeps it clear of the ship
+				# and the text, and each pass shows the next coat.
+				var cat_pass: float = lt * 22.0 / 16.0
+				_loadout_preview_bullet.position.x = 124.0 + 16.0 * (cat_pass - floorf(cat_pass))
+				var coat: String = PlayerShip.CAT_SHOT_COATS[int(cat_pass) % PlayerShip.CAT_SHOT_COATS.size()]
+				_loadout_preview_bullet.texture = PixelArt.tex(coat + ("_1" if l_alt else "_0"))
 
 	elif state == State.DRAFT:
 		_update_draft_cursor()

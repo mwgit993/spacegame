@@ -107,6 +107,9 @@ var _blade_dmg_timer: float = 0.0
 var _blade_orbit_angle: float = 0.0
 var _wave_flip: bool = false
 var _volley_count: int = 0
+# S.S. MEOW-ZER cat shots cycle through these coats (sprite keys <coat>_0 / <coat>_1).
+const CAT_SHOT_COATS: Array[String] = ["bullet_cat", "bullet_cat_snow", "bullet_cat_blue"]
+var _cat_coat_idx: int = 0
 var _turret_aim_dir: Vector2 = Vector2.RIGHT
 
 var _anim_timer: float = 0.0
@@ -870,7 +873,7 @@ func _get_mode_params(mode: String, rank: int) -> Dictionary:
 		"wave":
 			return {"tex": "bullet_wave", "spd": 315.0, "pierce": 1 + rank / 2, "dmg": 1.25 + 0.30 * float(rank - 1), "cd": 0.172, "sfx": "laser"}
 		"prism":
-			return {"tex": "bullet_prism", "spd": 335.0, "pierce": 0, "dmg": 1.18 + 0.28 * float(rank - 1), "cd": 0.168, "sfx": "shoot"}
+			return {"tex": "bullet_prism", "spd": 335.0, "pierce": 1 + rank, "dmg": 1.18 + 0.28 * float(rank - 1), "cd": 0.168, "sfx": "shoot"}
 		"tesla":
 			return {"tex": "bullet_tesla", "spd": 395.0, "pierce": 0, "dmg": 1.22 + 0.28 * float(rank - 1), "cd": 0.164, "sfx": "zap"}
 		"plasma":
@@ -882,11 +885,13 @@ func _get_mode_params(mode: String, rank: int) -> Dictionary:
 		"flak":
 			return {"tex": "bullet_flak", "spd": 288.0, "pierce": 0, "dmg": 1.60 + 0.38 * float(rank - 1), "cd": 0.205, "sfx": "missile"}
 		"saucer":
-			return {"tex": "bullet_ufo_ring", "spd": 320.0, "pierce": 0, "dmg": 1.24 + 0.28 * float(rank - 1), "cd": 0.168, "sfx": "shoot"}
+			return {"tex": "bullet_ufo_ring", "spd": 320.0, "pierce": 1 + rank, "dmg": 1.24 + 0.28 * float(rank - 1), "cd": 0.168, "sfx": "shoot"}
 		"ocular":
 			return {"tex": "bullet_eyeball", "spd": 310.0, "pierce": 0, "dmg": 1.26 + 0.28 * float(rank - 1), "cd": 0.168, "sfx": "zap"}
 		"cat":
-			return {"tex": "bullet_cat_0", "spd": 318.0, "pierce": 0, "dmg": 1.35 + 0.32 * float(rank - 1), "cd": 0.172, "sfx": "shoot"}
+			# A little slower than the other blasters so the cats stay readable in flight; the
+			# damage is nudged up (was 1.35 + 0.32/rank at 318 px/s) to make up for it.
+			return {"tex": "bullet_cat_0", "spd": 272.0, "pierce": 2 + rank / 2, "dmg": 1.42 + 0.34 * float(rank - 1), "cd": 0.172, "sfx": "shoot"}
 		_:
 			return {"tex": "bullet_vulcan", "spd": 355.0, "pierce": 0, "dmg": 1.0 + 0.24 * float(rank - 1), "cd": 0.148, "sfx": "shoot"}
 
@@ -967,10 +972,18 @@ func _fire_primary() -> float:
 	return interval
 
 
-func _spawn_mode_shot(mode: String, rank: int, pos: Vector2, vel: Vector2, dmg: float, tex_key: String, pierce: int, w_sign: float) -> void:
-	var hit_r: float = 5.0 if (mode == "wave" or mode == "biowave" or mode == "plasma" or mode == "cat") else 3.2
+func _spawn_mode_shot(mode: String, rank: int, pos: Vector2, vel: Vector2, dmg: float, tex_key: String, pierce: int, w_sign: float) -> GameBullet:
+	var hit_r: float = 5.0 if (mode == "wave" or mode == "biowave" or mode == "plasma") else 3.2
+	var shot_tex: String = tex_key
+	var cat_coat: String = ""
+	if mode == "cat":
+		# The cats take turns by coat (orange tabby, snow white, blue tabby).
+		cat_coat = CAT_SHOT_COATS[_cat_coat_idx]
+		_cat_coat_idx = (_cat_coat_idx + 1) % CAT_SHOT_COATS.size()
+		shot_tex = cat_coat + "_0"
+		hit_r = 6.0
 	var is_ocular: bool = (mode == "ocular")
-	var b: GameBullet = _spawn_player_bullet(pos, vel, dmg, tex_key, pierce, is_ocular, hit_r)
+	var b: GameBullet = _spawn_player_bullet(pos, vel, dmg, shot_tex, pierce, is_ocular, hit_r)
 	if is_ocular:
 		b.homing_turn_rate = 2.8
 		b.keep_upright = true
@@ -996,9 +1009,9 @@ func _spawn_mode_shot(mode: String, rank: int, pos: Vector2, vel: Vector2, dmg: 
 				b.aoe_radius = 15.0 * aoe_scale_mult
 				b.aoe_color = Color("#3ce878")
 		"prism":
-			b.bounces_left = 1 + rank
+			b.spark_color = Color("#ff4cd4")
 		"saucer":
-			b.bounces_left = 1 + rank
+			b.spark_color = Color("#6eff8c")
 			b.wave_amp = 8.0
 			b.wave_freq = 14.0
 			b.wave_sign = w_sign
@@ -1011,13 +1024,14 @@ func _spawn_mode_shot(mode: String, rank: int, pos: Vector2, vel: Vector2, dmg: 
 			b.aoe_radius = (26.0 + float(rank) * 5.0) * aoe_scale_mult
 			b.aoe_color = Color("#ff9624")
 		"cat":
-			b.anim_tex_b = "bullet_cat_1"
+			b.anim_tex_b = cat_coat + "_1"
 			b.keep_upright = true
 			b.is_cat_shot = true
-			b.bounces_left = 2 + rank / 2
-			b.wave_amp = 5.5
-			b.wave_freq = 14.0
+			# Just a gentle paddling bob: a big wobble smeared the cat shape at full speed.
+			b.wave_amp = 2.0
+			b.wave_freq = 9.0
 			b.wave_sign = w_sign
+	return b
 
 
 func _fire_missiles() -> void:
