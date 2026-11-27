@@ -40,6 +40,8 @@ var stage_index: int = -1
 # Optional:
 #   "boss_box"       Vector2 size of the boss hit box (default Vector2(82, 146))
 #   "boss_x"         x the boss settles at (default 414)
+#   "clear_banner"   first line of the banner when the stage's boss is beaten and the hyperspace
+#                    jump starts (default "HYPERSPACE JUMP!"; the final stage marks the win here)
 func get_stage_def() -> Dictionary:
 	return {}
 

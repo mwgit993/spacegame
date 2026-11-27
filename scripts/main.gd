@@ -4092,7 +4092,8 @@ func _begin_hyperspace_jump() -> void:
 		fx_layer.spawn_popup(player.global_position + Vector2(-18.0, -16.0), "NANITE +%d HP!" % stage_heal, Color("#3ce878"))
 
 	var next_stage: Dictionary = StageData.get_stage(current_stage_idx + 1)
-	_show_banner("HYPERSPACE JUMP!\nNEXT: %s" % String(next_stage["name"]), Color("#28e8ff"), _hyper_duration)
+	var clear_head: String = String(StageData.get_stage(current_stage_idx).get("clear_banner", "HYPERSPACE JUMP!"))
+	_show_banner("%s\nNEXT: %s" % [clear_head, String(next_stage["name"])], Color("#28e8ff"), _hyper_duration)
 	GenesisMusic.play_hyperspace()
 	RetroSfx.play("powerup", -5.0, 0.02)
 
