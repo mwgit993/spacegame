@@ -1,6 +1,10 @@
 class_name GameBullet
 extends Area2D
 
+# Where a player shot may be; outside it the shot is freed. The screen is 480x270, so this is
+# its edge plus 10 px (the top edge sits under the HUD bar).
+const PLAYER_SHOT_BOUNDS: Rect2 = Rect2(-10.0, 12.0, 500.0, 268.0)
+
 var velocity: Vector2 = Vector2.ZERO
 var damage: float = 1.0
 var is_player_bullet: bool = true
@@ -13,7 +17,6 @@ var fx: FxLayer = null
 var wave_amp: float = 0.0
 var wave_freq: float = 18.0
 var wave_sign: float = 1.0
-var bounces_left: int = 0
 var chain_count: int = 0
 var aoe_radius: float = 0.0
 var aoe_color: Color = Color("#ff7828")
@@ -24,6 +27,7 @@ var anim_tex_b: String = ""
 var keep_upright: bool = false
 var is_cat_shot: bool = false
 var is_crit: bool = false
+var spark_color: Color = Color(0, 0, 0, 0)  # hit-spark colour override (alpha 0 = pick by shot type)
 
 # DRAFT CARD on-hit modifiers (set by PlayerShip when the shot is spawned)
 var homing_trail: bool = true           # Seeker Rounds turn homing on without the missile spark trail
@@ -55,6 +59,7 @@ var _hit_ids: Dictionary = {}
 var _trail_timer: float = 0.0
 var _glow_timer: float = 0.0
 var _anim_timer: float = 0.0
+var _cat_trail_alt: bool = false
 var _wave_base_pos: Vector2 = Vector2.ZERO
 var _wave_time: float = 0.0
 # Speed-up only: capsule covering the stretch flown this frame (see _update_sweep)
@@ -169,14 +174,16 @@ func _process(delta: float) -> void:
 		var alt_f: bool = (int(_anim_timer * 12.0) % 2) == 1
 		_sprite.texture = PixelArt.tex(anim_tex_b if alt_f else anim_tex_a)
 		if is_cat_shot and fx != null:
+			# A sparkle trail off the cat's tail, so a flying cat reads as a streak in motion.
 			_trail_timer -= delta
 			if _trail_timer <= 0.0:
-				_trail_timer = 0.055
-				fx.spawn_hit_sparks(global_position - velocity.normalized() * 6.0, Color("#ff64b8"), 1)
+				_trail_timer = 0.045
+				_cat_trail_alt = not _cat_trail_alt
+				fx.spawn_hit_sparks(global_position - velocity.normalized() * 11.0, Color("#ff64b8") if _cat_trail_alt else Color.WHITE, 1)
 
 	if is_homing and is_player_bullet:
-		# Skip enemies this shot already hit (it can't damage them again), or piercing/bouncing
-		# homing shots would orbit them forever.
+		# Skip enemies this shot already hit (it can't damage them again), or piercing homing
+		# shots would orbit them forever.
 		var target: Node2D = _find_nearest_enemy(null, true)
 		if target != null:
 			var desired: Vector2 = (target.global_position - global_position).normalized()
@@ -222,36 +229,6 @@ func _process(delta: float) -> void:
 		if is_player_bullet and keep_upright:
 			_update_visual_orientation()
 
-	# BALL x PIT-style Ricochet wall/floor/ceiling bouncing (Prism, Saucer Rings & Flying Cats!)
-	if is_player_bullet and bounces_left > 0:
-		var bounced_wall: bool = false
-		if global_position.y <= 27.0 and velocity.y < 0.0:
-			global_position.y = 27.0
-			velocity.y = absf(velocity.y)
-			bounced_wall = true
-		elif global_position.y >= 254.0 and velocity.y > 0.0:
-			global_position.y = 254.0
-			velocity.y = -absf(velocity.y)
-			bounced_wall = true
-		if global_position.x >= 474.0 and velocity.x > 0.0:
-			global_position.x = 474.0
-			velocity.x = -absf(velocity.x)
-			if absf(velocity.y) < 45.0:
-				velocity.y = -110.0 if randf() < 0.5 else 110.0
-			bounced_wall = true
-		elif global_position.x <= 8.0 and velocity.x < 0.0:
-			global_position.x = 8.0
-			velocity.x = absf(velocity.x)
-			bounced_wall = true
-		if bounced_wall:
-			bounces_left -= 1
-			_wave_base_pos = global_position
-			_hit_ids.clear()
-			_update_visual_orientation()
-			if fx != null:
-				fx.spawn_hit_sparks(global_position, Color("#ff64b8") if is_cat_shot else Color("#ff4cd4"), 3)
-			RetroSfx.play("bounce", -15.0, 0.08)
-
 	# Gravity Bomb floor detonation!
 	if is_player_bullet and explode_on_floor and global_position.y >= 254.0:
 		_trigger_aoe_detonation(null)
@@ -266,7 +243,12 @@ func _process(delta: float) -> void:
 
 	_update_sweep(prev_pos)
 
-	if global_position.x < -28.0 or global_position.x > 512.0 or global_position.y < 10.0 or global_position.y > 282.0:
+	# Player shots never bounce: they fly straight on and are freed as soon as they are past the
+	# screen edge (by about half a sprite). Enemy shots keep a wider margin.
+	if is_player_bullet:
+		if not PLAYER_SHOT_BOUNDS.has_point(global_position):
+			queue_free()
+	elif global_position.x < -28.0 or global_position.x > 512.0 or global_position.y < 10.0 or global_position.y > 282.0:
 		queue_free()
 
 
@@ -336,28 +318,19 @@ func _on_area_entered(area: Area2D) -> void:
 
 			if fx != null:
 				var spark_col: Color = Color("#ffe854")
-				if is_cat_shot:
+				if spark_color.a > 0.0:
+					spark_col = spark_color
+				elif is_cat_shot:
 					spark_col = Color("#ff64b8")
-				elif bounces_left > 0:
-					spark_col = Color("#ff4cd4")
 				elif pierce_left > 0:
 					spark_col = Color("#28e8ff")
 				fx.spawn_hit_sparks(global_position, spark_col, 6 if is_crit else 4)
 
-			if bounces_left > 0:
-				bounces_left -= 1
-				var spd: float = maxf(255.0, velocity.length())
-				var next_target: Node2D = _find_nearest_enemy(area)
-				if next_target != null and global_position.distance_to(next_target.global_position) < 220.0:
-					velocity = (next_target.global_position - global_position).normalized() * spd
-				else:
-					var bounce_y: float = -165.0 if (global_position.y > 134.0) else 165.0
-					velocity = Vector2(-absf(velocity.x) * 0.72, bounce_y).normalized() * spd
-				_wave_base_pos = global_position
-				_update_visual_orientation()
-				RetroSfx.play("meow" if is_cat_shot else "bounce", -15.5 if is_cat_shot else -14.0, 0.09)
-			elif pierce_left > 0:
+			# A hit never turns a shot around: it punches through (pierce) or is spent.
+			if pierce_left > 0:
 				pierce_left -= 1
+				if is_cat_shot:
+					RetroSfx.play("meow", -15.5, 0.09)
 			else:
 				if split_count > 0:
 					_spawn_split_fragments()
