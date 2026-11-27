@@ -18,15 +18,15 @@ extends RefCounted
 
 const MODULES: Array[String] = [
 	# --- stage 9
-	"",
+	"res://scripts/stages/09_mines/stage.gd",
 	# --- stage 10
-	"",
+	"res://scripts/stages/10_corona/stage.gd",
 	# --- stage 11
-	"",
+	"res://scripts/stages/11_desert/stage.gd",
 	# --- stage 12
-	"",
+	"res://scripts/stages/12_storm/stage.gd",
 	# --- stage 13
-	"",
+	"res://scripts/stages/13_crystal/stage.gd",
 	# --- stage 14
 	"",
 	# --- stage 15
