@@ -570,7 +570,6 @@ func _process(delta: float) -> void:
 	var spd: float = move_speed * (0.52 if _focus_held else 1.0)
 	if frost_timer > 0.0:
 		spd *= FROST_SPEED_MULT
-	var prev_pos: Vector2 = global_position
 	global_position += move_vec * spd * delta
 	global_position.x = clampf(global_position.x, MIN_X, MAX_X)
 	global_position.y = clampf(global_position.y, MIN_Y, MAX_Y)
@@ -580,7 +579,7 @@ func _process(delta: float) -> void:
 		tilt_y = clampf((_touch_current.y - _touch_origin.y) * 0.05, -1.0, 1.0)
 	rotation = lerpf(rotation, tilt_y * 0.09, 14.0 * delta)
 
-	_record_trail_and_options(prev_pos, delta)
+	_record_trail_and_options(delta)
 
 	# Primary Weapon & Addons!
 	_fire_cooldown = maxf(0.0, _fire_cooldown - delta)
@@ -853,15 +852,17 @@ func _update_orbiting_blades(delta: float) -> void:
 						break
 
 
-func _record_trail_and_options(prev_pos: Vector2, delta: float) -> void:
+# The trail is a breadcrumb every TRAIL_STEP_DIST px of travel, so options trail by distance
+# flown whatever the frame rate. Measure from the last breadcrumb, never drag it along: at
+# 120 Hz (or in focus mode) one frame moves the ship less than TRAIL_STEP_DIST, and dragging
+# the newest point every frame meant no new point was ever added, so the options froze.
+func _record_trail_and_options(delta: float) -> void:
 	if _trail.is_empty():
 		return
 	if global_position.distance_to(_trail[0]) >= TRAIL_STEP_DIST:
 		_trail.push_front(global_position)
 		if _trail.size() > TRAIL_MAX_POINTS:
 			_trail.pop_back()
-	elif prev_pos != global_position:
-		_trail[0] = global_position
 
 	for i: int in range(option_count):
 		var opt: Sprite2D = _option_sprites[i]
