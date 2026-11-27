@@ -231,7 +231,7 @@ func get_crit_chance() -> float:
 
 
 func get_aoe_scale_mult() -> float:
-	return 1.0
+	return 1.25 if selected_ship == "hanabi" else 1.0
 
 
 func get_projectile_size_mult() -> float:
@@ -254,7 +254,8 @@ func get_xp_mult() -> float:
 
 
 func get_boss_bounty_mult() -> float:
-	return 1.0 + 0.25 * float(get_level("bounty_hunter"))
+	var hanabi_bonus: float = 0.25 if selected_ship == "hanabi" else 0.0
+	return 1.0 + hanabi_bonus + 0.25 * float(get_level("bounty_hunter"))
 
 
 func get_stage_heal_amount() -> int:
@@ -263,10 +264,17 @@ func get_stage_heal_amount() -> int:
 
 
 func get_heal_drop_chance() -> float:
-	return 0.10 + 0.05 * float(get_level("regen_bay"))
+	var bloom_bonus: float = 0.10 if selected_ship == "bloom" else 0.0
+	return 0.10 + bloom_bonus + 0.05 * float(get_level("regen_bay"))
 
 
 func get_starting_shields() -> int:
+	var lancer_bonus: int = 1 if selected_ship == "lancer" else 0
+	return mini(3, get_tree_shields() + lancer_bonus)
+
+
+# Shield charges bought in the tree alone (the loadout's SKILL TREE line).
+func get_tree_shields() -> int:
 	return mini(3, get_level("aegis_core") + get_level("aegis_2"))
 
 
@@ -275,6 +283,11 @@ func has_starter_shield() -> bool:
 
 
 func get_starting_rerolls() -> int:
+	var gemini_bonus: int = 2 if selected_ship == "gemini" else 0
+	return get_tree_rerolls() + gemini_bonus
+
+
+func get_tree_rerolls() -> int:
 	return get_level("draft_reroll")
 
 
@@ -282,11 +295,18 @@ func has_lazarus_revive() -> bool:
 	return get_level("phoenix_cell") > 0
 
 
-# Built-in addons that come with a ship's hull (not from the tree).
+# Built-in addons and DRAFT CARD perk ranks that come with a ship's hull (not from the tree).
+# Keys are main.RUN_UPGRADE_POOL ids, so the draft rank caps count them.
 func get_starter_addons() -> Dictionary:
 	return {
 		"blades": 1 if selected_ship == "saucer" else 0,
 		"flank": 1 if selected_ship == "dread" else 0,
+		"turret": 1 if selected_ship == "hog" else 0,
+		"missile": 1 if selected_ship == "comet" else 0,
+		"chrono": 1 if selected_ship == "orca" else 0,
+		"graze": 1 if selected_ship == "horizon" else 0,
+		"leech": 1 if selected_ship == "frog" else 0,
+		"last_stand": 1 if selected_ship == "ronin" else 0,
 	}
 
 

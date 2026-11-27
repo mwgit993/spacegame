@@ -11,12 +11,12 @@
 - **Core Roguelite Loop:**
   - **Automatic Scrap + Magnetized XP Gems (*BALL x PIT* Style):** Blowing up enemies automatically banks **Scrap** to your counter (zero coin clutter!) while bursting into tiered cyan/violet/gold **XP Gems** and occasional **Hull Heals**.
   - **Mid-Combat Level-Up Drafts:** Waves flow seamlessly without end-of-wave interruptions. Whenever your full-width glowing **XP Bar** fills up, combat briefly freezes for a **1-of-3 Powerup Draft** (`[BEAM]`, `[ADDON]`, or `[CORE]`, with optional **Rerolls**).
-  - **36-Node *Rogue Legacy* Skill Tree & 7 Unlockable Ships:** Between runs, spend Scrap in the pannable **Starforge Skill Tree** on starting hull & shields, keystones (like *Lazarus Supernova Revive*), economy perks, **18 new DRAFT CARD upgrades** that then show up in level-up drafts (Seeker Rounds, Chain Reaction, Orbital Strike, Cryo/Napalm Rounds and more), and **6 secret Starships** selectable in the **Fleet Ship Loadout Bay**! The tree no longer hands out combat bonuses at the start of a run.
+  - **46-Node *Rogue Legacy* Skill Tree & 17 Ships:** Between runs, spend Scrap in the pannable **Starforge Skill Tree** on starting hull & shields, keystones (like *Lazarus Supernova Revive*), economy perks, **18 new DRAFT CARD upgrades** that then show up in level-up drafts (Seeker Rounds, Chain Reaction, Orbital Strike, Cryo/Napalm Rounds and more), and **16 secret Starships** selectable in the scrolling **Fleet Ship Loadout Bay**! The tree no longer hands out combat bonuses at the start of a run.
 
 ---
 
 ## 2. Playable Ships, Beams & Ship Addons
-### 7 Playable Starships (`SkillTreeData.SHIPS`)
+### 17 Playable Starships (`SkillTreeData.SHIPS`)
 1. **Star Viper Mk-I** *(Starter)* — Twin Pulse Vulcan; modular nose directly adopts any drafted Tech Beam Core.
 2. **Scarab Bio-Cruiser** *(North Wing)* — Living xeno-beetle firing weaving, piercing **Corrosive Bio-Waves** (`+2 Hull` & post-boss nanite regen).
 3. **Chrono Phantom** *(East Wing)* — High-speed stealth needle-wing firing **Hyper-Phase Railgun** slugs (`+20% Crit`, skewers 3 targets).
@@ -24,7 +24,18 @@
 5. **Cosmic Saucer X-99** *(West Wing)* — Spinning alien UFO firing weaving, piercing **Abduction Rings** + starts with **Orbital Sawblades**.
 6. **Ocularis Void-Spawn** *(West Wing)* — Floating cosmic eyeball w/ writhing tentacles firing homing **Eldritch Gaze Eyeballs** that chain void lightning (`+18% XP`).
 7. **S.S. Meow-zer** *(West Wing)* — Chibi white kitten ship (big eyes, blush, collar bell, jet-flame tail) with **Yarn-Ball Option Orbs** that shoots big leaping, meowing **Flying Space Cats** (orange, white and blue coats) that claw through lines of foes!
+8. **Leapfrog** *(West, past Meow-zer)* — Cute frog whose **Tongue Lash** snaps at the nearest foe in reach (built-in Vampire Salvage).
+9. **Warhog** *(North, past Scarab)* — Armoured tank-hog with a point-blank **Scatter Blaster** shotgun (`+2 Hull`, built-in Auto-Turret).
+10. **Gemini Twins** *(West, past Saucer)* — Two **Orbit Pods** circle the ship and fire as they swing (`+2 Rerolls`).
+11. **Hanabi Festival** *(East, past Titan)* — **Starburst Rockets** burst into fans of star sparks (`+25% AoE size & Boss Bounty`).
+12. **Ronin-7** *(North, past Last Stand)* — **Photon Katana** slashes cleave foes and cut enemy shots (built-in Last Stand).
+13. **Starbloom** *(West, past Ocularis)* — Plants up to 4 **Seed Sentries** that pelt foes with petals (`+1 Hull`, double heal drops).
+14. **Comet Knight** *(East, past Phantom)* — **Comet Charge**: charge and release big piercing comets (built-in Missile Pod).
+15. **Cosmic Orca** *(East, past Execute)* — **Sonar Ripples** widen as they roll through every foe (`+1 Hull`, built-in Chrono Field).
+16. **Helios Lancer** *(North, past Lazarus)* — **Solar Lance** beam burns the first foe in line, stopping at the screen edge (`+1 Shield`).
+17. **Event Horizon** *(North, past Graze Dynamo)* — Slow **Singularity Orbs** grind foes and swallow enemy shots (built-in Graze Dynamo).
 *(Note: Exotic ships NEVER lose their signature weapon when drafting Tech Beams mid-run; drafted Tech Beams mount as a co-axial bonus barrel!)*
+*(The Fleet Loadout roster scrolls 7 ships at a time, with page arrows when more are off screen.)*
 
 ### 5 Tech Beam Cores & 7 Visible Hull Addons
 - **Beams (`[BEAM]`):** *Pierce Laser*, *Sonic Wave Beam* (double-helix), *Prism Shards* (zigzag piercing crystals), *Tesla Arc Beam* (chain lightning), *Solar Plasma* (explosive AoE fireballs).
@@ -48,7 +59,7 @@
 | File | Role |
 | :--- | :--- |
 | `project.godot` | Godot 4.7 config, `480×270` integer scaling, FF6 global font, 5 autoloads |
-| `scripts/skill_tree_data.gd` | 7 Playable Ship definitions + 36-node *Rogue Legacy* Starforge Skill Tree |
+| `scripts/skill_tree_data.gd` | 17 Playable Ship definitions + 46-node *Rogue Legacy* Starforge Skill Tree (the 10 newer ships draw from `scripts/ship_art.gd`) |
 | `scripts/main.gd` | State machine (`TITLE`, `STATS`, `OPTIONS`, `HANGAR`, `LOADOUT`, `INTRO_WARP`, `PLAYING`, `PAUSED`, `DRAFT`, `HYPERSPACE`, `GAME_OVER_DELAY`), XP leveling, Skill Tree & Loadout UIs, split Pause menu, `--smoke-test` |
 | `scripts/player.gd` | Multi-controller + Keyboard + Touch flight, 7 ship blasters, 5 Tech Beams, 7 visible Hull Addons, crits, Lazarus Revive |
 | `scripts/enemy.gd` | 4 generic enemy types (re-skinned per stage) + 20 stage-signature enemies (`THEMED`: asteroids, turrets, blimps, spore pods, ice crystals, golems, jellyfish, viruses...) + 8 animated 3-phase Stage Bosses (Mega Man intro, 28-pip HP fill, adaptive plating, death meltdown) |

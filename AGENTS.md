@@ -8,7 +8,7 @@ See `PROJECT_CONTEXT.md`, `CLAUDE.md`, and `README.md` for full architecture det
   - Top HUD: `y = 0..19` | Full-Width XP Bar: `y = 19..23` | Flight Playfield: `y = 30..249` | Stage Floor Deck: `y = 258..270`.
   - Split-Screen Pause Menu (`Esc` / `Start`): Left column has compact Pause Options + Ship card; Right panel inspects live Ship Stats & Installed Weapons/Upgrades.
 - **Font:** Custom SNES *Final Fantasy VI*-inspired bitmap font (`res://assets/fonts/ff6_font.fnt`), native `font_size = 10`.
-- **Autoloads & Core Data:** `MetaSave`, `StageData`, `PixelArt` (+ `BossPainter`, `EnemyArt`), `RetroSfx`, `GenesisMusic`, plus `SkillTreeData` (`scripts/skill_tree_data.gd` — 36-node *Rogue Legacy* Skill Tree & 7 Playable Ships).
+- **Autoloads & Core Data:** `MetaSave`, `StageData`, `PixelArt` (+ `BossPainter`, `EnemyArt`, `ShipArt`), `RetroSfx`, `GenesisMusic`, plus `SkillTreeData` (`scripts/skill_tree_data.gd` — 46-node *Rogue Legacy* Skill Tree & 17 Playable Ships).
 - **Automated Smoke Test:**
   `godot --headless --path . --quit-after 30 -- --smoke-test` (must print `STAR_VIPER_SMOKE_TEST_PASSED` with zero script errors).
 - **Standalone Build:** Run `build_releases.bat` (auto-detects Home/Work Godot paths and packages `builds/windows/StarViper.exe` + `StarViper.pck`).

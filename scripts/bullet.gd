@@ -50,6 +50,28 @@ var floor_burst: int = 0                # bombs: burst into this many shots on r
 var burst_tex: String = "bullet_enemy_orange"
 var burst_speed: float = 88.0
 var frost_slow: float = 0.0             # frost puffs: slow the ship for this long instead of hurting it
+# Signature-weapon behaviours of the hangar-expansion ships (set by PlayerShip._spawn_mode_shot)
+var fade_out: bool = false              # player shot with life_left: fade over its last fade_time s
+var fade_time: float = 0.25
+var trail_color: Color = Color(0, 0, 0, 0)  # alpha > 0: leave a spark trail of this colour
+var grow_rate: float = 0.0              # sonar ripples: body grows by this much per second...
+var grow_max: float = 1.0               # ...up to this many times its size
+var star_burst_time: float = 0.0        # starburst rockets: burst after this many seconds (or on a hit)...
+var star_burst_count: int = 0           # ...into this many sparks...
+var star_burst_spread: float = 0.5      # ...fanned over +/- this angle around the heading...
+var star_burst_dmg: float = 0.0         # ...each dealing this much
+var aura_radius: float = 0.0            # singularity orbs: damage enemies within this radius...
+var aura_dmg: float = 0.0               # ...this much per tick...
+var aura_tick: float = 0.15             # ...every this many seconds, slowing down while one is caught
+var eats_shots: bool = false            # singularity orbs: swallow enemy shots that come close
+var sentry_owner: PlayerShip = null     # seed sentries: hover and make the ship fire petals from here
+var sentry_interval: float = 0.0
+var sentry_timer: float = 0.0
+var sentry_dmg: float = 0.0
+
+const ORB_GRIP_SPEED: float = 38.0
+const ORB_EAT_RADIUS: float = 13.0
+const STAR_COLORS: Array[Color] = [Color("#ffe854"), Color("#ff4ca8"), Color("#28e8ff"), Color("#3ce878"), Color("#ff9624")]
 
 var _base_speed: float = 0.0
 var _glow_sprite: Sprite2D = null
@@ -60,6 +82,12 @@ var _trail_timer: float = 0.0
 var _glow_timer: float = 0.0
 var _anim_timer: float = 0.0
 var _cat_trail_alt: bool = false
+var _grow: float = 1.0
+var _body_scale: float = 1.0
+var _body_radius: float = 3.0
+var _star_t: float = 0.0
+var _aura_t: float = 0.0
+var _aura_grip: bool = false
 var _wave_base_pos: Vector2 = Vector2.ZERO
 var _wave_time: float = 0.0
 # Speed-up only: capsule covering the stretch flown this frame (see _update_sweep)
@@ -140,6 +168,34 @@ func apply_size_and_crit(size_mult: float, crit: bool) -> void:
 		_sprite.modulate = Color(1.0, 0.96, 0.65)
 	if _shape_circle != null and size_mult > 1.0:
 		_shape_circle.radius *= size_mult
+	_body_scale = total_scale
+	if _shape_circle != null:
+		_body_radius = _shape_circle.radius
+
+
+# Scales the sprite and hit circle together (charged comets, growing sonar ripples).
+func scale_body(mult: float) -> void:
+	if _sprite != null:
+		_sprite.scale = Vector2(_body_scale, _body_scale) * mult
+	if _shape_circle != null:
+		_shape_circle.radius = _body_radius * mult
+
+
+# Global box of an enemy's first hit shape (circle or rectangle), or a 16 px square if it has
+# none. Used by the beam, katana, tongue and orb weapons, which hit without a bullet collision.
+static func enemy_hit_box(en: Node2D) -> Rect2:
+	for c: Node in en.get_children():
+		if c is CollisionShape2D:
+			var cs: CollisionShape2D = c as CollisionShape2D
+			if cs.disabled or cs.shape == null:
+				continue
+			if cs.shape is CircleShape2D:
+				var r: float = (cs.shape as CircleShape2D).radius
+				return Rect2(cs.global_position - Vector2(r, r), Vector2(r, r) * 2.0)
+			if cs.shape is RectangleShape2D:
+				var sz: Vector2 = (cs.shape as RectangleShape2D).size
+				return Rect2(cs.global_position - sz * 0.5, sz)
+	return Rect2(en.global_position - Vector2(8.0, 8.0), Vector2(16.0, 16.0))
 
 
 func _update_visual_orientation() -> void:
@@ -214,6 +270,8 @@ func _process(delta: float) -> void:
 		# Frost puffs and spores fade out over their last half second.
 		if life_left > 0.0 and life_left < 0.5:
 			modulate.a = life_left / 0.5
+	elif not _update_signature_behaviours(delta):
+		return
 
 	if is_player_bullet and wave_amp > 0.0:
 		_wave_time += delta
@@ -250,6 +308,91 @@ func _process(delta: float) -> void:
 			queue_free()
 	elif global_position.x < -28.0 or global_position.x > 512.0 or global_position.y < 10.0 or global_position.y > 282.0:
 		queue_free()
+
+
+# Per-frame behaviours of the hangar-expansion signature shots (fade, trail, growth, starburst,
+# orb aura, seed sentry). Returns false if the shot was used up this frame.
+func _update_signature_behaviours(delta: float) -> bool:
+	if fade_out and life_left > 0.0 and life_left < fade_time:
+		modulate.a = life_left / fade_time
+	if trail_color.a > 0.0 and fx != null:
+		_trail_timer -= delta
+		if _trail_timer <= 0.0:
+			_trail_timer = 0.03
+			fx.spawn_hit_sparks(global_position - velocity.normalized() * 6.0, trail_color, 1)
+	if grow_rate > 0.0 and _grow < grow_max:
+		_grow = minf(grow_max, _grow + grow_rate * delta)
+		scale_body(_grow)
+	if star_burst_time > 0.0:
+		_star_t += delta
+		if _star_t >= star_burst_time:
+			_spawn_star_burst()
+			queue_free()
+			return false
+	if sentry_interval > 0.0 and sentry_owner != null and is_instance_valid(sentry_owner):
+		sentry_timer -= delta
+		if sentry_timer <= 0.0:
+			sentry_timer = sentry_interval
+			sentry_owner.fire_sentry(self)
+	if aura_radius > 0.0:
+		_update_orb_aura(delta)
+	return true
+
+
+# Singularity orb: every tick it hurts every enemy inside its radius, and while one is caught it
+# slows to a crawl so it keeps grinding. It swallows enemy shots that come close, every frame.
+func _update_orb_aura(delta: float) -> void:
+	_aura_t -= delta
+	if _aura_t <= 0.0:
+		_aura_t = aura_tick
+		_aura_grip = false
+		for node: Node in get_tree().get_nodes_in_group("enemies"):
+			if not (node is Node2D) or not is_instance_valid(node) or not node.has_method("take_damage"):
+				continue
+			var box: Rect2 = GameBullet.enemy_hit_box(node as Node2D)
+			var near: Vector2 = Vector2(clampf(global_position.x, box.position.x, box.end.x), clampf(global_position.y, box.position.y, box.end.y))
+			if near.distance_squared_to(global_position) <= aura_radius * aura_radius:
+				node.call("take_damage", aura_dmg)
+				_aura_grip = true
+				if fx != null:
+					fx.spawn_hit_sparks(near, Color("#b86bff"), 1)
+		var want: float = ORB_GRIP_SPEED if _aura_grip else _base_speed
+		if velocity.length_squared() > 0.01:
+			velocity = velocity.normalized() * want
+	if eats_shots:
+		var parent_node: Node = get_parent()
+		if parent_node == null:
+			return
+		for child: Node in parent_node.get_children():
+			if child is GameBullet:
+				var gb: GameBullet = child as GameBullet
+				if not gb.is_player_bullet and not gb.is_queued_for_deletion() and gb.frost_slow <= 0.0 \
+						and gb.global_position.distance_squared_to(global_position) <= ORB_EAT_RADIUS * ORB_EAT_RADIUS:
+					if fx != null:
+						fx.spawn_hit_sparks(gb.global_position, Color("#d44cff"), 3)
+					gb.queue_free()
+
+
+# Starburst rocket: a fan of festive sparks, flying on along the rocket's heading. Added with
+# call_deferred because a hit runs inside a physics callback.
+func _spawn_star_burst() -> void:
+	var parent_node: Node = get_parent()
+	if parent_node == null or star_burst_count <= 0:
+		return
+	if fx != null:
+		fx.spawn_ring_blast(global_position, 14.0, Color("#ffe854"))
+	var base_dir: Vector2 = velocity.normalized() if velocity.length_squared() > 1.0 else Vector2.RIGHT
+	for i: int in range(star_burst_count):
+		var t: float = 0.5 if star_burst_count == 1 else float(i) / float(star_burst_count - 1)
+		var dir: Vector2 = base_dir.rotated(lerpf(-star_burst_spread, star_burst_spread, t))
+		var spark: GameBullet = GameBullet.new()
+		spark.setup(global_position + dir * 4.0, dir * 250.0, star_burst_dmg, true, "bullet_spark", 0, false, 3.5, fx)
+		spark._hit_ids = _hit_ids.duplicate()
+		spark.life_left = 0.6
+		spark.fade_out = true
+		spark._sprite.modulate = STAR_COLORS[i % STAR_COLORS.size()]
+		parent_node.call_deferred("add_child", spark)
+	star_burst_count = 0
 
 
 # Speed-up runs the clock at 2x, so a shot moves twice as far per frame and can jump clean over
@@ -304,6 +447,8 @@ func _find_nearest_enemy(exclude_node: Node, skip_already_hit: bool = false) -> 
 
 func _on_area_entered(area: Area2D) -> void:
 	if is_player_bullet:
+		if sentry_interval > 0.0:
+			return # seed sentries only shoot; they never hit anything themselves
 		if area.has_method("take_damage"):
 			var id: int = area.get_instance_id()
 			if _hit_ids.has(id):
@@ -334,6 +479,8 @@ func _on_area_entered(area: Area2D) -> void:
 			else:
 				if split_count > 0:
 					_spawn_split_fragments()
+				if star_burst_count > 0:
+					_spawn_star_burst()
 				queue_free()
 	else:
 		if frost_slow > 0.0:
