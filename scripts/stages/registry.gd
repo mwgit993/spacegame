@@ -48,15 +48,15 @@ const MODULES: Array[String] = [
 	# --- stage 23
 	"res://scripts/stages/23_mirror/stage.gd",
 	# --- stage 24
-	"",
+	"res://scripts/stages/24_temple/stage.gd",
 	# --- stage 25
-	"",
+	"res://scripts/stages/25_orbital/stage.gd",
 	# --- stage 26
-	"",
+	"res://scripts/stages/26_nursery/stage.gd",
 	# --- stage 27
-	"",
+	"res://scripts/stages/27_rift/stage.gd",
 	# --- stage 28
-	"",
+	"res://scripts/stages/28_mothership/stage.gd",
 	# --- add more slots below in the same pattern (marker line, then a path line)
 ]
 
