@@ -479,7 +479,7 @@ var run_bosses: int = 0
 var player_level: int = 1
 var run_xp: int = 0
 var run_xp_dropped: int = 0  # XP put on the field this run (kills, squads, boss phases)
-var xp_to_next: int = 18
+var xp_to_next: int = 28
 var rerolls_left: int = 0
 var _pending_level_ups: int = 0
 var _draft_title_lbl: PromptBar
@@ -4428,8 +4428,13 @@ func _any_boss_dying() -> bool:
 	return false
 
 
+# XP needed to go from `lvl` to `lvl + 1`. The first few levels need extra (x1.6 for level 2,
+# tapering to x1.0 by level 8) so the opening draft cards don't come every few seconds;
+# from level 8 on it's the original curve.
 func _calc_xp_for_level(lvl: int) -> int:
-	return int(18.0 + float(lvl - 1) * 12.0 + pow(float(lvl - 1), 1.42) * 4.5)
+	var base: float = 18.0 + float(lvl - 1) * 12.0 + pow(float(lvl - 1), 1.42) * 4.5
+	var early: float = 1.0 + 0.6 * maxf(0.0, float(8 - lvl) / 7.0)
+	return int(base * early)
 
 
 func _gain_xp(raw_amount: int) -> void:
