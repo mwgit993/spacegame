@@ -755,6 +755,8 @@ func _run_smoke_test() -> void:
 		smoke_ok = false
 	if not _smoke_check_ship_runs():
 		smoke_ok = false
+	if not _smoke_check_option_trail():
+		smoke_ok = false
 	MetaSave.select_ship("neko")
 	player.reset_for_new_run()
 	for upg_id: String in ["overclock", "prism", "wave", "tesla", "plasma", "laser", "option", "blades", "turret", "missile", "flank", "bomb", "nova", "spread", "shield", "rapid", "thruster", "repair"]:
@@ -1415,6 +1417,32 @@ func _smoke_check_module_draws() -> bool:
 # Ships and their shots. Every ship's sprites, shot preview and tree icon exist (texture lookups
 # fail silently), and no player shot bounces (Matt's call): each signature weapon and the prism
 # beam fly straight on, are freed just past the screen edge, and keep their heading through a hit.
+# Options trail the ship by distance flown, whatever the frame rate. At 120 Hz one frame moves
+# the ship under PlayerShip.TRAIL_STEP_DIST (more so in focus mode), and the options used to
+# freeze there, following only at 2x speed. Fly 0.7 px per 1/120 s frame and they must keep up.
+func _smoke_check_option_trail() -> bool:
+	var ok: bool = true
+	MetaSave.select_ship("neko")
+	player.reset_for_new_run()
+	var start: Vector2 = Vector2(60.0, 140.0)
+	player.global_position = start
+	player._trail.clear()
+	for i: int in range(PlayerShip.TRAIL_MAX_POINTS):
+		player._trail.append(start)
+	player.apply_run_upgrade("option")
+	var opt: Sprite2D = player._option_sprites[0]
+	opt.global_position = start
+	for f: int in range(240):
+		player.global_position += Vector2(0.7, 0.0)
+		player._record_trail_and_options(1.0 / 120.0)
+	var lag: float = player.global_position.x - opt.global_position.x
+	if lag < 10.0 or lag > 45.0 or absf(opt.global_position.y - start.y) > 1.0:
+		push_error("SMOKE: option drone did not follow the ship at 120 fps (ship x %.1f, option x %.1f)" % [player.global_position.x, opt.global_position.x])
+		ok = false
+	player.reset_for_new_run()
+	return ok
+
+
 func _smoke_check_ship_shots() -> bool:
 	var ok: bool = true
 	var modes: Array[String] = ["prism"]
@@ -2000,6 +2028,12 @@ func _smoke_check_speed_up() -> bool:
 func _smoke_check_soundtrack() -> bool:
 	var ok: bool = true
 	var saved_picks: Dictionary = MetaSave.music_picks.duplicate()
+	var slot_keys: Array[String] = GenesisMusic.get_slot_keys()
+	for slot: Variant in GenesisMusic.DEFAULT_PICKS:
+		var pick: int = int(GenesisMusic.DEFAULT_PICKS[slot])
+		if not slot_keys.has(String(slot)) or pick < 0 or pick > GenesisMusic.candidate_count(String(slot)):
+			push_error("SMOKE: default soundtrack pick %s #%d does not exist" % [String(slot), pick])
+			ok = false
 	for slot: String in GenesisMusic.get_slot_keys():
 		var count: int = GenesisMusic.candidate_count(slot)
 		# The built-in slots ship 5 alternatives each; a stage module's are optional.

@@ -564,9 +564,20 @@ func set_picks(new_picks: Dictionary) -> void:
 	_cand_cache.clear()
 
 
-# Shipped default per slot for players who haven't picked (0 = original). Once Matthew has
-# chosen, put his picks here, e.g. {"stage_1": 2, "boss": 4}.
-const DEFAULT_PICKS: Dictionary = {}
+# Shipped default per slot for players who haven't picked (0 = original, n = alternative #n
+# as numbered in the picker). These are Matthew's picks; a slot left out plays its original.
+const DEFAULT_PICKS: Dictionary = {
+	"title": 2,   # HEROES ASSEMBLE
+	"stage_1": 3, # ORBITAL DRIVE
+	"stage_2": 2, # ENGINE ROOM
+	"stage_3": 5, # JETSTREAM
+	"stage_4": 3, # VINE RUNNER
+	"stage_5": 3, # BLIZZARD
+	"stage_6": 3, # ERUPTION
+	"stage_7": 4, # DEEP CURRENT
+	"stage_8": 2, # GLITCH PROTOCOL
+	"boss": 1,    # NEON MEDUSA II
+}
 
 
 func get_pick(slot: String) -> int:
