@@ -327,8 +327,12 @@ func get_difficulty(stage_idx: int) -> Dictionary:
 	if loop > 0:
 		var last: Dictionary = difficulty[difficulty.size() - 1]
 		row["hp"] = float(row["hp"]) * pow(loop_hp_step(), float(loop))
-		row["shot_speed"] = minf(1.40, maxf(float(row["shot_speed"]), float(last["shot_speed"])) + 0.04 * float(loop))
-		row["fire_rate"] = minf(1.70, maxf(float(row["fire_rate"]), float(last["fire_rate"])) + 0.08 * float(loop))
+		# Caps keep looped play sane, but never below the last stage's own values (with 28 stages
+		# the last rows already pass the old fixed 1.40 / 1.70 caps).
+		var shot_cap: float = maxf(1.40, float(last["shot_speed"]) + 0.12)
+		var fire_cap: float = maxf(1.70, float(last["fire_rate"]) + 0.24)
+		row["shot_speed"] = minf(shot_cap, maxf(float(row["shot_speed"]), float(last["shot_speed"])) + 0.04 * float(loop))
+		row["fire_rate"] = minf(fire_cap, maxf(float(row["fire_rate"]), float(last["fire_rate"])) + 0.08 * float(loop))
 		row["pace"] = minf(float(row["pace"]), float(last["pace"]))
 		row["groups"] = maxi(int(row["groups"]), int(last["groups"]))
 	return row
