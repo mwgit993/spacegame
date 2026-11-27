@@ -28,15 +28,15 @@ const MODULES: Array[String] = [
 	# --- stage 13
 	"res://scripts/stages/13_crystal/stage.gd",
 	# --- stage 14
-	"",
+	"res://scripts/stages/14_hive/stage.gd",
 	# --- stage 15
-	"",
+	"res://scripts/stages/15_wreck/stage.gd",
 	# --- stage 16
-	"",
+	"res://scripts/stages/16_metro/stage.gd",
 	# --- stage 17
-	"",
+	"res://scripts/stages/17_voidrim/stage.gd",
 	# --- stage 18
-	"",
+	"res://scripts/stages/18_biolab/stage.gd",
 	# --- stage 19
 	"",
 	# --- stage 20
