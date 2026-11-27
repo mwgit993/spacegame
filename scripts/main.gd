@@ -432,6 +432,7 @@ var _opt_autofire_btn: Button
 var _opt_shake_btn: Button
 var _opt_touch_btn: Button
 var _opt_fullscreen_btn: Button
+var _opt_fps_btn: Button
 var _opt_speed_btn: Button
 var _opt_soundtrack_btn: Button
 var _opt_reset_btn: Button
@@ -726,6 +727,8 @@ func _run_smoke_test() -> void:
 	if not _smoke_check_speed_up():
 		smoke_ok = false
 	if not _smoke_check_soundtrack():
+		smoke_ok = false
+	if not _smoke_check_fps_option():
 		smoke_ok = false
 	MetaSave.select_ship("neko")
 	_start_run()
@@ -1814,7 +1817,8 @@ func _smoke_check_options_nav() -> bool:
 		[SIDE_TOP, "-10%"], [SIDE_TOP, "-10%"], [SIDE_RIGHT, "+10%"], [SIDE_RIGHT, "+10%"],
 		[SIDE_BOTTOM, "+10%"], [SIDE_LEFT, "-10%"], [SIDE_BOTTOM, _opt_autofire_btn],
 		[SIDE_LEFT, _opt_autofire_btn], [SIDE_BOTTOM, _opt_shake_btn], [SIDE_BOTTOM, _opt_touch_btn],
-		[SIDE_BOTTOM, _opt_fullscreen_btn], [SIDE_BOTTOM, _opt_speed_btn],
+		[SIDE_BOTTOM, _opt_fullscreen_btn], [SIDE_RIGHT, _opt_fps_btn], [SIDE_RIGHT, _opt_fps_btn],
+		[SIDE_LEFT, _opt_fullscreen_btn], [SIDE_RIGHT, _opt_fps_btn], [SIDE_BOTTOM, _opt_speed_btn],
 		[SIDE_BOTTOM, _opt_soundtrack_btn], [SIDE_LEFT, _opt_reset_btn], [SIDE_LEFT, _opt_reset_btn],
 		[SIDE_RIGHT, _opt_soundtrack_btn], [SIDE_RIGHT, _opt_back_btn], [SIDE_RIGHT, _opt_back_btn],
 		[SIDE_LEFT, _opt_soundtrack_btn], [SIDE_RIGHT, _opt_back_btn], [SIDE_TOP, _opt_speed_btn],
@@ -2025,6 +2029,51 @@ func _smoke_check_speed_up() -> bool:
 
 # Soundtrack: every alternative track builds and renders finite audio, its composed melodies
 # fit the song form, and the picker saves picks, previews, and returns to Options.
+# Options -> FPS cycles 30/60/120/UNLOCKED, applies Engine.max_fps, survives save + load, and at
+# 30 FPS player shots get the sweep capsule that stops them skipping over small hitboxes.
+func _smoke_check_fps_option() -> bool:
+	var ok: bool = true
+	var saved_cap: int = MetaSave.fps_cap
+	_open_options_from_title()
+	MetaSave.fps_cap = 60
+	MetaSave.apply_frame_rate()
+	var want: Array[int] = [120, 0, 30, 60, 120]
+	for w: int in want:
+		_opt_fps_btn.pressed.emit()
+		var label: String = str(w) if w > 0 else "UNLOCKED"
+		if MetaSave.fps_cap != w or Engine.max_fps != w or not _opt_fps_btn.text.ends_with(label):
+			push_error("SMOKE: FPS option should be %d, got cap %d, max_fps %d, '%s'" % [w, MetaSave.fps_cap, Engine.max_fps, _opt_fps_btn.text])
+			ok = false
+	MetaSave.fps_cap = 30
+	MetaSave.save_game()
+	MetaSave.fps_cap = 60
+	MetaSave.load_game()
+	if MetaSave.fps_cap != 30:
+		push_error("SMOKE: FPS option did not survive save + load (got %d)" % MetaSave.fps_cap)
+		ok = false
+	MetaSave.apply_frame_rate()
+	var shot: GameBullet = GameBullet.new()
+	bullet_layer.add_child(shot)
+	shot.setup(Vector2(100.0, 140.0), Vector2(600.0, 0.0), 1.0, true, "bullet_vulcan")
+	shot.global_position = Vector2(110.0, 140.0)
+	shot._update_sweep(Vector2(100.0, 140.0))
+	if shot._sweep_node == null or shot._sweep_node.disabled:
+		push_error("SMOKE: at 30 FPS player shots have no sweep capsule")
+		ok = false
+	MetaSave.fps_cap = 60
+	MetaSave.apply_frame_rate()
+	shot._update_sweep(Vector2(100.0, 140.0))
+	if shot._sweep_node == null or not shot._sweep_node.disabled:
+		push_error("SMOKE: at 60 FPS the sweep capsule should be off")
+		ok = false
+	shot.queue_free()
+	_leave_options()
+	MetaSave.fps_cap = saved_cap
+	MetaSave.apply_frame_rate()
+	MetaSave.save_game()
+	return ok
+
+
 func _smoke_check_soundtrack() -> bool:
 	var ok: bool = true
 	var saved_picks: Dictionary = MetaSave.music_picks.duplicate()
@@ -2441,7 +2490,7 @@ func _build_options_ui() -> void:
 
 	_opt_fullscreen_btn = Button.new()
 	_opt_fullscreen_btn.position = Vector2(50.0, 175.0)
-	_opt_fullscreen_btn.size = Vector2(370.0, 23.0)
+	_opt_fullscreen_btn.size = Vector2(182.0, 23.0)
 	_style_menu_btn(_opt_fullscreen_btn)
 	_opt_fullscreen_btn.pressed.connect(func() -> void:
 		MetaSave.fullscreen_enabled = not MetaSave.fullscreen_enabled
@@ -2451,6 +2500,13 @@ func _build_options_ui() -> void:
 		_refresh_options_ui()
 	)
 	options_panel.add_child(_opt_fullscreen_btn)
+
+	_opt_fps_btn = Button.new()
+	_opt_fps_btn.position = Vector2(238.0, 175.0)
+	_opt_fps_btn.size = Vector2(182.0, 23.0)
+	_style_menu_btn(_opt_fps_btn)
+	_opt_fps_btn.pressed.connect(_cycle_fps_cap)
+	options_panel.add_child(_opt_fps_btn)
 
 	_opt_speed_btn = Button.new()
 	_opt_speed_btn.position = Vector2(50.0, 202.0)
@@ -2518,7 +2574,7 @@ func _build_options_ui() -> void:
 		[_opt_autofire_btn],
 		[_opt_shake_btn],
 		[_opt_touch_btn],
-		[_opt_fullscreen_btn],
+		[_opt_fullscreen_btn, _opt_fps_btn],
 		[_opt_speed_btn],
 		[reset_btn, _opt_soundtrack_btn, back_btn],
 	])
@@ -4026,8 +4082,19 @@ func _refresh_options_ui() -> void:
 	_opt_shake_btn.text = "SCREEN SHAKE:      %s" % ("ON" if MetaSave.screen_shake_enabled else "OFF")
 	var t_names: Array[String] = ["AUTO (PHONE/TABLET)", "ALWAYS ON", "OFF"]
 	_opt_touch_btn.text = "TOUCH CONTROLS:    %s" % t_names[clampi(MetaSave.touch_mode, 0, 2)]
-	_opt_fullscreen_btn.text = "DISPLAY MODE:      %s" % ("FULLSCREEN" if MetaSave.fullscreen_enabled else "WINDOWED")
+	_opt_fullscreen_btn.text = "DISPLAY: %s" % ("FULLSCREEN" if MetaSave.fullscreen_enabled else "WINDOWED")
+	_opt_fps_btn.text = "FPS: %s" % (str(MetaSave.fps_cap) if MetaSave.fps_cap > 0 else "UNLOCKED")
 	_opt_speed_btn.text = "SPEED UP:          %s" % ("TOGGLE" if MetaSave.speed_up_toggle else "HOLD")
+
+
+# Options -> FPS cycles 30 -> 60 -> 120 -> UNLOCKED.
+func _cycle_fps_cap() -> void:
+	var i: int = MetaSave.FPS_CHOICES.find(MetaSave.fps_cap)
+	MetaSave.fps_cap = MetaSave.FPS_CHOICES[(i + 1) % MetaSave.FPS_CHOICES.size()]
+	MetaSave.apply_frame_rate()
+	MetaSave.save_game()
+	RetroSfx.play("ui", -7.0, 0.02)
+	_refresh_options_ui()
 
 
 func _adjust_music(delta_vol: float) -> void:

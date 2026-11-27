@@ -42,6 +42,8 @@ var fullscreen_enabled: bool = false
 var touch_mode: int = 0 # 0 = AUTO (shows on touch), 1 = ALWAYS ON (phone/mouse test), 2 = OFF
 var music_picks: Dictionary = {} # soundtrack slot -> chosen track (0 = original), see GenesisMusic.get_slot_keys()
 var speed_up_toggle: bool = false # Speed-up button (RT / F): false = HOLD for 2x, true = press to TOGGLE 2x
+var fps_cap: int = 60 # Options -> FPS: one of FPS_CHOICES (0 = unlocked), applied by apply_frame_rate()
+const FPS_CHOICES: Array[int] = [30, 60, 120, 0]
 
 # Rogue Legacy-style Skill Tree node levels & Fleet Loadout!
 var tree_levels: Dictionary = {"core_root": 1}
@@ -73,6 +75,22 @@ func apply_audio_and_display_settings() -> void:
 		DisplayServer.window_set_mode(
 			DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen_enabled else DisplayServer.WINDOW_MODE_WINDOWED
 		)
+	apply_frame_rate()
+
+
+# Caps the frame rate at fps_cap (0 = unlocked). V-sync stays on (no tearing) unless the cap is
+# above the screen's refresh rate or unlocked; otherwise 120 on a 60 Hz screen would still be 60.
+# Game logic is frame-rate independent; at 30 FPS GameBullet's sweep capsule stops fast shots
+# skipping over small hitboxes (see GameBullet._update_sweep).
+func apply_frame_rate() -> void:
+	Engine.max_fps = fps_cap
+	if DisplayServer.get_name() == "headless":
+		return
+	var hz: float = DisplayServer.screen_get_refresh_rate()
+	var vsync_on: bool = fps_cap > 0 and (hz <= 0.0 or float(fps_cap) <= hz + 1.0)
+	var want: DisplayServer.VSyncMode = DisplayServer.VSYNC_ENABLED if vsync_on else DisplayServer.VSYNC_DISABLED
+	if DisplayServer.window_get_vsync_mode() != want:
+		DisplayServer.window_set_vsync_mode(want)
 
 
 func get_level(id: String) -> int:
@@ -352,6 +370,7 @@ func save_game() -> void:
 		"fullscreen_enabled": fullscreen_enabled,
 		"touch_mode": touch_mode,
 		"speed_up_toggle": speed_up_toggle,
+		"fps_cap": fps_cap,
 		"music_picks": music_picks,
 		"selected_ship": selected_ship,
 		"tree_version": TREE_VERSION,
@@ -423,6 +442,9 @@ func load_game() -> void:
 	fullscreen_enabled = bool(data.get("fullscreen_enabled", false))
 	touch_mode = int(data.get("touch_mode", 0))
 	speed_up_toggle = bool(data.get("speed_up_toggle", false))
+	fps_cap = int(data.get("fps_cap", 60))
+	if not FPS_CHOICES.has(fps_cap):
+		fps_cap = 60
 	music_picks = {}
 	var saved_picks: Variant = data.get("music_picks", {})
 	if saved_picks is Dictionary:
