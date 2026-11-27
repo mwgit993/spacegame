@@ -543,6 +543,14 @@ var _loadout_info_desc: Label
 var _loadout_info_perks: Label
 var _loadout_action_btn: Button
 var _loadout_cursor_idx: int = 0
+const LOADOUT_SLOT_W: float = 64.5      # roster slot pitch (61 px buttons)
+const LOADOUT_VISIBLE: int = 7          # roster slots on screen at once
+var _loadout_row: Control               # scrolling strip holding the roster buttons
+var _loadout_first: int = 0             # first roster slot on screen
+var _loadout_arrow_l: Button
+var _loadout_arrow_r: Button
+var _loadout_nav_btns: Array[Button] = []
+var _loadout_stats_lbl: Label
 
 
 func _ready() -> void:
@@ -695,11 +703,26 @@ func _run_smoke_test() -> void:
 	_click_tree_at(_tree_canvas.size * 0.5)
 	_tree_canvas.queue_redraw()
 	InputPrompts.set_gamepad(not InputPrompts.is_gamepad)
-	# Exercise Fleet Ship Loadout Bay across all 7 ships!
+	# Fleet Ship Loadout Bay: every ship, and the scrolling roster keeps the cursor on screen
+	# (stepping through, paging with the arrows, wrapping around with the keyboard).
 	_enter_loadout()
 	for s_idx: int in range(SkillTreeData.SHIPS.size()):
 		_select_loadout_slot(s_idx)
 		InputPrompts.set_gamepad(not InputPrompts.is_gamepad)
+		if s_idx < _loadout_first or s_idx >= _loadout_first + LOADOUT_VISIBLE:
+			push_error("SMOKE: loadout slot %d selected but scrolled off screen" % s_idx)
+			smoke_ok = false
+	_page_loadout(-1)
+	_page_loadout(-1)
+	_page_loadout(-1)
+	var wrap_key: InputEventKey = InputEventKey.new()
+	wrap_key.pressed = true
+	wrap_key.physical_keycode = KEY_LEFT
+	wrap_key.keycode = KEY_LEFT
+	_unhandled_input(wrap_key)
+	if _loadout_cursor_idx != SkillTreeData.SHIPS.size() - 1 or not _loadout_arrow_l.visible or _loadout_arrow_r.visible:
+		push_error("SMOKE: loadout paging / wrap-around left the roster in the wrong place")
+		smoke_ok = false
 	if not _smoke_check_speed_up():
 		smoke_ok = false
 	if not _smoke_check_soundtrack():
@@ -718,7 +741,7 @@ func _run_smoke_test() -> void:
 		smoke_ok = false
 	if not _smoke_check_stage_modules():
 		smoke_ok = false
-	# Exercise all 7 ship signature blasters, beams, addons, rerolls, and Lazarus revive!
+	# Exercise every ship's signature blaster, beams, addons, rerolls, and Lazarus revive!
 	for ship_d: Dictionary in SkillTreeData.SHIPS:
 		MetaSave.tree_levels["ship_" + String(ship_d["id"])] = 1
 		MetaSave.select_ship(String(ship_d["id"]))
@@ -728,6 +751,12 @@ func _run_smoke_test() -> void:
 	player.reset_for_new_run()
 	if not _smoke_check_ship_shots():
 		smoke_ok = false
+	if not _smoke_check_new_weapons():
+		smoke_ok = false
+	if not _smoke_check_ship_runs():
+		smoke_ok = false
+	MetaSave.select_ship("neko")
+	player.reset_for_new_run()
 	for upg_id: String in ["overclock", "prism", "wave", "tesla", "plasma", "laser", "option", "blades", "turret", "missile", "flank", "bomb", "nova", "spread", "shield", "rapid", "thruster", "repair"]:
 		player.apply_run_upgrade(upg_id)
 		player._fire_primary()
@@ -1392,6 +1421,9 @@ func _smoke_check_ship_shots() -> bool:
 	for ship_d: Dictionary in SkillTreeData.SHIPS:
 		var ship_id: String = String(ship_d["id"])
 		modes.append(String(ship_d["weapon_id"]))
+		var opt_mode: String = player._option_mode(String(ship_d["weapon_id"]))
+		if not modes.has(opt_mode):
+			modes.append(opt_mode)
 		var keys: Array[String] = [String(ship_d["sprite_0"]), String(ship_d["sprite_1"]), String(ship_d["bullet_preview"])]
 		for def: Dictionary in SkillTreeData.NODES:
 			if String(def.get("unlocks_ship", "")) == ship_id:
@@ -1405,7 +1437,19 @@ func _smoke_check_ship_shots() -> bool:
 			if not PixelArt._cache.has(key):
 				push_error("SMOKE: missing cat shot sprite " + key)
 				ok = false
-	# Off the right, top and bottom edges, with nothing on screen for homing shots to chase.
+	for key: String in ShipArt.KEYS:
+		if not PixelArt._cache.has(key):
+			push_error("SMOKE: missing ShipArt sprite " + key)
+			ok = false
+	for mode: String in modes:
+		var mode_tex: String = String(player._get_mode_params(mode, 1)["tex"])
+		if not PixelArt._cache.has(mode_tex):
+			push_error("SMOKE: weapon %s uses missing sprite %s" % [mode, mode_tex])
+			ok = false
+	# Off the right, top and bottom edges, with nothing on screen for homing shots to chase. A
+	# shot must fly on (never turn back) and be freed just past the edge, or at the end of its own
+	# short life (shotgun pellets, sword waves, orbs, seed sentries, rockets that burst).
+	# Beam, katana and tongue fire no bullet (null); _smoke_check_new_weapons covers them.
 	_smoke_clear_enemies()
 	var playfield: Rect2 = Rect2(0.0, 30.0, 480.0, 220.0)
 	var near_screen: Rect2 = Rect2(-20.0, -20.0, 520.0, 310.0)
@@ -1415,15 +1459,19 @@ func _smoke_check_ship_shots() -> bool:
 		var p: Dictionary = player._get_mode_params(mode, 4)
 		for i: int in range(starts.size()):
 			var shot: GameBullet = player._spawn_mode_shot(mode, 4, starts[i], dirs[i] * float(p["spd"]), 1.0, String(p["tex"]), int(p["pierce"]), 1.0)
+			if shot == null:
+				continue
+			var timed: bool = shot.life_left > 0.0 or shot.star_burst_time > 0.0
 			var turned: bool = false
-			for step_i: int in range(40):
+			for step_i: int in range(250):
 				shot._process(0.02)
 				if shot.is_queued_for_deletion():
 					break
 				if shot.velocity.dot(dirs[i]) <= 0.0:
 					turned = true
 			var pos: Vector2 = shot.global_position
-			if turned or not shot.is_queued_for_deletion() or playfield.has_point(pos) or not near_screen.has_point(pos):
+			var at_edge: bool = not playfield.has_point(pos) and near_screen.has_point(pos)
+			if turned or not shot.is_queued_for_deletion() or not (at_edge or timed):
 				push_error("SMOKE: %s shot from %s turned back or was not freed at the screen edge (at %s)" % [mode, str(starts[i]), str(pos)])
 				ok = false
 			shot.queue_free()
@@ -1432,6 +1480,8 @@ func _smoke_check_ship_shots() -> bool:
 	for mode: String in modes:
 		var p: Dictionary = player._get_mode_params(mode, 4)
 		var shot: GameBullet = player._spawn_mode_shot(mode, 4, target.global_position - Vector2(4.0, 0.0), Vector2(float(p["spd"]), 0.0), 0.01, String(p["tex"]), int(p["pierce"]), 1.0)
+		if shot == null or shot.collision_mask == 0:
+			continue # no bullet, or a seed sentry (it only shoots)
 		var pierce_before: int = shot.pierce_left
 		target.hp = target.max_hp
 		shot._on_area_entered(target)
@@ -1448,6 +1498,204 @@ func _smoke_check_ship_shots() -> bool:
 		ok = false
 	_smoke_clear_enemies()
 	return ok
+
+
+func _smoke_enemy_shot(pos: Vector2) -> GameBullet:
+	var b: GameBullet = GameBullet.new()
+	bullet_layer.add_child(b)
+	b.setup(pos, Vector2(-60.0, 0.0), 1.0, false, "bullet_enemy_pink", 0, false, 2.5, fx_layer)
+	return b
+
+
+# The hangar-expansion weapons that do more than fly straight: the beam stops at the screen edge
+# or the first enemy, the katana cuts shots in its arc only, the tongue has a reach, seed sentries
+# are capped and shoot, orbs swallow shots and grind, rockets burst, sonar ripples grow.
+func _smoke_check_new_weapons() -> bool:
+	var ok: bool = true
+	_smoke_clear_enemies()
+	player.global_position = Vector2(80.0, 134.0)
+	var origin: Vector2 = player.global_position + Vector2(12.0, 0.0)
+	player._lance_fx.clear()
+	var screen: Rect2 = Rect2(0.0, 0.0, 480.0, 270.0)
+	for dir: Vector2 in [Vector2.RIGHT, Vector2(1.0, -0.6).normalized(), Vector2(1.0, 0.6).normalized()]:
+		player._fire_lance(origin, dir, 1.0)
+		var end: Vector2 = origin + dir * float(player._lance_fx.back()["len"])
+		if not screen.grow(1.0).has_point(end) or Rect2(1.0, 24.0, 478.0, 244.0).has_point(end):
+			push_error("SMOKE: the solar lance should end at the screen edge, not at %s" % str(end))
+			ok = false
+	var target: GameEnemy = _smoke_spawn(GameEnemy.Type.CRUISER, Vector2(260.0, 134.0), 0, 0)
+	target.hp = target.max_hp
+	player._fire_lance(origin, Vector2.RIGHT, 1.0)
+	if target.hp >= target.max_hp or origin.x + float(player._lance_fx.back()["len"]) > target.global_position.x:
+		push_error("SMOKE: the solar lance should stop at and burn the first enemy in line")
+		ok = false
+	target.global_position = player.global_position + Vector2(30.0, 0.0)
+	target.hp = target.max_hp
+	var cut_shot: GameBullet = _smoke_enemy_shot(player.global_position + Vector2(24.0, 8.0))
+	var behind_shot: GameBullet = _smoke_enemy_shot(player.global_position + Vector2(-30.0, 0.0))
+	player._katana_slash(1.0, 1)
+	if target.hp >= target.max_hp or not cut_shot.is_queued_for_deletion() or behind_shot.is_queued_for_deletion():
+		push_error("SMOKE: the katana should cut enemies and shots in its arc, and only there")
+		ok = false
+	behind_shot.queue_free()
+	target.global_position = player.global_position + Vector2(100.0, 0.0)
+	target.hp = target.max_hp
+	player._tongue_lash(origin, 1.0, 1)
+	var hit_near: bool = target.hp < target.max_hp
+	target.global_position = player.global_position + Vector2(320.0, 0.0)
+	target.hp = target.max_hp
+	player._tongue_lash(origin, 1.0, 1)
+	if not hit_near or target.hp < target.max_hp:
+		push_error("SMOKE: the tongue should reach an enemy 100 px away but not one 320 px away")
+		ok = false
+	for i: int in range(10):
+		player._plant_seed(origin, 1.0)
+	var live_pods: int = 0
+	for pod: GameBullet in player._sentries:
+		if is_instance_valid(pod) and not pod.is_queued_for_deletion():
+			live_pods += 1
+	if live_pods > PlayerShip.SENTRY_CAP or PlayerShip.SENTRY_CAP > 6:
+		push_error("SMOKE: %d seed sentries alive (cap %d)" % [live_pods, PlayerShip.SENTRY_CAP])
+		ok = false
+	var shots_before: int = bullet_layer.get_child_count()
+	player._sentries.back()._process(0.35)
+	if bullet_layer.get_child_count() <= shots_before:
+		push_error("SMOKE: a seed sentry fired no petals")
+		ok = false
+	var orb: GameBullet = player._spawn_mode_shot("orb", 1, Vector2(200.0, 60.0), Vector2(120.0, 0.0), 1.0, "bullet_orb_0", 99, 1.0)
+	var food: GameBullet = _smoke_enemy_shot(Vector2(205.0, 62.0))
+	target.global_position = Vector2(212.0, 60.0)
+	target.hp = target.max_hp
+	orb._process(0.02)
+	if not food.is_queued_for_deletion() or target.hp >= target.max_hp or orb.velocity.length() > GameBullet.ORB_GRIP_SPEED + 1.0:
+		push_error("SMOKE: a singularity orb should swallow a nearby shot and slow down grinding an enemy")
+		ok = false
+	orb.queue_free()
+	_smoke_clear_enemies()
+	var rocket: GameBullet = player._spawn_mode_shot("firework", 1, Vector2(100.0, 200.0), Vector2(250.0, 0.0), 1.0, "bullet_rocket", 0, 1.0)
+	for i: int in range(40):
+		rocket._process(0.02)
+		if rocket.is_queued_for_deletion():
+			break
+	if not rocket.is_queued_for_deletion() or rocket.star_burst_count != 0:
+		push_error("SMOKE: a starburst rocket should burst on its own")
+		ok = false
+	var ripple: GameBullet = player._spawn_mode_shot("sonar", 1, Vector2(100.0, 100.0), Vector2(230.0, 0.0), 1.0, "bullet_sonar", 99, 1.0)
+	var r0: float = ripple._shape_circle.radius
+	ripple._process(0.4)
+	if ripple._shape_circle.radius <= r0 * 1.5:
+		push_error("SMOKE: a sonar ripple should widen as it travels")
+		ok = false
+	ripple.queue_free()
+	return ok
+
+
+# Every ship in a run: hull, speed and hull perk, its weapon fires, a drafted beam mounts as an
+# aux beam (the Viper's nose takes it over instead) and fires, and a second of flight runs clean.
+func _smoke_check_ship_runs() -> bool:
+	var ok: bool = true
+	var tree_hull: int = MetaSave.get_level("hull_1") + MetaSave.get_level("hull_2")
+	for ship_d: Dictionary in SkillTreeData.SHIPS:
+		var sid: String = String(ship_d["id"])
+		var wid: String = String(ship_d["weapon_id"])
+		_smoke_clear_enemies()
+		for shot_node: Node in bullet_layer.get_children():
+			shot_node.queue_free()
+		if not MetaSave.select_ship(sid):
+			push_error("SMOKE: ship %s is not unlocked after buying the whole tree" % sid)
+			ok = false
+			continue
+		player.reset_for_new_run()
+		player.global_position = Vector2(80.0, 134.0)
+		if player.max_hp != maxi(2, 4 + int(ship_d["hp_mod"]) + tree_hull) or absf(player.move_speed - float(ship_d["speed"])) > 0.01:
+			push_error("SMOKE: ship %s starts with the wrong hull or speed" % sid)
+			ok = false
+		var perk_ok: bool = true
+		match sid:
+			"lancer":
+				perk_ok = player.max_shield == mini(3, MetaSave.get_tree_shields() + 1)
+			"ronin":
+				perk_ok = player.last_stand_level == 1 and player.last_stand_ready
+			"bloom":
+				perk_ok = absf(MetaSave.get_heal_drop_chance() - (0.20 + 0.05 * float(MetaSave.get_level("regen_bay")))) < 0.001
+			"orca":
+				perk_ok = player.chrono_level == 1
+			"hog":
+				perk_ok = player.turret_level == 1
+			"hanabi":
+				perk_ok = absf(player.aoe_scale_mult - 1.25) < 0.001 and absf(MetaSave.get_boss_bounty_mult() - (1.25 + 0.25 * float(MetaSave.get_level("bounty_hunter")))) < 0.001
+			"horizon":
+				perk_ok = player.graze_level == 1
+			"comet":
+				perk_ok = player.missile_level == 1
+			"gemini":
+				perk_ok = MetaSave.get_starting_rerolls() == MetaSave.get_tree_rerolls() + 2 and _smoke_pods_visible()
+			"frog":
+				perk_ok = player.leech_level == 1
+		if not perk_ok:
+			push_error("SMOKE: ship %s hull perk did not apply" % sid)
+			ok = false
+		# Its weapon fires something: bullets, or a beam / cut / lash effect.
+		var shots_before: int = bullet_layer.get_child_count()
+		var fx_before: int = player._lance_fx.size() + player._slash_fx.size() + player._tongue_fx.size()
+		player._fire_primary()
+		player._fire_primary()
+		var fx_after: int = player._lance_fx.size() + player._slash_fx.size() + player._tongue_fx.size()
+		if bullet_layer.get_child_count() <= shots_before and fx_after <= fx_before:
+			push_error("SMOKE: ship %s weapon fired nothing" % sid)
+			ok = false
+		if wid == "comet" and not _smoke_comet_charge_ok():
+			ok = false
+		player.apply_run_upgrade("laser")
+		var mounted: bool = player.active_beam == "laser" if sid == "viper" else (player.aux_beam == "laser" and player.active_beam == wid)
+		if not mounted:
+			push_error("SMOKE: a drafted beam did not mount on ship %s" % sid)
+			ok = false
+		var lasers_before: int = _smoke_count_shots("bullet_laser")
+		player.controls_enabled = true
+		player.auto_fire_toggle = true
+		for f: int in range(60):
+			player._process(1.0 / 60.0)
+		if _smoke_count_shots("bullet_laser") <= lasers_before:
+			push_error("SMOKE: ship %s never fired its drafted beam" % sid)
+			ok = false
+	_smoke_clear_enemies()
+	return ok
+
+
+func _smoke_pods_visible() -> bool:
+	for pod: Sprite2D in player._orbit_pods:
+		if not pod.visible:
+			return false
+	return true
+
+
+func _smoke_count_shots(tex_key: String) -> int:
+	var n: int = 0
+	for node: Node in bullet_layer.get_children():
+		if node is GameBullet and (node as GameBullet).anim_tex_a == tex_key and not node.is_queued_for_deletion():
+			n += 1
+	return n
+
+
+# COMET KNIGHT: a full charge fires by itself, a short tap fires nothing, an early release fires.
+func _smoke_comet_charge_ok() -> bool:
+	player._comet_charge = 0.0
+	var n0: int = _smoke_count_shots("bullet_comet")
+	player._update_comet_charge(0.4, true)
+	var early: int = _smoke_count_shots("bullet_comet")
+	player._update_comet_charge(0.4, true)
+	var full: int = _smoke_count_shots("bullet_comet")
+	player._update_comet_charge(0.05, true)
+	player._update_comet_charge(0.0, false)
+	var tap: int = _smoke_count_shots("bullet_comet")
+	player._update_comet_charge(0.35, true)
+	player._update_comet_charge(0.0, false)
+	var release: int = _smoke_count_shots("bullet_comet")
+	if early != n0 or full <= early or tap != full or release <= tap:
+		push_error("SMOKE: comet charge fired wrongly (%d %d %d %d %d)" % [n0, early, full, tap, release])
+		return false
+	return true
 
 
 func _smoke_spawn(t: GameEnemy.Type, pos: Vector2, stage: int, variant: int) -> GameEnemy:
@@ -2848,7 +3096,7 @@ func _on_buy_tree_node() -> void:
 
 
 # =================================================================================
-# FLEET SHIP LOADOUT BAY (Shows All 7 Ships, Signature Weapons & Starter Perks!)
+# FLEET SHIP LOADOUT BAY (every ship in a scrolling roster, signature weapons & starter perks)
 # =================================================================================
 func _build_loadout_ui() -> void:
 	loadout_panel = Control.new()
@@ -2886,19 +3134,32 @@ func _build_loadout_ui() -> void:
 	_loadout_scrap_lbl.add_theme_color_override("font_color", Color("#3ce878"))
 	loadout_panel.add_child(_loadout_scrap_lbl)
 
-	# 7 Visual Ship Roster Slots across the top (y = 32..98)
+	# Ship roster across the top (y = 32..98): a row of slots that scrolls so the cursor stays in
+	# view, LOADOUT_VISIBLE at a time, with page arrows at the ends when more ships are off screen.
+	var row_clip: Control = Control.new()
+	row_clip.position = Vector2(15.0, 32.0)
+	row_clip.size = Vector2(LOADOUT_SLOT_W * float(LOADOUT_VISIBLE) - 3.5, 66.0)
+	row_clip.clip_contents = true
+	row_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	loadout_panel.add_child(row_clip)
+	_loadout_row = Control.new()
+	_loadout_row.size = Vector2(LOADOUT_SLOT_W * float(SkillTreeData.SHIPS.size()), 66.0)
+	_loadout_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row_clip.add_child(_loadout_row)
+	_loadout_arrow_l = _make_loadout_arrow("<", Vector2(2.0, 50.0), -1)
+	_loadout_arrow_r = _make_loadout_arrow(">", Vector2(467.0, 50.0), 1)
+
 	_loadout_ship_btns.clear()
 	_loadout_ship_icons.clear()
 	_loadout_ship_names.clear()
 	for i: int in range(SkillTreeData.SHIPS.size()):
-		var sx: float = 15.0 + float(i) * 64.5
 		var btn: Button = Button.new()
-		btn.position = Vector2(sx, 32.0)
+		btn.position = Vector2(float(i) * LOADOUT_SLOT_W, 0.0)
 		btn.size = Vector2(61.0, 66.0)
 		var slot_i: int = i
 		btn.focus_entered.connect(func() -> void: _select_loadout_slot(slot_i))
 		btn.pressed.connect(func() -> void: _activate_loadout_slot(slot_i))
-		loadout_panel.add_child(btn)
+		_loadout_row.add_child(btn)
 		_loadout_ship_btns.append(btn)
 
 		var tex_r: TextureRect = TextureRect.new()
@@ -2918,6 +3179,11 @@ func _build_loadout_ui() -> void:
 		n_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		btn.add_child(n_lbl)
 		_loadout_ship_names.append(n_lbl)
+	# Left / right wrap around the roster (the keyboard handler wraps too).
+	var ship_n: int = _loadout_ship_btns.size()
+	for i: int in range(ship_n):
+		_loadout_ship_btns[i].focus_neighbor_left = _loadout_ship_btns[(i - 1 + ship_n) % ship_n].get_path()
+		_loadout_ship_btns[i].focus_neighbor_right = _loadout_ship_btns[(i + 1) % ship_n].get_path()
 
 	# Live Ship Showcase & Loadout Spec Card (y = 104..224)
 	var spec_card: Panel = Panel.new()
@@ -2925,6 +3191,13 @@ func _build_loadout_ui() -> void:
 	spec_card.size = Vector2(450.0, 118.0)
 	spec_card.add_theme_stylebox_override("panel", _make_ff6_box(Color("#060c28"), Color("#5c7cc4"), 1, 4.0))
 	loadout_panel.add_child(spec_card)
+
+	_loadout_stats_lbl = Label.new()
+	_loadout_stats_lbl.position = Vector2(21.0, 106.0)
+	_loadout_stats_lbl.size = Vector2(136.0, 12.0)
+	_loadout_stats_lbl.add_theme_font_size_override("font_size", FONT_SZ)
+	_loadout_stats_lbl.add_theme_color_override("font_color", Color("#9cb4e8"))
+	loadout_panel.add_child(_loadout_stats_lbl)
 
 	_loadout_preview_ship = Sprite2D.new()
 	_loadout_preview_ship.position = Vector2(64.0, 152.0)
@@ -2997,6 +3270,47 @@ func _build_loadout_ui() -> void:
 	InputPrompts.bind_button(_loadout_action_btn, "confirm")
 	_loadout_action_btn.pressed.connect(func() -> void: _activate_loadout_slot(_loadout_cursor_idx))
 	loadout_panel.add_child(_loadout_action_btn)
+	_loadout_nav_btns = [l_title_btn, l_tree_btn, _loadout_action_btn]
+
+
+func _make_loadout_arrow(txt: String, pos: Vector2, dir: int) -> Button:
+	var b: Button = Button.new()
+	b.position = pos
+	b.size = Vector2(11.0, 30.0)
+	b.text = txt
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_font_size_override("font_size", FONT_SZ)
+	b.add_theme_color_override("font_color", Color("#ffe854"))
+	b.add_theme_color_override("font_hover_color", Color.WHITE)
+	b.add_theme_stylebox_override("normal", _make_ff6_box(Color("#0d1746"), Color("#ffe854"), 1, 1.0))
+	b.add_theme_stylebox_override("hover", _make_ff6_box(Color("#253f9e"), Color.WHITE, 1, 1.0))
+	b.add_theme_stylebox_override("pressed", _make_ff6_box(Color("#253f9e"), Color.WHITE, 1, 1.0))
+	b.pressed.connect(func() -> void: _page_loadout(dir))
+	loadout_panel.add_child(b)
+	return b
+
+
+# Page arrows: jump the cursor a screenful of ships left or right.
+func _page_loadout(dir: int) -> void:
+	_select_loadout_slot(clampi(_loadout_cursor_idx + dir * LOADOUT_VISIBLE, 0, SkillTreeData.SHIPS.size() - 1))
+	_loadout_ship_btns[_loadout_cursor_idx].grab_focus()
+	RetroSfx.play("ui", -11.0, 0.03)
+
+
+# Scrolls the roster just far enough that slot idx is on screen.
+func _scroll_loadout_to(idx: int, snap: bool) -> void:
+	if idx < _loadout_first:
+		_loadout_first = idx
+	elif idx >= _loadout_first + LOADOUT_VISIBLE:
+		_loadout_first = idx - LOADOUT_VISIBLE + 1
+	_loadout_first = clampi(_loadout_first, 0, maxi(0, SkillTreeData.SHIPS.size() - LOADOUT_VISIBLE))
+	_loadout_arrow_l.visible = _loadout_first > 0
+	_loadout_arrow_r.visible = _loadout_first + LOADOUT_VISIBLE < SkillTreeData.SHIPS.size()
+	if snap:
+		_loadout_row.position.x = -float(_loadout_first) * LOADOUT_SLOT_W
+	# Up from the bottom bar lands on the ship under the cursor, never on an off-screen one.
+	for nav: Button in _loadout_nav_btns:
+		nav.focus_neighbor_top = _loadout_ship_btns[idx].get_path()
 
 
 func _enter_loadout() -> void:
@@ -3018,12 +3332,14 @@ func _enter_loadout() -> void:
 			_loadout_cursor_idx = i
 			break
 
+	_scroll_loadout_to(_loadout_cursor_idx, true)
 	_refresh_loadout_ui()
 	_loadout_ship_btns[_loadout_cursor_idx].grab_focus()
 
 
 func _select_loadout_slot(idx: int) -> void:
 	_loadout_cursor_idx = clampi(idx, 0, SkillTreeData.SHIPS.size() - 1)
+	_scroll_loadout_to(_loadout_cursor_idx, false)
 	_refresh_loadout_ui()
 
 
@@ -3078,6 +3394,10 @@ func _refresh_loadout_ui() -> void:
 	_loadout_preview_ship.modulate = Color.WHITE if cur_unlocked else Color(0.06, 0.10, 0.22, 0.95)
 	_loadout_preview_bullet.texture = PixelArt.tex(String(cur["bullet_preview"]))
 	_loadout_preview_bullet.visible = cur_unlocked
+	if cur_unlocked:
+		_loadout_stats_lbl.text = "HULL %d  SPEED %d" % [4 + int(cur["hp_mod"]), int(float(cur["speed"]))]
+	else:
+		_loadout_stats_lbl.text = "HULL ?  SPEED ?"
 
 	if cur_unlocked:
 		var eq_tag: String = "  [EQUIPPED]" if cur_equipped else ""
@@ -3101,12 +3421,12 @@ func _format_active_starters() -> String:
 	var bonus_hull: int = MetaSave.get_level("hull_1") + MetaSave.get_level("hull_2")
 	if bonus_hull > 0:
 		tags.append("+%d Hull" % bonus_hull)
-	if MetaSave.get_starting_shields() > 0:
-		tags.append("Shield x%d" % MetaSave.get_starting_shields())
+	if MetaSave.get_tree_shields() > 0:
+		tags.append("Shield x%d" % MetaSave.get_tree_shields())
 	if MetaSave.has_lazarus_revive():
 		tags.append("Lazarus Revive")
-	if MetaSave.get_starting_rerolls() > 0:
-		tags.append("%d Rerolls" % MetaSave.get_starting_rerolls())
+	if MetaSave.get_tree_rerolls() > 0:
+		tags.append("%d Rerolls" % MetaSave.get_tree_rerolls())
 	tags.append("%d/%d Draft Cards" % [MetaSave.get_unlocked_draft_card_count(), MetaSave.get_total_draft_card_nodes()])
 	return ", ".join(tags)
 
@@ -4220,6 +4540,10 @@ func _process(delta: float) -> void:
 		_tree_canvas.queue_redraw()
 
 	elif state == State.LOADOUT and _loadout_preview_ship != null:
+		var row_target: float = -float(_loadout_first) * LOADOUT_SLOT_W
+		_loadout_row.position.x = lerpf(_loadout_row.position.x, row_target, clampf(16.0 * delta, 0.0, 1.0))
+		if absf(_loadout_row.position.x - row_target) < 0.5:
+			_loadout_row.position.x = row_target
 		var lt: float = float(Time.get_ticks_msec()) * 0.004
 		_loadout_preview_ship.position = Vector2(64.0, 148.0 + sin(lt) * 4.5)
 		var cur_s: Dictionary = SkillTreeData.SHIPS[_loadout_cursor_idx]
@@ -4914,8 +5238,11 @@ func _get_beam_badge_info(mode: String, lvl: int) -> Dictionary:
 			return {"icon": "badge_eye", "name": "Gaze", "val": lv_s, "col": Color("#d44cff")}
 		"cat":
 			return {"icon": "badge_cat", "name": "Cats!", "val": lv_s, "col": Color("#ff64b8")}
-		_:
-			return {"icon": "badge_vulcan", "name": "Vulcan", "val": lv_s, "col": Color("#ffe854")}
+	# The hangar-expansion ships label their signature weapon in their SHIPS entry.
+	for ship_d: Dictionary in SkillTreeData.SHIPS:
+		if String(ship_d["weapon_id"]) == mode and ship_d.has("badge"):
+			return {"icon": String(ship_d["badge"]), "name": String(ship_d["badge_name"]), "val": lv_s, "col": ship_d["color"]}
+	return {"icon": "badge_vulcan", "name": "Vulcan", "val": lv_s, "col": Color("#ffe854")}
 
 
 # The HUD's "S-W NAME" label runs from x 158 and must stop short of SCRAP at x 294. Two-digit

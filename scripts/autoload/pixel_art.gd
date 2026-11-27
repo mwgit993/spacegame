@@ -480,6 +480,8 @@ func _build_all() -> void:
 
 	# --- Stage-signature enemies and their special shots (painted via EnemyArt) ---
 	EnemyArt.build_all(_cache)
+	# --- The 10 hangar-expansion ships, their shots and badges (ShipArt) ---
+	ShipArt.build_all(_cache)
 
 	# --- Bullets & Pickups ---
 	_cache["bullet_vulcan"] = _make_tex(PackedStringArray([

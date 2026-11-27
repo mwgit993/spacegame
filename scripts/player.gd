@@ -25,9 +25,9 @@ var invuln_timer: float = 0.0
 var controls_enabled: bool = false
 var auto_fire_toggle: bool = true
 
-# Selected Ship Hull & Signature Weapon ("viper", "beetle", "phantom", "dread", "saucer", "eyeball", "neko")
+# Selected Ship Hull & Signature Weapon (SkillTreeData.SHIPS id and weapon_id)
 var ship_id: String = "viper"
-var signature_weapon: String = "vulcan" # "vulcan", "biowave", "rail", "flak", "saucer", "ocular", "cat"
+var signature_weapon: String = "vulcan" # a SHIPS weapon_id, e.g. "vulcan", "rail", "cat", "lance", "katana"
 var _ship_tex_0: String = "player_idle"
 var _ship_tex_1: String = "player_flame_2"
 
@@ -110,6 +110,33 @@ var _volley_count: int = 0
 # S.S. MEOW-ZER cat shots cycle through these coats (sprite keys <coat>_0 / <coat>_1).
 const CAT_SHOT_COATS: Array[String] = ["bullet_cat", "bullet_cat_snow", "bullet_cat_blue"]
 var _cat_coat_idx: int = 0
+
+# --- Signature weapons of the 10 hangar-expansion ships (see _fire_primary / _spawn_mode_shot) ---
+# The original 7 ships fire a drafted aux beam every 2nd volley; the newer ones, whose volleys come
+# at very different rates (a 0.1 s beam tick, a 0.75 s orb), fire it on a steady timer instead.
+const VOLLEY_AUX_WEAPONS: Array[String] = ["vulcan", "biowave", "rail", "flak", "saucer", "ocular", "cat"]
+# Weapons the ship itself fires once per volley around its own position (spread changes how,
+# not how many); its options throw _option_mode() projectiles instead.
+const SELF_AIMED_WEAPONS: Array[String] = ["katana", "tongue", "seed"]
+const SENTRY_CAP: int = 4               # STARBLOOM seed sentries alive at once
+const COMET_CHARGE_TIME: float = 0.72   # COMET KNIGHT: seconds to a full charge
+const COMET_MIN_CHARGE: float = 0.25    # releasing fire below this charge fires nothing
+const LANCE_HALF_WIDTH: float = 2.5     # HELIOS LANCER beam: hits enemies this close to its line
+const LANCE_FX_TIME: float = 0.11
+const SLASH_FX_TIME: float = 0.14
+const TONGUE_FX_TIME: float = 0.15
+const BEAM_AREA: Rect2 = Rect2(0.0, 22.0, 480.0, 248.0) # beams stop at the screen edge
+var _lance_fx: Array[Dictionary] = []
+var _slash_fx: Array[Dictionary] = []
+var _tongue_fx: Array[Dictionary] = []
+var _slash_flip: bool = false
+var _sentries: Array[GameBullet] = []
+var _comet_charge: float = 0.0
+var _comet_power: float = 1.0
+var _aux_timer: float = 0.0
+var _orbit_pods: Array[Sprite2D] = []
+var _orbit_angle: float = 0.0
+var _cur_emitter_src: int = -1          # which emitter _spawn_mode_shot is firing for (-1 = ship)
 var _turret_aim_dir: Vector2 = Vector2.RIGHT
 
 var _anim_timer: float = 0.0
@@ -157,6 +184,14 @@ func _ready() -> void:
 		add_child(bl)
 		_blade_sprites.append(bl)
 		_blade_block_cd.append(0.0)
+
+	for i: int in range(2):
+		var pod: Sprite2D = Sprite2D.new()
+		pod.texture = PixelArt.tex("orbit_pod_%d" % i)
+		pod.top_level = true
+		pod.visible = false
+		add_child(pod)
+		_orbit_pods.append(pod)
 
 	area_entered.connect(_on_area_entered)
 
@@ -252,11 +287,30 @@ func reset_for_new_run() -> void:
 	for i: int in range(MAX_BLADES):
 		_blade_block_cd[i] = 0.0
 
+	# Hull perks of the newer ships: a built-in addon or a rank of a DRAFT CARD perk.
+	turret_level = mini(4, int(starters.get("turret", 0)))
+	missile_level = mini(4, int(starters.get("missile", 0)))
+	chrono_level = mini(2, int(starters.get("chrono", 0)))
+	graze_level = mini(2, int(starters.get("graze", 0)))
+	leech_level = mini(3, int(starters.get("leech", 0)))
+	last_stand_level = mini(1, int(starters.get("last_stand", 0)))
+	last_stand_ready = last_stand_level > 0
+
+	_lance_fx.clear()
+	_slash_fx.clear()
+	_tongue_fx.clear()
+	_sentries.clear()
+	_comet_charge = 0.0
+	_comet_power = 1.0
+	_aux_timer = 0.0
+	_orbit_angle = 0.0
+
 	_trail.clear()
 	for i: int in range(TRAIL_MAX_POINTS):
 		_trail.append(global_position - Vector2(float(i) * 1.5, 0.0))
 	_sync_options()
 	_sync_blades()
+	_sync_orbit_pods()
 	hp_changed.emit(hp, max_hp, shield_charges, max_shield)
 
 
@@ -283,6 +337,8 @@ func set_options_hidden() -> void:
 		opt.visible = false
 	for bl: Sprite2D in _blade_sprites:
 		bl.visible = false
+	for pod: Sprite2D in _orbit_pods:
+		pod.visible = false
 
 
 func heal(amount: int) -> void:
@@ -450,6 +506,9 @@ func _process(delta: float) -> void:
 
 	if blade_level > 0 and visible:
 		_update_orbiting_blades(delta)
+	if signature_weapon == "orbit" and visible:
+		_update_orbit_pods(delta)
+	_age_weapon_fx(delta)
 
 	if not controls_enabled or not visible:
 		queue_redraw()
@@ -534,9 +593,17 @@ func _process(delta: float) -> void:
 		or Input.is_physical_key_pressed(KEY_J)
 		or (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and MetaSave.touch_mode != 1)
 	)
-	if fire_pressed and _fire_cooldown <= 0.0:
+	if active_beam == "comet":
+		_update_comet_charge(delta, fire_pressed)
+	elif fire_pressed and _fire_cooldown <= 0.0:
 		var base_interval: float = _fire_primary()
 		_fire_cooldown = base_interval / fire_rate_bonus
+
+	if aux_beam != "" and not VOLLEY_AUX_WEAPONS.has(signature_weapon):
+		_aux_timer = maxf(0.0, _aux_timer - delta)
+		if fire_pressed and _aux_timer <= 0.0:
+			_fire_aux_beam()
+			_aux_timer = 0.34 / fire_rate_bonus
 
 	if missile_level > 0:
 		_missile_cooldown = maxf(0.0, _missile_cooldown - delta)
@@ -892,6 +959,33 @@ func _get_mode_params(mode: String, rank: int) -> Dictionary:
 			# A little slower than the other blasters so the cats stay readable in flight; the
 			# damage is nudged up (was 1.35 + 0.32/rank at 318 px/s) to make up for it.
 			return {"tex": "bullet_cat_0", "spd": 272.0, "pierce": 2 + rank / 2, "dmg": 1.42 + 0.34 * float(rank - 1), "cd": 0.172, "sfx": "shoot"}
+		# --- Hangar-expansion ships (dmg per beam tick / slash / lash / pellet / petal) ---
+		"lance":
+			return {"tex": "bullet_lance", "spd": 400.0, "pierce": 0, "dmg": 0.76 + 0.18 * float(rank - 1), "cd": 0.09, "sfx": ""}
+		"katana":
+			return {"tex": "bullet_slash", "spd": 300.0, "pierce": 0, "dmg": 2.6 + 0.62 * float(rank - 1), "cd": 0.30, "sfx": ""}
+		"slashwave":
+			return {"tex": "bullet_slash", "spd": 330.0, "pierce": 1, "dmg": 1.5 + 0.36 * float(rank - 1), "cd": 0.30, "sfx": ""}
+		"seed":
+			return {"tex": "bullet_seedpod_0", "spd": 18.0, "pierce": 0, "dmg": 0.62 + 0.15 * float(rank - 1), "cd": 0.30, "sfx": ""}
+		"petal":
+			return {"tex": "bullet_petal", "spd": 300.0, "pierce": 0, "dmg": 0.62 + 0.15 * float(rank - 1), "cd": 0.30, "sfx": "shoot"}
+		"sonar":
+			return {"tex": "bullet_sonar", "spd": 230.0, "pierce": 99, "dmg": 2.2 + 0.52 * float(rank - 1), "cd": 0.30, "sfx": "laser"}
+		"scatter":
+			return {"tex": "bullet_pellet", "spd": 340.0, "pierce": 0, "dmg": 0.6 + 0.15 * float(rank - 1), "cd": 0.36, "sfx": "missile"}
+		"firework":
+			return {"tex": "bullet_rocket", "spd": 250.0, "pierce": 0, "dmg": 3.0 + 0.7 * float(rank - 1), "cd": 0.40, "sfx": "missile"}
+		"orb":
+			return {"tex": "bullet_orb_0", "spd": 120.0, "pierce": 99, "dmg": 1.15 + 0.28 * float(rank - 1), "cd": 0.75, "sfx": "zap"}
+		"comet":
+			return {"tex": "bullet_comet", "spd": 380.0, "pierce": 3, "dmg": 5.8 + 1.4 * float(rank - 1), "cd": COMET_CHARGE_TIME, "sfx": "laser"}
+		"orbit":
+			return {"tex": "bullet_twin", "spd": 380.0, "pierce": 0, "dmg": 1.02 + 0.24 * float(rank - 1), "cd": 0.16, "sfx": "shoot"}
+		"tongue":
+			return {"tex": "bullet_tongue", "spd": 300.0, "pierce": 0, "dmg": 2.3 + 0.55 * float(rank - 1), "cd": 0.26, "sfx": ""}
+		"spit":
+			return {"tex": "bullet_spit", "spd": 320.0, "pierce": 0, "dmg": 1.1 + 0.26 * float(rank - 1), "cd": 0.26, "sfx": ""}
 		_:
 			return {"tex": "bullet_vulcan", "spd": 355.0, "pierce": 0, "dmg": 1.0 + 0.24 * float(rank - 1), "cd": 0.148, "sfx": "shoot"}
 
@@ -900,7 +994,13 @@ func _fire_primary() -> float:
 	if bullet_container == null:
 		return 0.15
 
-	var emitters: Array[Vector2] = [global_position + Vector2(12.0, 0.0)]
+	# GEMINI TWINS fire from their two orbiting pods instead of the nose.
+	var ship_emitters: Array[Vector2] = [global_position + Vector2(12.0, 0.0)]
+	if active_beam == "orbit":
+		ship_emitters.clear()
+		for pod: Sprite2D in _orbit_pods:
+			ship_emitters.append(pod.global_position + Vector2(4.0, 0.0))
+	var emitters: Array[Vector2] = ship_emitters.duplicate()
 	for i: int in range(option_count):
 		emitters.append(_option_sprites[i].global_position + Vector2(6.0, 0.0))
 
@@ -911,68 +1011,114 @@ func _fire_primary() -> float:
 		eff_rank = beam_level + weapon_overclock
 
 	var p: Dictionary = _get_mode_params(active_beam, eff_rank)
-	var tex_key: String = String(p["tex"])
-	var speed: float = float(p["spd"])
-	var pierce: int = int(p["pierce"])
-	var dmg: float = float(p["dmg"]) * damage_bonus
 	var interval: float = float(p["cd"])
 	var sfx_key: String = String(p["sfx"])
+	var opt_mode: String = _option_mode(active_beam)
+	var op: Dictionary = p if opt_mode == active_beam else _get_mode_params(opt_mode, eff_rank)
+	var power: float = _comet_power if active_beam == "comet" else 1.0
 
 	for e_idx: int in range(emitters.size()):
 		var origin: Vector2 = emitters[e_idx]
-		var is_ship: bool = (e_idx == 0)
+		var is_ship: bool = e_idx < ship_emitters.size()
 		var mul: float = 1.0 if is_ship else 0.65
+		var mode: String = active_beam if is_ship else opt_mode
+		var mp: Dictionary = p if is_ship else op
+		var tex_key: String = String(mp["tex"])
+		var speed: float = float(mp["spd"])
+		var pierce: int = int(mp["pierce"])
+		var dmg: float = float(mp["dmg"]) * damage_bonus * power
+		_cur_emitter_src = -1 if is_ship else e_idx - ship_emitters.size()
+
+		if is_ship and SELF_AIMED_WEAPONS.has(mode):
+			# Seed sentries are planted every 2nd volley; the pods do the shooting.
+			if mode != "seed" or _volley_count % 2 == 0:
+				_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0), dmg, tex_key, pierce, 1.0)
+			continue
 
 		if spread_level == 0:
-			if active_beam == "prism" or active_beam == "cat" or active_beam == "saucer":
+			if mode == "prism" or mode == "cat" or mode == "saucer":
 				var diag: float = 0.12 if _wave_flip else -0.12
-				_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0).rotated(diag), dmg * mul, tex_key, pierce, 1.0)
-			elif (active_beam == "wave" or active_beam == "biowave") and eff_rank >= 2:
-				_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0), dmg * 0.68 * mul, tex_key, pierce, 1.0)
-				_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0), dmg * 0.68 * mul, tex_key, pierce, -1.0)
+				_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0).rotated(diag), dmg * mul, tex_key, pierce, 1.0)
+			elif (mode == "wave" or mode == "biowave") and eff_rank >= 2:
+				_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0), dmg * 0.68 * mul, tex_key, pierce, 1.0)
+				_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0), dmg * 0.68 * mul, tex_key, pierce, -1.0)
 			else:
-				_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0), dmg * mul, tex_key, pierce, 1.0 if _wave_flip else -1.0)
+				_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0), dmg * mul, tex_key, pierce, 1.0 if _wave_flip else -1.0)
 		elif spread_level == 1:
-			var fan1: float = 0.09 if (active_beam == "prism" or active_beam == "cat" or active_beam == "saucer") else 0.0
-			_spawn_mode_shot(active_beam, eff_rank, origin + Vector2(0.0, -3.5), Vector2(speed, 0.0).rotated(-fan1), dmg * 0.78 * mul, tex_key, pierce, 1.0)
-			_spawn_mode_shot(active_beam, eff_rank, origin + Vector2(0.0, 3.5), Vector2(speed, 0.0).rotated(fan1), dmg * 0.78 * mul, tex_key, pierce, -1.0)
+			var fan1: float = 0.09 if (mode == "prism" or mode == "cat" or mode == "saucer") else 0.0
+			_spawn_mode_shot(mode, eff_rank, origin + Vector2(0.0, -3.5), Vector2(speed, 0.0).rotated(-fan1), dmg * 0.78 * mul, tex_key, pierce, 1.0)
+			_spawn_mode_shot(mode, eff_rank, origin + Vector2(0.0, 3.5), Vector2(speed, 0.0).rotated(fan1), dmg * 0.78 * mul, tex_key, pierce, -1.0)
 		elif spread_level == 2:
-			_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0), dmg * 0.85 * mul, tex_key, pierce, 1.0 if _wave_flip else -1.0)
-			_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0).rotated(-0.18), dmg * 0.68 * mul, tex_key, pierce, 1.0)
-			_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0).rotated(0.18), dmg * 0.68 * mul, tex_key, pierce, -1.0)
+			_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0), dmg * 0.85 * mul, tex_key, pierce, 1.0 if _wave_flip else -1.0)
+			_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0).rotated(-0.18), dmg * 0.68 * mul, tex_key, pierce, 1.0)
+			_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0).rotated(0.18), dmg * 0.68 * mul, tex_key, pierce, -1.0)
 		else:
-			_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0), dmg * 0.85 * mul, tex_key, pierce, 1.0 if _wave_flip else -1.0)
+			_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0), dmg * 0.85 * mul, tex_key, pierce, 1.0 if _wave_flip else -1.0)
 			if is_ship:
-				_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0).rotated(-0.15), dmg * 0.62, tex_key, pierce, 1.0)
-				_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0).rotated(0.15), dmg * 0.62, tex_key, pierce, -1.0)
-				_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0).rotated(-0.32), dmg * 0.55, tex_key, pierce, 1.0)
-				_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0).rotated(0.32), dmg * 0.55, tex_key, pierce, -1.0)
+				_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0).rotated(-0.15), dmg * 0.62, tex_key, pierce, 1.0)
+				_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0).rotated(0.15), dmg * 0.62, tex_key, pierce, -1.0)
+				_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0).rotated(-0.32), dmg * 0.55, tex_key, pierce, 1.0)
+				_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0).rotated(0.32), dmg * 0.55, tex_key, pierce, -1.0)
 			else:
-				_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0).rotated(-0.17), dmg * 0.55 * mul, tex_key, pierce, 1.0)
-				_spawn_mode_shot(active_beam, eff_rank, origin, Vector2(speed, 0.0).rotated(0.17), dmg * 0.55 * mul, tex_key, pierce, -1.0)
+				_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0).rotated(-0.17), dmg * 0.55 * mul, tex_key, pierce, 1.0)
+				_spawn_mode_shot(mode, eff_rank, origin, Vector2(speed, 0.0).rotated(0.17), dmg * 0.55 * mul, tex_key, pierce, -1.0)
+	_cur_emitter_src = -1
 
-	# Co-Axial Aux Tech Beam on Exotic Ships (every 2nd shot fires your drafted Elemental/Tech Beam too!)
-	if aux_beam != "" and (_volley_count % 2 == 0):
-		var ap: Dictionary = _get_mode_params(aux_beam, maxi(1, beam_level))
-		_spawn_mode_shot(
-			aux_beam,
-			maxi(1, beam_level),
-			global_position + Vector2(12.0, 0.0),
-			Vector2(float(ap["spd"]), 0.0),
-			float(ap["dmg"]) * damage_bonus * 0.85,
-			String(ap["tex"]),
-			int(ap["pierce"]),
-			1.0 if _wave_flip else -1.0
-		)
+	# Co-Axial Aux Tech Beam on the original Exotic Ships: every 2nd volley also fires the drafted
+	# Elemental/Tech Beam (the newer ships fire it on a timer, see _process).
+	if aux_beam != "" and VOLLEY_AUX_WEAPONS.has(signature_weapon) and (_volley_count % 2 == 0):
+		_fire_aux_beam()
 
 	if active_beam == "cat" and (_volley_count % 5 == 1):
 		RetroSfx.play("meow", -14.0, 0.08)
-	else:
+	elif sfx_key != "":
 		RetroSfx.play(sfx_key, -15.5 if sfx_key == "zap" else -12.5, 0.05)
 	return interval
 
 
+func _fire_aux_beam() -> void:
+	var ap: Dictionary = _get_mode_params(aux_beam, maxi(1, beam_level))
+	_spawn_mode_shot(
+		aux_beam,
+		maxi(1, beam_level),
+		global_position + Vector2(12.0, 0.0),
+		Vector2(float(ap["spd"]), 0.0),
+		float(ap["dmg"]) * damage_bonus * 0.85,
+		String(ap["tex"]),
+		int(ap["pierce"]),
+		1.0 if _wave_flip else -1.0
+	)
+
+
+# What the options fire when the ship's own weapon only works from the hull.
+func _option_mode(mode: String) -> String:
+	match mode:
+		"katana":
+			return "slashwave"
+		"seed":
+			return "petal"
+		"tongue":
+			return "spit"
+	return mode
+
+
 func _spawn_mode_shot(mode: String, rank: int, pos: Vector2, vel: Vector2, dmg: float, tex_key: String, pierce: int, w_sign: float) -> GameBullet:
+	# Weapons that hit without a bullet of their own (they return null), or plant / scatter.
+	match mode:
+		"lance":
+			_fire_lance(pos, vel.normalized(), dmg)
+			return null
+		"katana":
+			_katana_slash(dmg, rank)
+			return null
+		"tongue":
+			_tongue_lash(pos, dmg, rank)
+			return null
+		"seed":
+			return _plant_seed(pos, dmg)
+		"scatter":
+			return _fire_scatter(pos, vel, dmg, tex_key, rank)
+
 	var hit_r: float = 5.0 if (mode == "wave" or mode == "biowave" or mode == "plasma") else 3.2
 	var shot_tex: String = tex_key
 	var cat_coat: String = ""
@@ -982,19 +1128,14 @@ func _spawn_mode_shot(mode: String, rank: int, pos: Vector2, vel: Vector2, dmg: 
 		_cat_coat_idx = (_cat_coat_idx + 1) % CAT_SHOT_COATS.size()
 		shot_tex = cat_coat + "_0"
 		hit_r = 6.0
+	elif mode == "sonar" or mode == "orb" or mode == "comet":
+		hit_r = 5.0
 	var is_ocular: bool = (mode == "ocular")
 	var b: GameBullet = _spawn_player_bullet(pos, vel, dmg, shot_tex, pierce, is_ocular, hit_r)
 	if is_ocular:
 		b.homing_turn_rate = 2.8
 		b.keep_upright = true
 		b.chain_count = 1 + rank / 2
-	elif homing_level > 0:
-		b.is_homing = true
-		b.homing_trail = false
-		b.homing_turn_rate = 1.6 + 1.6 * float(homing_level - 1)
-		b.life_left = 2.2 # Curving shots could otherwise circle the screen indefinitely.
-	if shrapnel_level > 0:
-		b.split_count = 1 + shrapnel_level
 
 	match mode:
 		"wave":
@@ -1031,7 +1172,321 @@ func _spawn_mode_shot(mode: String, rank: int, pos: Vector2, vel: Vector2, dmg: 
 			b.wave_amp = 2.0
 			b.wave_freq = 9.0
 			b.wave_sign = w_sign
+		"sonar":
+			# Ripples widen as they travel and pass through everything.
+			b.grow_rate = 2.0
+			b.grow_max = 2.6
+			b.spark_color = Color("#54f4ff")
+		"firework":
+			b.star_burst_time = 0.5
+			b.star_burst_count = 7
+			b.star_burst_spread = 0.42 + 0.02 * float(rank)
+			b.star_burst_dmg = dmg * 0.34
+			b.trail_color = Color("#ffe854")
+			b.spark_color = Color("#ff4ca8")
+		"orb":
+			b.aura_radius = (18.0 + 1.5 * float(rank)) * aoe_scale_mult
+			b.aura_dmg = dmg * 0.42
+			b.eats_shots = true
+			b.life_left = 3.0
+			b.fade_out = true
+			b.anim_tex_b = "bullet_orb_1"
+			b.keep_upright = true
+			b.rotation = 0.0
+			b.spark_color = Color("#d44cff")
+		"comet":
+			# Size and punch-through grow with the charge (_comet_power).
+			b.scale_body(0.55 + 0.75 * _comet_power)
+			b.pierce_left = int(round(float(pierce) * _comet_power))
+			b.trail_color = Color("#9cf4ff")
+			b.spark_color = Color("#28e8ff")
+		"orbit":
+			b.spark_color = Color("#ff9ce0")
+		"slashwave", "spit":
+			b.life_left = 0.5
+			b.fade_out = true
+	_apply_main_gun_mods(b)
 	return b
+
+
+# Seeker Rounds and Shrapnel Burst, for every main-gun shot.
+func _apply_main_gun_mods(b: GameBullet) -> void:
+	if homing_level > 0 and not b.is_homing:
+		b.is_homing = true
+		b.homing_trail = false
+		b.homing_turn_rate = 1.6 + 1.6 * float(homing_level - 1)
+		# Curving shots could otherwise circle the screen indefinitely.
+		b.life_left = 2.2 if b.life_left <= 0.0 else minf(b.life_left, 2.2)
+	if shrapnel_level > 0:
+		b.split_count = 1 + shrapnel_level
+
+
+# --- Hangar-expansion signature weapons that hit without bullets ------------------------------
+
+# Damage dealt straight to an enemy (beam, katana, tongue), with the same crit, berserk and
+# DRAFT CARD on-hit effects a main-gun bullet gets.
+func _direct_hit(en: Node2D, base_dmg: float) -> void:
+	var crit: bool = crit_chance > 0.0 and randf() < crit_chance
+	var dmg: float = _shot_damage(base_dmg, crit)
+	if en is GameEnemy:
+		var ge: GameEnemy = en as GameEnemy
+		if ambush_level > 0 and ge.hp >= ge.max_hp:
+			dmg *= 1.0 + 0.75 * float(ambush_level)
+		if cryo_level > 0:
+			ge.apply_chill(0.6 + 0.6 * float(cryo_level), 0.6 - 0.15 * float(cryo_level - 1))
+		if napalm_level > 0:
+			ge.apply_burn((1.6 + 1.2 * float(napalm_level - 1)) * damage_bonus, 2.0)
+		var exec_frac: float = 0.08 + 0.12 * float(execute_level)
+		if execute_level > 0 and ge.enemy_type != GameEnemy.Type.BOSS and ge.hp - dmg > 0.0 and ge.hp - dmg <= ge.max_hp * exec_frac:
+			dmg = ge.hp + 1.0
+	en.call("take_damage", dmg)
+	if crit and fx != null:
+		fx.spawn_hit_sparks(en.global_position, Color(1.0, 0.96, 0.65), 4)
+
+
+# Distance along the ray from o in direction d (unit) to where it first touches box, or -1 if it
+# misses within max_t. 0 if o is already inside.
+static func _ray_box_t(o: Vector2, d: Vector2, box: Rect2, max_t: float) -> float:
+	var t0: float = 0.0
+	var t1: float = max_t
+	for axis: int in range(2):
+		var oa: float = o.x if axis == 0 else o.y
+		var da: float = d.x if axis == 0 else d.y
+		var lo: float = box.position.x if axis == 0 else box.position.y
+		var hi: float = box.end.x if axis == 0 else box.end.y
+		if absf(da) < 0.00001:
+			if oa < lo or oa > hi:
+				return -1.0
+			continue
+		var ta: float = (lo - oa) / da
+		var tb: float = (hi - oa) / da
+		if ta > tb:
+			var sw: float = ta
+			ta = tb
+			tb = sw
+		t0 = maxf(t0, ta)
+		t1 = minf(t1, tb)
+		if t0 > t1:
+			return -1.0
+	return t0
+
+
+# Distance from o (inside BEAM_AREA) along d to the screen edge.
+static func _beam_reach(o: Vector2, d: Vector2) -> float:
+	var reach: float = 9999.0
+	if d.x > 0.00001:
+		reach = minf(reach, (BEAM_AREA.end.x - o.x) / d.x)
+	elif d.x < -0.00001:
+		reach = minf(reach, (BEAM_AREA.position.x - o.x) / d.x)
+	if d.y > 0.00001:
+		reach = minf(reach, (BEAM_AREA.end.y - o.y) / d.y)
+	elif d.y < -0.00001:
+		reach = minf(reach, (BEAM_AREA.position.y - o.y) / d.y)
+	return maxf(0.0, reach)
+
+
+# HELIOS LANCER: a solar beam to the first enemy in its line, or to the screen edge. Fired every
+# 0.1 s; each tick hurts that one enemy and refreshes the drawn beam.
+func _fire_lance(origin: Vector2, dir: Vector2, dmg: float) -> void:
+	var reach: float = _beam_reach(origin, dir)
+	var best: Node2D = null
+	var best_t: float = reach
+	for node: Node in get_tree().get_nodes_in_group("enemies"):
+		if not (node is Node2D) or not is_instance_valid(node) or not node.has_method("take_damage"):
+			continue
+		var en: Node2D = node as Node2D
+		var t: float = _ray_box_t(origin, dir, GameBullet.enemy_hit_box(en).grow(LANCE_HALF_WIDTH), best_t)
+		if t >= 0.0 and t < best_t:
+			best_t = t
+			best = en
+	if best != null:
+		_direct_hit(best, dmg)
+		if fx != null and randf() < 0.5:
+			fx.spawn_hit_sparks(origin + dir * best_t, Color("#ffe854"), 2)
+	_lance_fx.append({"src": _cur_emitter_src, "dir": dir, "len": best_t, "hit": best != null, "t": LANCE_FX_TIME})
+
+
+# RONIN-7: a photon-katana slash around the nose. Hurts every enemy in the arc and cuts enemy
+# shots out of the air. Spread draws a wider, longer cut that hits harder (still one hit each).
+func _katana_slash(dmg: float, rank: int) -> void:
+	var radius: float = 44.0 + 3.0 * float(rank) + 7.0 * float(spread_level)
+	var half_arc: float = 1.1 + 0.12 * float(spread_level)
+	var spread_mult: float = 1.0 + 0.18 * float(spread_level)
+	var center: Vector2 = global_position + Vector2(2.0, 0.0)
+	var hits: int = 0
+	for node: Node in get_tree().get_nodes_in_group("enemies"):
+		if not (node is Node2D) or not is_instance_valid(node) or not node.has_method("take_damage"):
+			continue
+		var en: Node2D = node as Node2D
+		var box: Rect2 = GameBullet.enemy_hit_box(en)
+		var near: Vector2 = Vector2(clampf(center.x, box.position.x, box.end.x), clampf(center.y, box.position.y, box.end.y))
+		var off: Vector2 = near - center
+		if off.length() > radius or (off.length() > 6.0 and absf(off.angle()) > half_arc):
+			continue
+		_direct_hit(en, dmg * spread_mult)
+		hits += 1
+		if fx != null:
+			fx.spawn_hit_sparks(near, Color("#ff4ca8"), 3)
+	if bullet_container != null:
+		for child: Node in bullet_container.get_children():
+			if child is GameBullet:
+				var gb: GameBullet = child as GameBullet
+				if gb.is_player_bullet or gb.is_queued_for_deletion():
+					continue
+				var b_off: Vector2 = gb.global_position - center
+				if b_off.length() <= radius and absf(b_off.angle()) <= half_arc:
+					if fx != null:
+						fx.spawn_hit_sparks(gb.global_position, Color.WHITE, 2)
+					gb.queue_free()
+	_slash_flip = not _slash_flip
+	_slash_fx.append({"t": SLASH_FX_TIME, "r": radius, "arc": half_arc, "flip": _slash_flip})
+	RetroSfx.play("laser" if hits == 0 else "hit", -13.0, 0.12)
+
+
+# LEAPFROG: the tongue snaps at the nearest enemy ahead within reach (spread adds more targets,
+# each further one at 70%). With nothing in reach it just flicks out.
+func _tongue_lash(origin: Vector2, dmg: float, rank: int) -> void:
+	var reach: float = 140.0 + 8.0 * float(rank)
+	var found: Array[Dictionary] = []
+	for node: Node in get_tree().get_nodes_in_group("enemies"):
+		if not (node is Node2D) or not is_instance_valid(node) or not node.has_method("take_damage"):
+			continue
+		var en: Node2D = node as Node2D
+		var box: Rect2 = GameBullet.enemy_hit_box(en)
+		if box.end.x < origin.x - 4.0:
+			continue
+		var near: Vector2 = Vector2(clampf(origin.x, box.position.x, box.end.x), clampf(origin.y, box.position.y, box.end.y))
+		var d: float = near.distance_to(origin)
+		if d <= reach:
+			found.append({"en": en, "d": d, "at": near})
+	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["d"]) < float(b["d"]))
+	var count: int = mini(found.size(), 1 + spread_level)
+	for i: int in range(count):
+		var tgt: Dictionary = found[i]
+		_direct_hit(tgt["en"] as Node2D, dmg * (1.0 if i == 0 else 0.7))
+		_tongue_fx.append({"to": Vector2(tgt["at"]), "t": TONGUE_FX_TIME})
+		if fx != null:
+			fx.spawn_hit_sparks(Vector2(tgt["at"]), Color("#ff6fa8"), 3)
+	if count == 0:
+		_tongue_fx.append({"to": origin + Vector2(reach * 0.45, 0.0), "t": TONGUE_FX_TIME})
+	RetroSfx.play("bounce", -15.0 if count > 0 else -19.0, 0.15)
+
+
+# STARBLOOM: plants a seed sentry that hovers ahead of the ship and fires petals (fire_sentry).
+# At most SENTRY_CAP live at once; planting another wilts the oldest.
+func _plant_seed(origin: Vector2, dmg: float) -> GameBullet:
+	var alive: Array[GameBullet] = []
+	for pod: GameBullet in _sentries:
+		if is_instance_valid(pod) and not pod.is_queued_for_deletion():
+			alive.append(pod)
+	_sentries = alive
+	while _sentries.size() >= SENTRY_CAP:
+		var oldest: GameBullet = _sentries.pop_front()
+		if fx != null:
+			fx.spawn_hit_sparks(oldest.global_position, Color("#3ce878"), 3)
+		oldest.queue_free()
+	var pod: GameBullet = _spawn_player_bullet(origin + Vector2(2.0, 0.0), Vector2(18.0, 0.0), 0.0, "bullet_seedpod_0", 0, false, 4.0, false)
+	pod.collision_mask = 0
+	pod.anim_tex_b = "bullet_seedpod_1"
+	pod.keep_upright = true
+	pod.rotation = 0.0
+	pod.life_left = 2.8
+	pod.fade_out = true
+	pod.sentry_owner = self
+	pod.sentry_interval = 0.30
+	pod.sentry_timer = 0.08
+	pod.sentry_dmg = dmg
+	_sentries.append(pod)
+	RetroSfx.play("powerup", -20.0, 0.1)
+	return pod
+
+
+# A seed sentry's petal volley (called by the pod). Spread fans the petals like a main gun.
+func fire_sentry(pod: GameBullet) -> void:
+	if bullet_container == null or not visible:
+		return
+	var p: Dictionary = _get_mode_params("petal", 1)
+	var spd: float = float(p["spd"])
+	var at: Vector2 = pod.global_position + Vector2(5.0, 0.0)
+	var fan: Array[Vector3] = [Vector3(0.0, 0.0, 1.0)]
+	if spread_level == 1:
+		fan = [Vector3(-3.5, 0.0, 0.78), Vector3(3.5, 0.0, 0.78)]
+	elif spread_level == 2:
+		fan = [Vector3(0.0, 0.0, 0.85), Vector3(0.0, -0.18, 0.68), Vector3(0.0, 0.18, 0.68)]
+	elif spread_level >= 3:
+		fan = [Vector3(0.0, 0.0, 0.85), Vector3(0.0, -0.15, 0.62), Vector3(0.0, 0.15, 0.62), Vector3(0.0, -0.32, 0.55), Vector3(0.0, 0.32, 0.55)]
+	for f: Vector3 in fan:
+		_spawn_mode_shot("petal", 1, at + Vector2(0.0, f.x), Vector2(spd, 0.0).rotated(f.y), pod.sentry_dmg * f.z, String(p["tex"]), 0, 1.0)
+
+
+# WARHOG: a shotgun blast of pellets that spread out and fade after a short range.
+func _fire_scatter(origin: Vector2, vel: Vector2, dmg: float, tex_key: String, rank: int) -> GameBullet:
+	var first: GameBullet = null
+	for i: int in range(6):
+		var ang: float = 0.0 if i == 0 else randf_range(-0.22, 0.22)
+		var v: Vector2 = vel.rotated(ang) * (1.0 if i == 0 else randf_range(0.82, 1.12))
+		var b: GameBullet = _spawn_player_bullet(origin, v, dmg, tex_key, 0, false, 3.0)
+		b.life_left = 0.40 + 0.02 * float(rank)
+		b.fade_out = true
+		b.fade_time = 0.1
+		b.spark_color = Color("#ffb070")
+		_apply_main_gun_mods(b)
+		if first == null:
+			first = b
+	if fx != null:
+		fx.spawn_hit_sparks(origin + Vector2(3.0, 0.0), Color("#ffe854"), 3) # muzzle flash
+	return first
+
+
+# COMET KNIGHT: holding fire charges the cannon (autofire holds it for you); a full charge fires
+# by itself, and letting go early fires a smaller comet.
+func _update_comet_charge(delta: float, fire_pressed: bool) -> void:
+	if fire_pressed:
+		_comet_charge = minf(1.0, _comet_charge + delta * fire_rate_bonus / COMET_CHARGE_TIME)
+		if _comet_charge >= 1.0:
+			_release_comet(1.0)
+	elif _comet_charge >= COMET_MIN_CHARGE:
+		_release_comet(_comet_charge)
+	else:
+		_comet_charge = 0.0
+
+
+func _release_comet(power: float) -> void:
+	_comet_power = power
+	_fire_primary()
+	_comet_power = 1.0
+	_comet_charge = 0.0
+
+
+# GEMINI TWINS: two gun pods circling the ship (they are the ship's emitters in _fire_primary).
+func _update_orbit_pods(delta: float) -> void:
+	_orbit_angle = fposmod(_orbit_angle + delta * 4.2, TAU)
+	for i: int in range(_orbit_pods.size()):
+		var a: float = _orbit_angle + PI * float(i)
+		_orbit_pods[i].global_position = global_position + Vector2(cos(a) * 15.0, sin(a) * 17.0)
+
+
+func _sync_orbit_pods() -> void:
+	for pod: Sprite2D in _orbit_pods:
+		pod.visible = visible and signature_weapon == "orbit"
+	if signature_weapon == "orbit":
+		_update_orbit_pods(0.0)
+
+
+func _age_weapon_fx(delta: float) -> void:
+	_age_fx_list(_lance_fx, delta)
+	_age_fx_list(_slash_fx, delta)
+	_age_fx_list(_tongue_fx, delta)
+
+
+static func _age_fx_list(fx_list: Array[Dictionary], delta: float) -> void:
+	var i: int = fx_list.size() - 1
+	while i >= 0:
+		var e: Dictionary = fx_list[i]
+		e["t"] = float(e["t"]) - delta
+		if float(e["t"]) <= 0.0:
+			fx_list.remove_at(i)
+		i -= 1
 
 
 func _fire_missiles() -> void:
@@ -1131,12 +1586,18 @@ func _trigger_nova_pulse(reactive_burst: bool) -> void:
 					gb.queue_free()
 
 
-func _spawn_player_bullet(pos: Vector2, vel: Vector2, dmg: float, tex_key: String, pierce: int, homing: bool, hit_r: float = 3.0) -> GameBullet:
-	var crit: bool = crit_chance > 0.0 and randf() < crit_chance
+# Crit and Berserker Core applied to a hit's base damage.
+func _shot_damage(dmg: float, crit: bool) -> float:
 	var final_dmg: float = dmg * (crit_mult if crit else 1.0)
 	if berserk_level > 0:
 		var missing: int = maxi(0, max_hp - hp)
 		final_dmg *= 1.0 + minf(1.0, float(missing) * (0.15 + 0.10 * float(berserk_level - 1)))
+	return final_dmg
+
+
+func _spawn_player_bullet(pos: Vector2, vel: Vector2, dmg: float, tex_key: String, pierce: int, homing: bool, hit_r: float = 3.0, can_crit: bool = true) -> GameBullet:
+	var crit: bool = can_crit and crit_chance > 0.0 and randf() < crit_chance
+	var final_dmg: float = _shot_damage(dmg, crit)
 	var b: GameBullet = GameBullet.new()
 	bullet_container.add_child(b)
 	b.setup(pos, vel, final_dmg, true, tex_key, pierce, homing, hit_r, fx)
@@ -1248,12 +1709,14 @@ func _get_beam_nose_color() -> Color:
 			return Color("#28e8ff")
 		"wave", "biowave", "saucer":
 			return Color("#3ce878")
-		"prism", "cat":
+		"prism", "cat", "katana", "tongue", "seed":
 			return Color("#ff4cd4")
-		"tesla", "ocular":
+		"tesla", "ocular", "orb":
 			return Color("#b86bff")
-		"plasma", "flak":
+		"plasma", "flak", "scatter", "firework":
 			return Color("#ff6820")
+		"sonar", "comet", "orbit":
+			return Color("#54f4ff")
 		_:
 			return Color("#ffe854")
 
@@ -1314,3 +1777,53 @@ func _draw() -> void:
 	if _focus_held:
 		draw_circle(Vector2.ZERO, 3.5, Color(0.16, 0.91, 1.0, 0.85))
 		draw_circle(Vector2.ZERO, 1.8, Color.WHITE)
+
+	_draw_signature_fx()
+
+
+# Beams, katana cuts, tongue lashes and the comet charge glow of the hangar-expansion ships.
+# Drawn in the ship's local space, from wherever each emitter is now, so they stay attached.
+func _draw_signature_fx() -> void:
+	var flick: float = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.06)
+	for e: Dictionary in _lance_fx:
+		var src: int = int(e["src"])
+		var from_g: Vector2 = global_position + Vector2(12.0, 0.0)
+		if src >= 0 and src < _option_sprites.size():
+			from_g = _option_sprites[src].global_position + Vector2(6.0, 0.0)
+		var to_g: Vector2 = from_g + Vector2(e["dir"]) * float(e["len"])
+		var a: Vector2 = to_local(from_g)
+		var b: Vector2 = to_local(to_g)
+		var w: float = 1.0 if src >= 0 else 1.6
+		draw_line(a, b, Color(1.0, 0.62, 0.15, 0.35), (4.0 + flick) * w)
+		draw_line(a, b, Color("#ffe854"), 2.0 * w)
+		draw_line(a, b, Color.WHITE, 1.0)
+		draw_circle(a, 2.5 * w, Color("#fff4b0"))
+		if bool(e["hit"]):
+			draw_circle(b, (2.5 + 1.5 * flick) * w, Color(1.0, 0.9, 0.4, 0.85))
+			draw_circle(b, 1.5 * w, Color.WHITE)
+	for e: Dictionary in _slash_fx:
+		var k: float = 1.0 - float(e["t"]) / SLASH_FX_TIME # 0 -> 1 over the cut
+		var r: float = float(e["r"])
+		var arc: float = float(e["arc"])
+		var sweep: float = clampf(k * 1.6, 0.0, 1.0)
+		var a0: float = -arc if not bool(e["flip"]) else arc
+		var a1: float = lerpf(a0, -a0, sweep)
+		var alpha: float = clampf(1.4 - k, 0.0, 1.0)
+		var c: Vector2 = Vector2(2.0, 0.0)
+		draw_arc(c, r, minf(a0, a1), maxf(a0, a1), 18, Color(1.0, 0.3, 0.66, 0.45 * alpha), 6.0)
+		draw_arc(c, r - 2.0, minf(a0, a1), maxf(a0, a1), 18, Color(1.0, 0.75, 0.9, alpha), 3.0)
+		draw_arc(c, r - 3.0, minf(a0, a1), maxf(a0, a1), 18, Color(1.0, 1.0, 1.0, alpha), 1.0)
+	for e: Dictionary in _tongue_fx:
+		var k2: float = 1.0 - float(e["t"]) / TONGUE_FX_TIME
+		var reach: float = sin(PI * clampf(k2 * 1.15, 0.0, 1.0))
+		var mouth: Vector2 = Vector2(12.0, 2.0)
+		var tip: Vector2 = mouth.lerp(to_local(Vector2(e["to"])), reach)
+		draw_line(mouth, tip, Color("#b0204e"), 3.0)
+		draw_line(mouth, tip, Color("#ff6fa8"), 2.0)
+		draw_circle(tip, 2.6, Color("#ff6fa8"))
+		draw_circle(tip + Vector2(-0.6, -0.8), 1.0, Color("#ffd0e4"))
+	if active_beam == "comet" and _comet_charge > 0.02:
+		var cr: float = 1.5 + 4.5 * _comet_charge
+		draw_circle(Vector2(16.0, 0.0), cr + 1.5 * flick, Color(0.3, 0.9, 1.0, 0.35))
+		draw_circle(Vector2(16.0, 0.0), cr, Color("#9cf4ff"))
+		draw_circle(Vector2(16.0, 0.0), cr * 0.5, Color.WHITE)
