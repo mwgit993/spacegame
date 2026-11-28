@@ -1649,6 +1649,11 @@ func _smoke_check_sub_weapons() -> bool:
 	for gem: Node in pickup_layer.get_children():
 		pickup_layer.remove_child(gem)
 		gem.queue_free()
+	# A gem spawned late (call_deferred from an earlier kill) could still level the ship up, so no
+	# level-ups at all until the check is done.
+	var held_xp_to_next: int = xp_to_next
+	xp_to_next = 1 << 30
+	_pending_level_ups = 0
 	MetaSave.select_ship("neko")
 	player.reset_for_new_run()
 	player.global_position = Vector2(80.0, 134.0)
@@ -1722,6 +1727,7 @@ func _smoke_check_sub_weapons() -> bool:
 	player.reset_for_new_run()
 	_spawn_queue.append_array(held_spawns)
 	_wave_clear_delay = held_clear_delay
+	xp_to_next = held_xp_to_next
 	return ok
 
 
