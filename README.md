@@ -8,7 +8,7 @@ A horizontal 16-bit style roguelite space shooter built in **Godot 4.7** (`480x2
 - **Fire:** Autofire ON by default (`C` or Controller `Y` toggles) / Hold `Space`, `Z`, `J`, `A`, or `X`
 - **Speed Up (2x game speed):** Hold `F` / Controller `RT` (switch it to a toggle under **Options → SPEED UP**)
 - **FPS:** **Options → FPS** caps the frame rate at 30, 60 (the default) or 120, or UNLOCKED. V-sync stays on unless the cap is above your screen's refresh rate.
-- **Soundtrack picker:** **Options → SOUNDTRACK** lists every place music plays (title, each stage, boss fights, the hyperspace jump). Up/down picks a slot, left/right cycles its original track and 5 alternatives (you hear each one as you go), and the choice is saved. Stages 1 and 2 play recorded songs (`assets/music/`) by default; they're listed last, after the synth tracks.
+- **Soundtrack picker:** **Options → SOUNDTRACK** lists every place music plays (title, each stage, boss fights, the hyperspace jump). Up/down picks a slot, left/right cycles its original track and 5 alternatives (you hear each one as you go), and the choice is saved. Stages 1–5 play recorded songs (`assets/music/`) by default; they're listed last, after the synth tracks.
 - **Pause (Stats & Installed Upgrades):** `Esc` / `P` / Controller `Start` / Top-right `II` button
 - **Level-Up Powerup Draft:** Keys `1` / `2` / `3`, Mouse/Touch tap, or Controller D-Pad + `A` (`R` or `Y` to Reroll when unlocked)
 - **Skill Tree & Ship Loadout:** Navigate nodes with `WASD` / Arrows / D-Pad / Stick or Mouse click & drag; `Tab` / `X` switches between **Skill Tree** and **Fleet Ship Loadout**

@@ -581,13 +581,11 @@ func set_picks(new_picks: Dictionary) -> void:
 
 # Shipped default per slot for players who haven't picked (0 = original, n = alternative #n
 # as numbered in the picker). These are Matthew's picks; a slot left out plays its original.
-# A slot with a recording (music_tracks.gd) defaults to the recording instead: stage_1 and
-# stage_2 play his MP3s (his synth picks there were #3 ORBITAL DRIVE and #2 ENGINE ROOM).
+# A slot with a recording (music_tracks.gd) defaults to the recording instead: stages 1-5
+# play his MP3s (his synth picks there were #3 ORBITAL DRIVE, #2 ENGINE ROOM, #5 JETSTREAM,
+# #3 VINE RUNNER and #3 BLIZZARD).
 const DEFAULT_PICKS: Dictionary = {
 	"title": 2,   # HEROES ASSEMBLE
-	"stage_3": 5, # JETSTREAM
-	"stage_4": 3, # VINE RUNNER
-	"stage_5": 3, # BLIZZARD
 	"stage_6": 3, # ERUPTION
 	"stage_7": 4, # DEEP CURRENT
 	"stage_8": 2, # GLITCH PROTOCOL
