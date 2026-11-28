@@ -2085,12 +2085,20 @@ func _smoke_check_soundtrack() -> bool:
 			ok = false
 	for slot: String in GenesisMusic.get_slot_keys():
 		var count: int = GenesisMusic.candidate_count(slot)
+		var alts: int = count - (1 if GenesisMusic.has_recording(slot) else 0)
 		# The built-in slots ship 5 alternatives each; a stage module's are optional.
-		if count != 5 and not GenesisMusic.is_module_slot(slot):
-			push_error("SMOKE: soundtrack slot %s has %d alternatives, expected 5" % [slot, count])
+		if alts != 5 and not GenesisMusic.is_module_slot(slot):
+			push_error("SMOKE: soundtrack slot %s has %d alternatives, expected 5" % [slot, alts])
 			ok = false
 		for idx: int in range(count + 1):
 			GenesisMusic.preview(slot, idx)
+			if idx > 0 and idx == GenesisMusic.recording_index(slot):
+				if not _smoke_check_recording(slot):
+					ok = false
+				continue
+			if GenesisMusic._file_player.playing:
+				push_error("SMOKE: soundtrack %s #%d left a recording playing" % [slot, idx])
+				ok = false
 			var song: Dictionary = GenesisMusic._song
 			if idx > 0 and song.is_empty():
 				push_error("SMOKE: soundtrack %s #%d did not load" % [slot, idx])
@@ -2131,7 +2139,7 @@ func _smoke_check_soundtrack() -> bool:
 	var before: int = GenesisMusic.get_pick("stage_1")
 	_snd_change_track(1)
 	var after: int = GenesisMusic.get_pick("stage_1")
-	if after != (before + 1) % 6 or int(MetaSave.music_picks.get("stage_1", -1)) != after:
+	if after != (before + 1) % (GenesisMusic.candidate_count("stage_1") + 1) or int(MetaSave.music_picks.get("stage_1", -1)) != after:
 		push_error("SMOKE: soundtrack pick did not change (%d -> %d)" % [before, after])
 		ok = false
 	if GenesisMusic.current_mode != GenesisMusic.Mode.STAGE or GenesisMusic._preview_slot != "stage_1":
@@ -2141,6 +2149,8 @@ func _smoke_check_soundtrack() -> bool:
 	MetaSave.load_game()
 	if int(MetaSave.music_picks.get("stage_1", -1)) != after:
 		push_error("SMOKE: soundtrack pick did not survive save + load")
+		ok = false
+	if not _smoke_check_recording_save():
 		ok = false
 	for i: int in range(12):
 		_snd_move_row(1)
@@ -2153,6 +2163,82 @@ func _smoke_check_soundtrack() -> bool:
 	_leave_options()
 	MetaSave.music_picks = saved_picks
 	GenesisMusic.set_picks(MetaSave.music_picks)
+	MetaSave.save_game()
+	return ok
+
+
+# A recorded track (music_tracks.gd) plays on its own player instead of the synth, loads with its
+# loop set up, and Godot's loop really jumps from loop_end to loop_start: one second played from
+# half a second before loop_end must end half a second into the loop, with real, finite audio all
+# the way. (Within 5 ms: the reported position runs ~60 samples ahead of the audio, since the
+# resampler reads ahead. The loop itself was measured exact to the sample.)
+func _smoke_check_recording(slot: String) -> bool:
+	var track: Dictionary = GenesisMusic._song
+	var stream: AudioStreamMP3 = GenesisMusic._file_player.stream as AudioStreamMP3
+	if not track.has("file") or stream == null or not GenesisMusic._file_player.playing or GenesisMusic._player.playing:
+		push_error("SMOKE: the recording for %s is not playing (or the synth still is)" % slot)
+		return false
+	var rate: float = GenesisMusic.MIX_RATE
+	var loop_start: float = float(track["loop_start"]) / rate
+	var loop_end: float = float(track["loop_end"]) / rate
+	if not stream.loop or loop_start <= 0.0 or loop_end <= loop_start + 1.0 or loop_end > stream.get_length():
+		push_error("SMOKE: the recording for %s has bad loop points (%.3f..%.3f s of %.3f s)" % [slot, loop_start, loop_end, stream.get_length()])
+		return false
+	var ok: bool = true
+	var pb: AudioStreamPlayback = stream.instantiate_playback()
+	pb.start(loop_end - 0.5)
+	var buf: PackedVector2Array = pb.mix_audio(1.0, int(rate))
+	var want: float = loop_start + 0.5
+	if pb.get_loop_count() != 1 or absf(pb.get_playback_position() - want) > 0.005:
+		push_error("SMOKE: the recording for %s did not loop on its loop points (%d loops, at %.5f s, expected %.5f s)" % [slot, pb.get_loop_count(), pb.get_playback_position(), want])
+		ok = false
+	var loudest: float = 0.0
+	for v: Vector2 in buf:
+		if is_nan(v.x) or is_nan(v.y) or is_inf(v.x) or is_inf(v.y):
+			push_error("SMOKE: the recording for %s decoded a bad sample" % slot)
+			return false
+		loudest = maxf(loudest, absf(v.x))
+	if buf.size() != int(rate) or loudest < 0.01:
+		push_error("SMOKE: the recording for %s is silent or cut short (%d frames)" % [slot, buf.size()])
+		ok = false
+	return ok
+
+
+# A slot with a recording defaults to it. A save written before the slot had one loses its pick
+# there, once (so the player hears the new song), and keeps its other picks; a pick made after
+# that sticks.
+func _smoke_check_recording_save() -> bool:
+	var ok: bool = true
+	var keep: Dictionary = MetaSave.music_picks.duplicate()
+	GenesisMusic.set_picks({})
+	for slot: String in GenesisMusic.get_slot_keys():
+		if GenesisMusic.has_recording(slot) and GenesisMusic.get_pick(slot) != GenesisMusic.recording_index(slot):
+			push_error("SMOKE: soundtrack slot %s does not default to its recording" % slot)
+			ok = false
+	var rec_slot: String = String(GenesisMusic.Tracks.TRACKS.keys()[0])
+	# An old save: a synth pick on that slot, and no "music_recordings" list.
+	MetaSave.music_picks = {rec_slot: 2, "title": 1}
+	MetaSave.save_game()
+	var rf: FileAccess = FileAccess.open(MetaSave.SAVE_PATH, FileAccess.READ)
+	var parsed: Variant = JSON.parse_string(rf.get_as_text())
+	rf.close()
+	var data: Dictionary = parsed as Dictionary
+	data.erase("music_recordings")
+	var wf: FileAccess = FileAccess.open(MetaSave.SAVE_PATH, FileAccess.WRITE)
+	wf.store_string(JSON.stringify(data, "\t"))
+	wf.close()
+	MetaSave.load_game()
+	if MetaSave.music_picks.has(rec_slot) or int(MetaSave.music_picks.get("title", -1)) != 1:
+		push_error("SMOKE: loading an old save did not drop its %s pick for the recording, or lost another pick: %s" % [rec_slot, str(MetaSave.music_picks)])
+		ok = false
+	MetaSave.music_picks[rec_slot] = 2
+	MetaSave.save_game()
+	MetaSave.load_game()
+	if int(MetaSave.music_picks.get(rec_slot, -1)) != 2:
+		push_error("SMOKE: a %s pick made after its recording arrived did not survive save + load" % rec_slot)
+		ok = false
+	MetaSave.music_picks = keep
+	GenesisMusic.set_picks(keep)
 	MetaSave.save_game()
 	return ok
 
