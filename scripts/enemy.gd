@@ -108,6 +108,11 @@ var _boss_attack_anim_timer: float = 0.0
 var _boss_recoil_x: float = 0.0
 var _boss_spark_timer: float = 0.25
 var _boss_dying: bool = false
+# Stages 1-8: the boss is an animated rig of parts with a dino pilot (scripts/bosses/), drawn
+# under _sprite (which then shows no texture) so the intro squash, recoil and hit flash apply.
+const BossRigs = preload("res://scripts/bosses/boss_rigs.gd")
+const BossRig = preload("res://scripts/bosses/boss_rig.gd")
+var _rig: BossRig = null
 var _boss_death_timer: float = 0.0
 var _boss_death_boom_timer: float = 0.0
 
@@ -293,6 +298,11 @@ func setup(
 				_boss_ai = boss_module.call("create_boss")
 				_boss_ai.set("boss", self)
 				_boss_ai.call("setup")
+			elif BossRigs.has_rig(stage_idx):
+				_rig = BossRigs.create(stage_idx) as BossRig
+				_sprite.add_child(_rig)
+				_rig.setup(self)
+				_sprite.texture = null
 
 			# Launch Mega Man-style Boss Teleport Arrival -> Signature Pose -> 28-Pip HP Bar Fill!
 			boss_intro_active = true
@@ -1289,7 +1299,7 @@ func _process_boss(delta: float) -> void:
 	if _boss_dying:
 		_boss_death_timer -= delta
 		_boss_death_boom_timer -= delta
-		_sprite.texture = PixelArt.tex(_boss_tex_base + "_2")
+		_boss_frame("_2")
 		_sprite.position = Vector2(randf_range(-4.5, 4.5), randf_range(-4.5, 4.5))
 		_mat.set_shader_parameter("flash", 1.0 if (int(_age * 26.0) % 2 == 0) else 0.0)
 		if _boss_death_boom_timer <= 0.0:
@@ -1330,11 +1340,11 @@ func _process_boss(delta: float) -> void:
 
 	# Select animated boss sprite frame (_0, _1, or _2 for roar/attack/phase-burst)
 	if _boss_attack_anim_timer > 0.0 or boss_shield_timer > 0.0:
-		_sprite.texture = PixelArt.tex(_boss_tex_base + "_2")
+		_boss_frame("_2")
 	else:
 		var anim_fps: float = 3.2 + float(boss_phase) * 1.5
 		var idle_idx: int = int(_age * anim_fps) % 2
-		_sprite.texture = PixelArt.tex(_boss_tex_base + ("_1" if idle_idx == 1 else "_0"))
+		_boss_frame("_1" if idle_idx == 1 else "_0")
 
 	if boss_shield_timer > 0.0:
 		_sprite.position = Vector2(_boss_recoil_x + randf_range(-2.0, 2.0), randf_range(-2.0, 2.0))
@@ -1353,6 +1363,8 @@ func _process_boss(delta: float) -> void:
 	_fire_timer -= delta
 	if _fire_timer <= 0.0 and global_position.x < 465.0:
 		_boss_attack()
+		if _rig != null:
+			_rig.on_attack(_boss_pattern)
 		_boss_attack_anim_timer = 0.28
 		_boss_recoil_x = 5.5
 		_sprite.scale = Vector2(1.06, 0.95)
@@ -1376,7 +1388,9 @@ func _update_boss_intro(delta: float) -> void:
 			_boss_intro_timer = 0.0
 			global_position = Vector2(_target_x, 134.0)
 			_sprite.scale = Vector2(1.24, 0.80)
-			_sprite.texture = PixelArt.tex(_boss_tex_base + "_2")
+			_boss_frame("_2")
+			if _rig != null:
+				_rig.on_pose()
 			RetroSfx.play("boss_pose", -4.5, 0.01)
 			if fx != null:
 				fx.add_shake(6.5)
@@ -1388,7 +1402,7 @@ func _update_boss_intro(delta: float) -> void:
 		_sprite.scale = _sprite.scale.lerp(Vector2.ONE, clampf(delta * 12.0, 0.0, 1.0))
 		_mat.set_shader_parameter("flash", maxf(0.0, 1.0 - t1 * 2.8))
 		var pose_suf: String = "_1" if (t1 > 0.28 and t1 < 0.52) else "_2"
-		_sprite.texture = PixelArt.tex(_boss_tex_base + pose_suf)
+		_boss_frame(pose_suf)
 		_sprite.position = Vector2(-6.0 * sin(t1 * PI), 0.0)
 
 		if _boss_intro_timer >= 0.68:
@@ -1412,7 +1426,7 @@ func _update_boss_intro(delta: float) -> void:
 		var fill_suf: String = "_2" if _boss_hp_pips_filled >= BOSS_HP_PIPS - 4 else (
 			"_1" if (_boss_hp_pips_filled / 3) % 2 == 1 else "_0"
 		)
-		_sprite.texture = PixelArt.tex(_boss_tex_base + fill_suf)
+		_boss_frame(fill_suf)
 
 		if _boss_hp_pips_filled >= BOSS_HP_PIPS:
 			boss_hp_bar_fill = 1.0
@@ -1457,12 +1471,14 @@ func _boss_attack() -> void:
 			elif _boss_pattern == 1:
 				var ang_off: float = sin(float(_boss_substep) * 0.9) * 0.24
 				var b_spd: float = 150.0 + spd_bonus
-				_shoot_from(global_position + Vector2(-50.0, -50.0), Vector2(-b_spd, 38.0).rotated(ang_off), _bullet_b)
-				_shoot_from(global_position + Vector2(-50.0, -50.0), Vector2(-b_spd, 0.0).rotated(ang_off), _bullet_b)
-				_shoot_from(global_position + Vector2(-50.0, 50.0), Vector2(-b_spd, -38.0).rotated(-ang_off), _bullet_b)
-				_shoot_from(global_position + Vector2(-50.0, 50.0), Vector2(-b_spd, 0.0).rotated(-ang_off), _bullet_b)
+				var top_gun: Vector2 = _bm("cannon_top", Vector2(-50.0, -50.0))
+				var bot_gun: Vector2 = _bm("cannon_bot", Vector2(-50.0, 50.0))
+				_shoot_from(top_gun, Vector2(-b_spd, 38.0).rotated(ang_off), _bullet_b)
+				_shoot_from(top_gun, Vector2(-b_spd, 0.0).rotated(ang_off), _bullet_b)
+				_shoot_from(bot_gun, Vector2(-b_spd, -38.0).rotated(-ang_off), _bullet_b)
+				_shoot_from(bot_gun, Vector2(-b_spd, 0.0).rotated(-ang_off), _bullet_b)
 				if boss_phase >= 3:
-					_shoot_aimed_from(global_position + Vector2(-36.0, 0.0), b_spd + 15.0, _bullet_a, 0.0)
+					_shoot_aimed_from(_bm("core", Vector2(-36.0, 0.0)), b_spd + 15.0, _bullet_a, 0.0)
 				_fire_timer = 0.66 * rate_mult
 			else:
 				_shoot_ring(7 + boss_phase * 2, 136.0 + spd_bonus, _bullet_a, _boss_spin)
@@ -1471,19 +1487,20 @@ func _boss_attack() -> void:
 
 		1: # STAGE 2: MECHA SCORPION
 			if _boss_pattern == 0:
-				var stinger_pos: Vector2 = global_position + Vector2(-38.0, -52.0)
+				var stinger_pos: Vector2 = _bm("stinger", Vector2(-38.0, -52.0))
 				for k: int in range(4 + boss_phase):
 					var vel: Vector2 = Vector2(-(158.0 + spd_bonus), 18.0 + float(k) * 20.0)
 					_shoot_from(stinger_pos, vel, _bullet_a)
 				_fire_timer = 0.88 * rate_mult
 			elif _boss_pattern == 1:
-				_shoot_from_spread(global_position + Vector2(-46.0, -16.0), 2 + boss_phase, 0.19, 148.0 + spd_bonus, _bullet_b)
-				_shoot_from_spread(global_position + Vector2(-46.0, 38.0), 2 + boss_phase, 0.19, 148.0 + spd_bonus, _bullet_b)
+				_shoot_from_spread(_bm("claw_top", Vector2(-46.0, -16.0)), 2 + boss_phase, 0.19, 148.0 + spd_bonus, _bullet_b)
+				_shoot_from_spread(_bm("claw_bot", Vector2(-46.0, 38.0)), 2 + boss_phase, 0.19, 148.0 + spd_bonus, _bullet_b)
 				_fire_timer = 0.92 * rate_mult
 			else:
-				_shoot_aimed_from(global_position + Vector2(-38.0, -52.0), 178.0 + spd_bonus, _bullet_a, -0.10)
-				_shoot_aimed_from(global_position + Vector2(-38.0, -52.0), 182.0 + spd_bonus, _bullet_a, 0.0)
-				_shoot_aimed_from(global_position + Vector2(-38.0, -52.0), 178.0 + spd_bonus, _bullet_a, 0.10)
+				var sting: Vector2 = _bm("stinger", Vector2(-38.0, -52.0))
+				_shoot_aimed_from(sting, 178.0 + spd_bonus, _bullet_a, -0.10)
+				_shoot_aimed_from(sting, 182.0 + spd_bonus, _bullet_a, 0.0)
+				_shoot_aimed_from(sting, 178.0 + spd_bonus, _bullet_a, 0.10)
 				_fire_timer = 0.72 * rate_mult
 
 		2: # STAGE 3: SKY WYVERN
@@ -1491,7 +1508,7 @@ func _boss_attack() -> void:
 				_shoot_spread(4 + boss_phase * 2, 0.16, 158.0 + spd_bonus, _bullet_a)
 				_fire_timer = 0.84 * rate_mult
 			elif _boss_pattern == 1:
-				var maw: Vector2 = global_position + Vector2(-38.0, -4.0)
+				var maw: Vector2 = _bm("maw", Vector2(-38.0, -4.0))
 				for k: int in range(-boss_phase, boss_phase + 1):
 					_shoot_aimed_from(maw, 174.0 + spd_bonus, _bullet_b, float(k) * 0.11)
 				_fire_timer = 0.80 * rate_mult
@@ -1506,11 +1523,11 @@ func _boss_attack() -> void:
 				_shoot_from(global_position + Vector2(-34.0, s_off), Vector2(-(150.0 + spd_bonus), 20.0), _bullet_a)
 				_shoot_from(global_position + Vector2(-34.0, -s_off), Vector2(-(150.0 + spd_bonus), -20.0), _bullet_b)
 				if boss_phase >= 2:
-					_shoot_from(global_position + Vector2(-34.0, 0.0), Vector2(-(160.0 + spd_bonus), sin(_age * 6.0) * 35.0), _bullet_a)
+					_shoot_from(_bm("mouth", Vector2(-34.0, 0.0)), Vector2(-(160.0 + spd_bonus), sin(_age * 6.0) * 35.0), _bullet_a)
 				_fire_timer = 0.42 * rate_mult
 			else:
-				_shoot_from_spread(global_position + Vector2(-42.0, -34.0), 3 + boss_phase, 0.17, 156.0 + spd_bonus, _bullet_a)
-				_shoot_from_spread(global_position + Vector2(-42.0, 34.0), 3 + boss_phase, 0.17, 156.0 + spd_bonus, _bullet_b)
+				_shoot_from_spread(_bm("scythe_top", Vector2(-42.0, -34.0)), 3 + boss_phase, 0.17, 156.0 + spd_bonus, _bullet_a)
+				_shoot_from_spread(_bm("scythe_bot", Vector2(-42.0, 34.0)), 3 + boss_phase, 0.17, 156.0 + spd_bonus, _bullet_b)
 				_fire_timer = 0.86 * rate_mult
 
 		4: # STAGE 5: FROST SERAPH TITAN
@@ -1550,6 +1567,24 @@ func _boss_attack() -> void:
 				_fire_timer = 0.72 * rate_mult
 
 
+# Shows one of BossPainter's frames (_0/_1 idle, _2 attack); rigged bosses animate themselves.
+func _boss_frame(suffix: String) -> void:
+	if _rig == null:
+		_sprite.texture = PixelArt.tex(_boss_tex_base + suffix)
+
+
+# Where a boss shot leaves from: the rig's named muzzle (it moves with the part), or a fixed offset.
+func _bm(muzzle_name: String, fallback: Vector2) -> Vector2:
+	if _rig != null and _rig.has_muzzle(muzzle_name):
+		return _rig.muzzle(muzzle_name)
+	return global_position + fallback
+
+
+# The pattern the next attack will use (patterns advance every 4 attacks; see _boss_attack).
+func next_boss_pattern() -> int:
+	return (_boss_pattern + 1) % 3 if _boss_substep + 1 >= 4 else _boss_pattern
+
+
 func _spawn_boss_escort() -> void:
 	if get_tree().get_nodes_in_group("enemies").size() >= 5:
 		return
@@ -1575,11 +1610,11 @@ func _shoot_ring(count: int, speed: float, tex_key: String, rot_offset: float) -
 		var ang: float = rot_offset + (TAU * float(i) / float(count))
 		var vel: Vector2 = Vector2.from_angle(ang) * speed
 		if vel.x < 35.0:
-			_shoot_from(global_position + Vector2(-24.0, 0.0), vel, tex_key)
+			_shoot_from(_bm("ring", Vector2(-24.0, 0.0)), vel, tex_key)
 
 
 func _shoot_aimed(speed: float, tex_key: String, angle_offset: float = 0.0) -> void:
-	_shoot_aimed_from(global_position + Vector2(-8.0, 0.0), speed, tex_key, angle_offset)
+	_shoot_aimed_from(_bm("aimed", Vector2(-8.0, 0.0)), speed, tex_key, angle_offset)
 
 
 func _shoot_aimed_from(origin: Vector2, speed: float, tex_key: String, angle_offset: float = 0.0) -> void:
@@ -1593,7 +1628,7 @@ func _shoot_aimed_from(origin: Vector2, speed: float, tex_key: String, angle_off
 
 
 func _shoot_spread(count: int, step_angle: float, speed: float, tex_key: String) -> void:
-	_shoot_from_spread(global_position + Vector2(-10.0, 0.0), count, step_angle, speed, tex_key)
+	_shoot_from_spread(_bm("spread", Vector2(-10.0, 0.0)), count, step_angle, speed, tex_key)
 
 
 func _shoot_from_spread(origin: Vector2, count: int, step_angle: float, speed: float, tex_key: String) -> void:
@@ -1680,6 +1715,8 @@ func take_damage(dmg: float, silent: bool = false) -> void:
 			effective_dmg = dmg * 0.45
 		_dps_accumulator += effective_dmg
 		hp = maxf(0.0, hp - effective_dmg)
+		if _rig != null:
+			_rig.on_hurt()
 
 		# Check 3-Phase Thresholds (66% -> Phase 2, 33% -> Phase 3)!
 		var ratio: float = hp / max_hp
@@ -1705,6 +1742,8 @@ func take_damage(dmg: float, silent: bool = false) -> void:
 
 func _enter_next_boss_phase(new_phase: int) -> void:
 	boss_phase = new_phase
+	if _rig != null:
+		_rig.on_phase(new_phase)
 	boss_shield_timer = 0.95 # Brief phase-transition energy shield!
 	_dps_accumulator = 0.0
 	_fire_timer = 0.45
@@ -1724,6 +1763,8 @@ func _enter_next_boss_phase(new_phase: int) -> void:
 
 func _start_boss_death_sequence() -> void:
 	_boss_dying = true
+	if _rig != null:
+		_rig.on_die()
 	_boss_death_timer = 1.15
 	_boss_death_boom_timer = 0.02
 	hp = 0.0
@@ -1750,6 +1791,8 @@ func _finish_boss_death() -> void:
 			fx.spawn_explosion(global_position + Vector2(randf_range(-36.0, 26.0), randf_range(-58.0, 58.0)), true)
 		fx.add_shake(13.0)
 	RetroSfx.play("big_explode", -3.5, 0.05)
+	if _rig != null and fx != null:
+		_rig.eject(fx, fx)
 	destroyed.emit(self, true)
 	queue_free()
 
@@ -1797,7 +1840,7 @@ func _draw() -> void:
 		elif boss_shield_timer > 0.0:
 			# Glowing cyan phase-shift energy barrier around the boss!
 			draw_arc(Vector2(-8.0, 0.0), 58.0, 0.0, TAU, 32, Color(0.16, 0.91, 1.0, 0.65), 2.0)
-		elif not _boss_dying and _fire_timer > 0.0 and _fire_timer < 0.22:
+		elif _rig == null and not _boss_dying and _fire_timer > 0.0 and _fire_timer < 0.22:
 			# Pre-attack weapon charge glint right before firing a volley!
 			var ct: float = 1.0 - (_fire_timer / 0.22)
 			var r_glint: float = lerpf(3.0, 8.5, ct)

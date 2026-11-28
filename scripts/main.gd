@@ -767,6 +767,8 @@ func _run_smoke_test() -> void:
 		smoke_ok = false
 	if not await _smoke_check_sub_weapons():
 		smoke_ok = false
+	if not _smoke_check_boss_rigs():
+		smoke_ok = false
 	MetaSave.select_ship("neko")
 	player.reset_for_new_run()
 	for upg_id: String in ["overclock", "prism", "wave", "tesla", "plasma", "laser", "option", "blades", "turret", "missile", "flank", "bomb", "nova", "spread", "shield", "rapid", "thruster", "repair"]:
@@ -1508,6 +1510,95 @@ func _smoke_check_sub_weapons() -> bool:
 	MetaSave.select_ship("neko")
 	player.reset_for_new_run()
 	return ok
+
+
+# The animated stage 1-8 bosses (scripts/bosses/): each rigged stage's boss uses its rig instead of
+# the painted frames, has a dino pilot, fires from the rig's muzzles (every attack pattern), runs
+# every reaction, and on death the pilot bails out in an escape pod that cleans itself up.
+const SMOKE_RIG_MUZZLES: Dictionary = {
+	0: ["cannon_top", "cannon_bot", "core", "ring"],
+	1: ["stinger", "claw_top", "claw_bot"],
+	2: ["maw", "spread", "ring"],
+	3: ["scythe_top", "scythe_bot", "mouth"],
+}
+
+
+func _smoke_check_boss_rigs() -> bool:
+	var ok: bool = true
+	var DinoPilotScript: GDScript = load("res://scripts/bosses/dino_pilot.gd")
+	for sp: String in (DinoPilotScript.get("SPECIES") as Dictionary).keys():
+		for ex: String in DinoPilotScript.get("EXPRESSIONS"):
+			var face: Texture2D = DinoPilotScript.call("face_texture", sp, ex)
+			if face == null or face.get_width() < 20:
+				push_error("SMOKE: dino pilot %s has no %s face" % [sp, ex])
+				ok = false
+	for st_i: int in SMOKE_RIG_MUZZLES.keys():
+		_smoke_clear_enemies()
+		var boss: GameEnemy = _spawn_enemy_now({"type": GameEnemy.Type.BOSS, "pos": Vector2(414.0, 134.0), "hp_mult": 1.0, "phase": 0.0, "squad": 1, "stage": st_i})
+		if boss == null or boss._rig == null or boss._rig.pilot == null or boss._sprite.texture != null:
+			push_error("SMOKE: stage %d boss is not its animated rig with a dino pilot" % (st_i + 1))
+			ok = false
+			continue
+		boss.boss_intro_active = false
+		boss.boss_hp_bar_visible = true
+		boss.global_position = Vector2(414.0, 134.0)
+		var rig: Node2D = boss._rig
+		for f: int in range(10):
+			boss._process(1.0 / 60.0)
+			rig.call("_process", 1.0 / 60.0)
+		for m_name: String in SMOKE_RIG_MUZZLES[st_i]:
+			var mz: Vector2 = boss._bm(m_name, Vector2(9999.0, 9999.0))
+			if mz.distance_to(boss.global_position) > 130.0:
+				push_error("SMOKE: stage %d boss muzzle %s is missing or off the boss (%s)" % [st_i + 1, m_name, str(mz)])
+				ok = false
+		# Every pattern fires, with the reactions in between.
+		for pat: int in range(3):
+			boss._boss_pattern = pat
+			boss._boss_substep = 0
+			var before: int = bullet_layer.get_child_count()
+			rig.call("on_attack", pat)
+			boss._boss_attack()
+			if bullet_layer.get_child_count() <= before:
+				push_error("SMOKE: stage %d boss pattern %d fired nothing" % [st_i + 1, pat])
+				ok = false
+			rig.call("on_hurt")
+			for f2: int in range(6):
+				rig.call("_process", 1.0 / 60.0)
+		rig.call("on_pose")
+		boss._enter_next_boss_phase(2)
+		boss._enter_next_boss_phase(3)
+		for f3: int in range(20):
+			boss._process(1.0 / 60.0)
+			rig.call("_process", 1.0 / 60.0)
+		if not bool(rig.get("pilot").get("low_hp")):
+			push_error("SMOKE: stage %d boss pilot is not panicking in phase 3" % (st_i + 1))
+			ok = false
+		var pods_before: int = _smoke_count_pods()
+		boss._start_boss_death_sequence()
+		boss._finish_boss_death()
+		if _smoke_count_pods() != pods_before + 1:
+			push_error("SMOKE: stage %d boss pilot did not bail out in an escape pod" % (st_i + 1))
+			ok = false
+	# The pods fly off and free themselves.
+	for pod: Node in fx_layer.get_children():
+		if pod.get_script() != null and String((pod.get_script() as Script).resource_path).ends_with("pilot_pod.gd"):
+			for f4: int in range(300):
+				pod.call("_process", 1.0 / 60.0)
+			if not pod.is_queued_for_deletion():
+				push_error("SMOKE: an escape pod never left")
+				ok = false
+	for shot_node: Node in bullet_layer.get_children():
+		shot_node.queue_free()
+	_smoke_clear_enemies()
+	return ok
+
+
+func _smoke_count_pods() -> int:
+	var n: int = 0
+	for node: Node in fx_layer.get_children():
+		if node.get_script() != null and String((node.get_script() as Script).resource_path).ends_with("pilot_pod.gd") and not node.is_queued_for_deletion():
+			n += 1
+	return n
 
 
 func _smoke_check_option_trail() -> bool:
