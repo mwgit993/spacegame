@@ -40,7 +40,7 @@ func build() -> void:
 	_core = part(self, Kit.cached("seraph_core", _paint_core), Vector2(0.0, 22.0), Vector2(9.0, 9.0), 2)
 	_core.use_parent_material = false
 	marker(_core, "ring", Vector2.ZERO)
-	add_pilot(self, Vector2(0.0, -4.0), "stego", Vector2i(34, 28), 2)
+	add_pilot(self, Vector2(0.0, -4.0), Vector2i(34, 28), 2)
 	_arm = part(self, Kit.cached("seraph_arm", _paint_arm), Vector2(-14.0, -14.0), Vector2(52.0, 5.0), 3)
 	marker(_arm, "aimed", Vector2(-52.0, 0.0))
 

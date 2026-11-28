@@ -1576,8 +1576,8 @@ func _boss_attack() -> void:
 
 
 # A dino pilot for a boss drawn from painted frames: its canopy straddles the top edge of the
-# silhouette a little ahead of centre, and the species comes from the stage, so each boss keeps its
-# own pilot.
+# silhouette a little ahead of centre. It's the same pilot as every other boss
+# (DinoPilot.BOSS_PILOT).
 func _add_frame_pilot() -> void:
 	var tex: Texture2D = _sprite.texture
 	if tex == null:
@@ -1598,13 +1598,11 @@ func _add_frame_pilot() -> void:
 		if solid >= 11:
 			top = y
 			break
-	var species: Array = (DinoPilotScript.SPECIES as Dictionary).keys()
-	var st_id: String = String(StageData.get_stage(stage_idx).get("id", str(stage_idx)))
 	_pilot = DinoPilotScript.new()
 	_pilot.position = Vector2(float(cx), float(top + 12)) - Vector2(img.get_size()) * 0.5
 	_pilot.use_parent_material = true
 	_sprite.add_child(_pilot)
-	_pilot.setup(String(species[absi(st_id.hash()) % species.size()]), Vector2i(34, 28))
+	_pilot.setup(DinoPilotScript.BOSS_PILOT, Vector2i(34, 28))
 
 
 # Shows one of BossPainter's frames (_0/_1 idle, _2 attack); rigged bosses animate themselves.

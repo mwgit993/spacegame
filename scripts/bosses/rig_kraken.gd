@@ -34,7 +34,7 @@ func build() -> void:
 		_pupils.append(pu)
 	for k2: int in range(3, 6):
 		_tentacles.append(_build_tentacle(k2, 2))
-	add_pilot(self, Vector2(24.0, -36.0), "plesio", Vector2i(34, 28), 3)
+	add_pilot(self, Vector2(24.0, -36.0), Vector2i(34, 28), 3)
 
 
 func _build_tentacle(k: int, z: int) -> Array[Sprite2D]:

@@ -131,12 +131,13 @@ func muzzle(marker_name: String) -> Vector2:
 	return m.global_position if m != null else global_position
 
 
-func add_pilot(parent: Node2D, pos: Vector2, species: String, canopy: Vector2i = Vector2i(36, 28), z: int = 3) -> DinoPilot:
+## Every boss has the same pilot (DinoPilot.BOSS_PILOT).
+func add_pilot(parent: Node2D, pos: Vector2, canopy: Vector2i = Vector2i(36, 28), z: int = 3) -> DinoPilot:
 	pilot = DinoPilot.new()
 	pilot.position = pos
 	pilot.use_parent_material = true
 	_host(parent, z, pilot).add_child(pilot)
-	pilot.setup(species, canopy)
+	pilot.setup(DinoPilot.BOSS_PILOT, canopy)
 	return pilot
 
 

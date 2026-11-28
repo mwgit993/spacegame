@@ -47,7 +47,7 @@ func build() -> void:
 		_femurs.append(fem)
 		_blades.append(blade)
 
-	add_pilot(self, Vector2(8.0, -22.0), "trike", Vector2i(36, 30), 4)
+	add_pilot(self, Vector2(8.0, -22.0), Vector2i(36, 30), 4)
 
 
 func animate(_delta: float) -> void:

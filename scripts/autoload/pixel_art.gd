@@ -75,6 +75,49 @@ func _make_enemy_bullet_glow(size: int, mid_r: float, outer_r: float) -> ImageTe
 	return ImageTexture.create_from_image(img)
 
 
+## One frame of a spinning XP cell, w x h: a terminal cap, a metal case with rims top and bottom
+## and a glowing core with a glint. Frame 0 is face on, 1 and 3 turning, 2 edge on.
+func _make_xp_cell(w: int, h: int, core: Color, core_dk: Color, case_lt: Color, case_dk: Color, frame: int) -> ImageTexture:
+	var turned: int = w - 2 * floori(w / 4.0)
+	var fw: int = [w, turned, 3, turned][frame]
+	var x0: int = floori((w - fw) / 2.0)
+	var img: Image = Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var ink: Color = Color("#141a2c")
+	var cap: int = 1 if fw <= 3 else 3
+	var cap_x: int = floori((w - cap) / 2.0)
+	for x: int in range(cap_x, cap_x + cap):
+		img.set_pixel(x, 0, case_lt)
+	var top: int = 1
+	var bot: int = h - 1
+	for y: int in range(top, h):
+		for x: int in range(x0, x0 + fw):
+			var edge_x: bool = x == x0 or x == x0 + fw - 1
+			var edge_y: bool = y == top or y == bot
+			if edge_x and edge_y:
+				continue
+			var col: Color
+			if edge_x or edge_y:
+				col = ink
+			elif y == top + 1:
+				col = case_lt
+			elif y == bot - 1:
+				col = case_dk
+			elif fw > 3 and x == x0 + 1:
+				col = case_lt
+			elif fw > 3 and x == x0 + fw - 2:
+				col = case_dk
+			else:
+				var k: float = float(y - top - 2) / float(maxi(1, bot - top - 4))
+				col = core.lerp(core_dk, clampf(k * 1.3 - 0.25, 0.0, 1.0))
+			img.set_pixel(x, y, col)
+	# The glint slides across as it turns.
+	var gx: int = [x0 + 2, x0 + 1, x0 + 1, x0 + fw - 3][frame] if fw > 3 else x0 + 1
+	img.set_pixel(gx, top + 2, Color.WHITE)
+	if h >= 11:
+		img.set_pixel(gx, top + 3, Color.WHITE)
+	return ImageTexture.create_from_image(img)
+
+
 func _build_all() -> void:
 	if not _cache.is_empty():
 		return
@@ -719,41 +762,19 @@ func _build_all() -> void:
 	_cache["bullet_enemy_glow_0"] = _make_enemy_bullet_glow(16, 5.2, 7.8)
 	_cache["bullet_enemy_glow_1"] = _make_enemy_bullet_glow(18, 6.0, 8.8)
 
-	_cache["pickup_xp_small"] = _make_tex(PackedStringArray([
-		"....C....",
-		"...CCC...",
-		"..CCWCC..",
-		".CCWWWCC.",
-		"BBCWWWCBB",
-		".BBCCCBB.",
-		"..BBBBB..",
-		"...BBB...",
-		"....B....",
-	]))
-
-	_cache["pickup_xp_med"] = _make_tex(PackedStringArray([
-		"...MMM...",
-		"..MPWPM..",
-		".MPWWWPM.",
-		"MPWWWWWMp",
-		"pPWWWWWPp",
-		".pPMMMPp.",
-		"..pPPPp..",
-		"...ppp...",
-		".........",
-	]))
-
-	_cache["pickup_xp_big"] = _make_tex(PackedStringArray([
-		"....YYY....",
-		"..GGYYYGG..",
-		".GYYWWWYYG.",
-		"GYWWWWWWWYg",
-		"YYWWWWWWWYY",
-		"gYWWWWWWWYg",
-		".GYYWWWYYG.",
-		"..OOYYYOO..",
-		"....OOO....",
-	]))
+	# XP: little energy cells spinning on their long axis (Matthew wanted a look of their own; the
+	# old blue gems were too like Ball x Pit's). Small cells are green, medium amber, big magenta
+	# in a gold case. Frames _0.._3; the plain key is frame 0.
+	var cells: Dictionary = {
+		"small": [7, 9, PALETTE["G"], PALETTE["g"], PALETTE["L"], PALETTE["K"]],
+		"med": [9, 11, PALETTE["Y"], PALETTE["O"], PALETTE["L"], PALETTE["K"]],
+		"big": [11, 13, PALETTE["M"], PALETTE["p"], PALETTE["Y"], PALETTE["O"]],
+	}
+	for size_key: String in cells.keys():
+		var c: Array = cells[size_key]
+		for f: int in range(4):
+			_cache["pickup_xp_%s_%d" % [size_key, f]] = _make_xp_cell(int(c[0]), int(c[1]), c[2], c[3], c[4], c[5], f)
+		_cache["pickup_xp_" + size_key] = _cache["pickup_xp_%s_0" % size_key]
 
 	_cache["pickup_scrap"] = _cache["pickup_xp_small"]
 

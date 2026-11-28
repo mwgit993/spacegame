@@ -10,6 +10,8 @@ var velocity: Vector2 = Vector2(-34.0, 0.0)
 var force_vacuum: bool = false
 var _bob_phase: float = 0.0
 var _sprite: Sprite2D
+var _frames: Array[Texture2D] = []  # an XP cell's spin
+var _spin: float = 0.0
 
 signal collected(kind_val: int, amount: int, pos: Vector2)
 
@@ -27,15 +29,18 @@ func setup(pos: Vector2, pickup_kind: Kind, amount: int, target_player: Node2D) 
 		_sprite.texture = PixelArt.tex("pickup_heal")
 	else:
 		var xp_tex: String = "pickup_xp_big" if amount >= 7 else ("pickup_xp_med" if amount >= 4 else "pickup_xp_small")
-		_sprite.texture = PixelArt.tex(xp_tex)
+		for f: int in range(4):
+			_frames.append(PixelArt.tex("%s_%d" % [xp_tex, f]))
+		_spin = randf_range(0.0, 4.0)
+		_sprite.texture = _frames[0]
 	add_child(_sprite)
 
 
 func _process(delta: float) -> void:
 	_bob_phase += delta * 7.0
-	if _sprite != null and kind == Kind.XP:
-		var pulse: float = 0.92 + 0.12 * sin(_bob_phase * 1.4)
-		_sprite.scale = Vector2(pulse, pulse)
+	if _sprite != null and not _frames.is_empty():
+		_spin += delta * 9.0
+		_sprite.texture = _frames[int(_spin) % _frames.size()]
 
 	if player_ref != null and is_instance_valid(player_ref) and player_ref.visible:
 		var to_player: Vector2 = player_ref.global_position - global_position

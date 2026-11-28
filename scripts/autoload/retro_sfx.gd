@@ -46,6 +46,7 @@ func _generate_sfx() -> void:
 	_streams["boss_beam"] = _synth_tone(0.24, 1520.0, 310.0, 0, 0.52)
 	_streams["boss_pose"] = _synth_arpeggio([220.0, 277.2, 330.0, 440.0, 659.3], 0.045, 0.56)
 	_streams["boss_hp_tick"] = _synth_tone(0.028, 988.0, 1175.0, 0, 0.42)
+	_streams["warp"] = _synth_tone(0.32, 260.0, 2200.0, 0, 0.5)
 	_streams["xp"] = _synth_tone(0.032, 740.0, 1180.0, 1, 0.36)
 	_streams["level_up"] = _synth_arpeggio([523.25, 659.25, 783.99, 1046.5, 1318.5], 0.052, 0.56)
 	_streams["zap"] = _synth_tone(0.075, 1650.0, 280.0, 2, 0.44)
