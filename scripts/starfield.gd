@@ -205,6 +205,15 @@ func _exit_tree() -> void:
 		_pending_task = -1
 
 
+## The stage the run plays next (main sets it: the order is shuffled), so its background is
+## prebuilt while this one plays. -1 means the one after this in order.
+var next_stage_idx: int = -1
+
+
+func _next_stage() -> int:
+	return next_stage_idx if next_stage_idx >= 0 else stage_idx + 1
+
+
 func set_stage(new_stage_idx: int) -> void:
 	stage_idx = StageData.wrap_stage(new_stage_idx)
 	var theme: String = _theme_for(stage_idx)
@@ -274,7 +283,7 @@ func _store_theme(theme: String, built: Dictionary) -> void:
 
 func _evict_cache() -> void:
 	# Keep the current stage, the next one and the title stage; rebuild the rest on demand.
-	var keep: Array[String] = [_theme, _theme_for(stage_idx + 1), _theme_for(0)]
+	var keep: Array[String] = [_theme, _theme_for(_next_stage()), _theme_for(0)]
 	for key: Variant in _cache.keys():
 		if not keep.has(String(key)):
 			_cache.erase(key)
@@ -292,7 +301,7 @@ func _poll_prebuild() -> void:
 			_store_theme(_pending_theme, _pending_result)
 			_pending_result = {}
 		return
-	var next_theme: String = _theme_for(stage_idx + 1)
+	var next_theme: String = _theme_for(_next_stage())
 	if not _cache.has(next_theme):
 		_pending_theme = next_theme
 		_pending_task = WorkerThreadPool.add_task(_thread_build.bind(next_theme, _theme_module(next_theme)), false, "Stage background prebuild")

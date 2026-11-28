@@ -35,6 +35,10 @@ var best_score: int = 0
 var total_runs: int = 0
 var total_kills: int = 0
 var bosses_defeated: int = 0
+## Checkpoints: how many a run has got past (a new run can continue right after the last one),
+## and whether the final checkpoint's MEGA T-REX has been beaten.
+var checkpoint: int = 0
+var game_beaten: bool = false
 
 # Options / Settings (persisted to disk)
 var music_volume: float = 0.80
@@ -389,6 +393,14 @@ func record_run_end(wave_reached: int, run_scrap: int, kills: int, run_score: in
 	save_game()
 
 
+## A checkpoint boss went down: later runs can start right after it.
+func reach_checkpoint(index: int, final_beaten: bool) -> void:
+	checkpoint = maxi(checkpoint, index + 1)
+	if final_beaten:
+		game_beaten = true
+	save_game()
+
+
 func reset_save() -> void:
 	scrap = 0
 	lifetime_scrap = 0
@@ -397,6 +409,8 @@ func reset_save() -> void:
 	total_runs = 0
 	total_kills = 0
 	bosses_defeated = 0
+	checkpoint = 0
+	game_beaten = false
 	migration_refund_notice = 0
 	_init_default_tree()
 	save_game()
@@ -411,6 +425,8 @@ func save_game() -> void:
 		"total_runs": total_runs,
 		"total_kills": total_kills,
 		"bosses_defeated": bosses_defeated,
+		"checkpoint": checkpoint,
+		"game_beaten": game_beaten,
 		"music_volume": music_volume,
 		"sfx_volume": sfx_volume,
 		"screen_shake_enabled": screen_shake_enabled,
@@ -485,6 +501,8 @@ func load_game() -> void:
 	total_runs = int(data.get("total_runs", 0))
 	total_kills = int(data.get("total_kills", 0))
 	bosses_defeated = int(data.get("bosses_defeated", 0))
+	checkpoint = maxi(0, int(data.get("checkpoint", 0)))
+	game_beaten = bool(data.get("game_beaten", false))
 	music_volume = float(data.get("music_volume", 0.80))
 	sfx_volume = float(data.get("sfx_volume", 0.85))
 	screen_shake_enabled = bool(data.get("screen_shake_enabled", true))

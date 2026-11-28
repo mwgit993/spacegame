@@ -112,6 +112,7 @@ var _boss_dying: bool = false
 # under _sprite (which then shows no texture) so the intro squash, recoil and hit flash apply.
 const BossRigs = preload("res://scripts/bosses/boss_rigs.gd")
 const BossRig = preload("res://scripts/bosses/boss_rig.gd")
+const CheckpointBosses = preload("res://scripts/bosses/checkpoint_bosses.gd")
 var _rig: BossRig = null
 # Stage-module bosses keep their painted frames, with a dino pilot in a canopy sitting on top of
 # the silhouette (every boss is piloted by an angry space dinosaur).
@@ -158,6 +159,13 @@ var _shield: Sprite2D = null
 
 # Stage modules (stages 9+): set module_kind before setup() for Type.MODULE.
 var module_kind: String = ""
+# Set before setup(): the run level (0-based, counting through loops) whose difficulty this enemy
+# gets, when it isn't the stage's own place in order (main shuffles the stages; see StageData's
+# checkpoint notes), and for Type.BOSS, a checkpoint's giant dino robot (CheckpointBosses index).
+var diff_level: int = -1
+var checkpoint_tier: int = -1
+var _diff_level: int = 0      # the level difficulty comes from (diff_level, or the stage's own)
+var _diff_idx: int = 0        # ...wrapped into one loop: scales boss bullets, escorts and rewards
 var _behaviour: RefCounted = null       # Type.MODULE: scripts/stages/stage_enemy.gd subclass
 var _boss_ai: RefCounted = null         # a module stage's boss: scripts/stages/stage_boss.gd subclass
 var _module_big: bool = false
@@ -201,17 +209,19 @@ func setup(
 	add_to_group("enemies")
 	enemy_type = t
 	stage_idx = StageData.wrap_stage(st_idx)
-	var loop_count: int = StageData.loop_of(st_idx)
-	var loop_mult: float = pow(2.2, float(loop_count))
+	_diff_level = diff_level if diff_level >= 0 else st_idx
+	_diff_idx = StageData.wrap_stage(_diff_level)
+	var loop_count: int = StageData.loop_of(_diff_level)
+	var loop_mult: float = pow(2.2, float(loop_count)) * StageData.checkpoint_hp_mult(_diff_level)
 	# A module stage's sprites are normally prefetched; this builds them now if not.
 	StageData.prepare_stage(stage_idx)
 	_raw_stage = st_idx
 	_hp_scale = hp_scale
 	variant = p_variant
 	gen = p_gen
-	var diff: Dictionary = StageData.get_difficulty(st_idx)
-	_shot_mult = float(diff["shot_speed"])
-	_fire_mult = float(diff["fire_rate"])
+	var diff: Dictionary = StageData.get_difficulty(_diff_level)
+	_shot_mult = float(diff["shot_speed"]) * StageData.checkpoint_shot_mult(_diff_level)
+	_fire_mult = float(diff["fire_rate"]) * StageData.checkpoint_fire_mult(_diff_level)
 
 	global_position = spawn_pos
 	_base_y = spawn_pos.y
@@ -290,15 +300,28 @@ func setup(
 			_boss_tex_base = String(st["boss_tex"])
 			_sprite.texture = PixelArt.tex(_boss_tex_base + "_0")
 			# Stages 9+ are modules: their boss HP and attack patterns come from the module.
-			var boss_module: RefCounted = StageData.get_module(stage_idx)
-			var base_hp: float = STAGE_BOSS_HP[stage_idx] if boss_module == null else float(boss_module.call("get_boss_hp"))
+			# A checkpoint brings its giant dino robot instead of the stage's own boss.
+			var cp: bool = checkpoint_tier >= 0
+			var boss_module: RefCounted = null if cp else StageData.get_module(stage_idx)
+			# HP and rewards follow the level, not the stage (stages are shuffled).
+			var base_hp: float = StageData.boss_base_hp(_diff_level, stage_idx)
+			if cp:
+				base_hp *= CheckpointBosses.HP_MULT
 			max_hp = base_hp * loop_mult
-			score_value = 5000 + stage_idx * 1500
-			scrap_drop = 28 + stage_idx * 4
-			xp_drop = 48 + stage_idx * 12
-			_target_x = 424.0 if stage_idx == 0 else float(st.get("boss_x", 414.0))
+			score_value = (5000 + _diff_idx * 1500) * (2 if cp else 1)
+			scrap_drop = (28 + _diff_idx * 4) * (2 if cp else 1)
+			xp_drop = 48 + _diff_idx * 12
+			_target_x = 424.0 if stage_idx == 0 and not cp else (CheckpointBosses.TARGET_X if cp else float(st.get("boss_x", 414.0)))
 			_fire_timer = 1.20
-			if boss_module != null:
+			if cp:
+				_rig = CheckpointBosses.create_rig(checkpoint_tier) as BossRig
+				_sprite.add_child(_rig)
+				_rig.setup(self)
+				_sprite.texture = null
+				_boss_ai = CheckpointBosses.create_ai(checkpoint_tier)
+				_boss_ai.set("boss", self)
+				_boss_ai.call("setup")
+			elif boss_module != null:
 				_boss_ai = boss_module.call("create_boss")
 				_boss_ai.set("boss", self)
 				_boss_ai.call("setup")
@@ -323,7 +346,10 @@ func setup(
 			RetroSfx.play("boss_beam", -5.0, 0.02)
 
 			var box: RectangleShape2D = RectangleShape2D.new()
-			box.size = Vector2(88.0, 176.0) if stage_idx == 0 else Vector2(st.get("boss_box", Vector2(82.0, 146.0)))
+			if cp:
+				box.size = CheckpointBosses.box(checkpoint_tier)
+			else:
+				box.size = Vector2(88.0, 176.0) if stage_idx == 0 else Vector2(st.get("boss_box", Vector2(82.0, 146.0)))
 			col.shape = box
 
 		_:
@@ -702,6 +728,7 @@ func _request_child(t: Type, pos: Vector2, vel: Vector2, child_gen: int, kind: S
 		"phase": randf() * TAU,
 		"squad": -1,
 		"stage": _raw_stage,
+		"level": _diff_level,
 		"variant": 0,
 		"gen": child_gen,
 		"vel": vel,
@@ -1451,14 +1478,14 @@ func _boss_attack() -> void:
 	# Faster cooldowns & higher bullet velocity in Phase 2 (<=66% HP) and Phase 3 (<=33% HP)!
 	var rate_mult: float = 1.0 if boss_phase == 1 else (0.78 if boss_phase == 2 else 0.62)
 	# +5 per stage through stage 8, then +2 per stage, so stage 28 bosses aren't absurdly fast.
-	var spd_bonus: float = float(boss_phase - 1) * 18.0 + float(mini(stage_idx, 7)) * 5.0 + float(maxi(0, stage_idx - 7)) * 2.0
+	var spd_bonus: float = float(boss_phase - 1) * 18.0 + float(mini(_diff_idx, 7)) * 5.0 + float(maxi(0, _diff_idx - 7)) * 2.0
 
 	_boss_substep += 1
 	if _boss_substep >= 4:
 		_boss_substep = 0
 		_boss_pattern = (_boss_pattern + 1) % 3
 		# In Phase 2 & 3 on Stages 2+, summon a pair of escort fighters to keep pressure high!
-		if boss_phase >= 2 and stage_idx >= 1 and get_parent() != null:
+		if boss_phase >= 2 and _diff_idx >= 1 and get_parent() != null:
 			_spawn_boss_escort()
 
 	# Stages 9+: the module's boss AI picks the attack (scripts/stages/stage_boss.gd).
@@ -1629,7 +1656,8 @@ func _spawn_boss_escort() -> void:
 	for offset_y: float in [-62.0, 62.0]:
 		var esc: GameEnemy = GameEnemy.new()
 		get_parent().add_child(esc)
-		var esc_hp_scale: float = StageData.stage_hp_growth(stage_idx, 1.32)
+		var esc_hp_scale: float = StageData.stage_hp_growth(_diff_idx, 1.32)
+		esc.diff_level = _diff_level
 		esc.setup(
 			Type.SWOOPER,
 			Vector2(492.0, clampf(global_position.y + offset_y, 38.0, 226.0)),
@@ -1801,7 +1829,7 @@ func _enter_next_boss_phase(new_phase: int) -> void:
 			"PHASE 2: OVERDRIVE!" if new_phase == 2 else "PHASE 3: BERSERK!",
 			Color("#ffe854") if new_phase == 2 else Color("#ff4c68")
 		)
-	boss_phase_broken.emit(self, 18 + stage_idx * 4)
+	boss_phase_broken.emit(self, 18 + _diff_idx * 4)
 
 
 func _start_boss_death_sequence() -> void:
