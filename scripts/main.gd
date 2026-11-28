@@ -402,6 +402,11 @@ var ui_layer: CanvasLayer
 var hud_bar: Control
 var pause_hud_btn: Button
 var touch_focus_btn: Button
+var touch_swap_btn: Button # touch: cycles the sub weapon (shown once 2+ are owned)
+const BOSS_BAR_X: float = 106.0
+const BOSS_BAR_W: float = 282.0
+var _boss_bar_lag: float = 0.0 # the pale drain strip behind the boss bar (fraction of max HP)
+var _boss_bar_hold: float = 0.0
 var banner_label: Label
 var title_panel: Control
 var stats_panel: Control
@@ -759,6 +764,8 @@ func _run_smoke_test() -> void:
 	if not _smoke_check_ship_runs():
 		smoke_ok = false
 	if not _smoke_check_option_trail():
+		smoke_ok = false
+	if not await _smoke_check_sub_weapons():
 		smoke_ok = false
 	MetaSave.select_ship("neko")
 	player.reset_for_new_run()
@@ -1423,6 +1430,86 @@ func _smoke_check_module_draws() -> bool:
 # Options trail the ship by distance flown, whatever the frame rate. At 120 Hz one frame moves
 # the ship under PlayerShip.TRAIL_STEP_DIST (more so in focus mode), and the options used to
 # freeze there, following only at 2x speed. Fly 0.7 px per 1/120 s frame and they must keep up.
+# Only one sub weapon fires at a time (player.SUB_WEAPONS): drafting one switches to it, the
+# swap button (E / pad B / touch SWAP) cycles the owned ones, and the others go quiet: their guns
+# stop firing and the options and blades leave the screen. A hull perk's addon starts active.
+func _smoke_check_sub_weapons() -> bool:
+	var ok: bool = true
+	_smoke_clear_enemies()
+	MetaSave.select_ship("neko")
+	player.reset_for_new_run()
+	player.global_position = Vector2(80.0, 134.0)
+	player.controls_enabled = true
+	player.auto_fire_toggle = true
+	if player.sub_weapon != "" or not player.owned_sub_weapons().is_empty():
+		push_error("SMOKE: a fresh neko run already has a sub weapon (%s)" % player.sub_weapon)
+		ok = false
+	player.apply_run_upgrade("missile")
+	player.swap_sub_weapon() # only one owned: stays
+	if player.sub_weapon != "missile":
+		push_error("SMOKE: drafting Homing Pods did not make them the sub weapon (%s)" % player.sub_weapon)
+		ok = false
+	player.apply_run_upgrade("turret")
+	player.apply_run_upgrade("option")
+	player.apply_run_upgrade("blades")
+	player.apply_run_upgrade("laser") # an exotic ship mounts it next to its gun: a sub weapon
+	if player.sub_weapon != "beam" or player.owned_sub_weapons() != ["option", "blades", "turret", "missile", "beam"]:
+		push_error("SMOKE: sub weapons after drafting are wrong: %s of %s" % [player.sub_weapon, str(player.owned_sub_weapons())])
+		ok = false
+	# Each one fires (or flies) alone; the swap button walks the owned list and wraps.
+	var walk: Array[String] = ["option", "blades", "turret", "missile", "beam"]
+	for want: String in walk:
+		var key_ev: InputEventKey = InputEventKey.new()
+		key_ev.pressed = true
+		key_ev.physical_keycode = KEY_E
+		player._unhandled_input(key_ev)
+		if player.sub_weapon != want:
+			push_error("SMOKE: the swap key went to %s, expected %s" % [player.sub_weapon, want])
+			ok = false
+			continue
+		for shot_node: Node in bullet_layer.get_children():
+			shot_node.queue_free()
+		await get_tree().process_frame
+		for f: int in range(90):
+			player._process(1.0 / 60.0)
+		var counts: Dictionary = {
+			"turret": _smoke_count_shots("bullet_dart"), "missile": _smoke_count_shots("bullet_missile"),
+			"beam": _smoke_count_shots("bullet_laser"),
+		}
+		for id: String in counts:
+			if (int(counts[id]) > 0) != (id == want):
+				push_error("SMOKE: with %s active, %s fired %d shots" % [want, id, int(counts[id])])
+				ok = false
+		var opts_up: int = 0
+		for opt: Sprite2D in player._option_sprites:
+			opts_up += 1 if opt.visible else 0
+		var blades_up: int = 0
+		for bl: Sprite2D in player._blade_sprites:
+			blades_up += 1 if bl.visible else 0
+		if (opts_up > 0) != (want == "option") or (blades_up > 0) != (want == "blades"):
+			push_error("SMOKE: with %s active, %d options and %d blades are out" % [want, opts_up, blades_up])
+			ok = false
+	var pad_ev: InputEventJoypadButton = InputEventJoypadButton.new()
+	pad_ev.pressed = true
+	pad_ev.button_index = JOY_BUTTON_B
+	player._unhandled_input(pad_ev)
+	if player.sub_weapon != "option":
+		push_error("SMOKE: pad B did not wrap the sub weapon round to the first (%s)" % player.sub_weapon)
+		ok = false
+	# A hull perk's built-in addon is the starting sub weapon.
+	MetaSave.select_ship("hog")
+	player.reset_for_new_run()
+	if player.sub_weapon != "turret":
+		push_error("SMOKE: the hog does not start with its turret as the sub weapon (%s)" % player.sub_weapon)
+		ok = false
+	for shot_node: Node in bullet_layer.get_children():
+		shot_node.queue_free()
+	player.controls_enabled = false
+	MetaSave.select_ship("neko")
+	player.reset_for_new_run()
+	return ok
+
+
 func _smoke_check_option_trail() -> bool:
 	var ok: bool = true
 	MetaSave.select_ship("neko")
@@ -2283,6 +2370,7 @@ func _build_world() -> void:
 	player.player_died.connect(_on_player_died)
 	player.grazed.connect(_on_player_grazed)
 	player.touch_state_changed.connect(_sync_touch_hud_visibility)
+	player.sub_weapon_changed.connect(func(_id: String) -> void: _sync_touch_hud_visibility())
 
 
 func _make_ff6_box(bg: Color = Color(0.06, 0.10, 0.34, 0.94), border: Color = Color("#dce6ff"), border_w: int = 2, margin: float = 4.0) -> StyleBoxFlat:
@@ -2342,6 +2430,16 @@ func _build_ui() -> void:
 	touch_focus_btn.button_up.connect(func() -> void: player.touch_focus_held = false)
 	touch_focus_btn.visible = false
 	ui_layer.add_child(touch_focus_btn)
+
+	touch_swap_btn = Button.new()
+	touch_swap_btn.position = Vector2(412.0, 196.0)
+	touch_swap_btn.size = Vector2(62.0, 26.0)
+	touch_swap_btn.text = "SWAP"
+	touch_swap_btn.focus_mode = Control.FOCUS_NONE
+	_style_menu_btn(touch_swap_btn, Color("#ffe854"))
+	touch_swap_btn.pressed.connect(func() -> void: player.swap_sub_weapon())
+	touch_swap_btn.visible = false
+	ui_layer.add_child(touch_swap_btn)
 
 	banner_label = Label.new()
 	banner_label.position = Vector2(0.0, 42.0)
@@ -3684,6 +3782,13 @@ func _build_pause_ui() -> void:
 	pause_panel.add_child(_pause_info_canvas)
 
 
+# A sub weapon's pause-screen entry: dimmed unless it's the one firing (see player.SUB_WEAPONS).
+func _sub_module(id: String, entry: Dictionary) -> Dictionary:
+	if not player.is_sub_active(id):
+		entry["col"] = (entry["col"] as Color).darkened(0.5)
+	return entry
+
+
 func _collect_installed_modules() -> Array[Dictionary]:
 	var modules: Array[Dictionary] = []
 	var main_lvl: int = player.beam_level if (player.signature_weapon == "vulcan" and player.active_beam != "vulcan") else (
@@ -3691,21 +3796,21 @@ func _collect_installed_modules() -> Array[Dictionary]:
 	)
 	modules.append(_get_beam_badge_info(player.active_beam, main_lvl))
 	if player.aux_beam != "":
-		modules.append(_get_beam_badge_info(player.aux_beam, player.beam_level))
+		modules.append(_sub_module("beam", _get_beam_badge_info(player.aux_beam, player.beam_level)))
 	if player.option_count > 0:
-		modules.append({"icon": "badge_option", "name": "Option Drone", "val": "x%d" % player.option_count, "col": Color("#ff9624")})
+		modules.append(_sub_module("option", {"icon": "badge_option", "name": "Option Drone", "val": "x%d" % player.option_count, "col": Color("#ff9624")}))
 	if player.blade_level > 0:
-		modules.append({"icon": "badge_blades", "name": "Orbital Blades", "val": "Lv%d" % player.blade_level, "col": Color("#54f4ff")})
+		modules.append(_sub_module("blades", {"icon": "badge_blades", "name": "Orbital Blades", "val": "Lv%d" % player.blade_level, "col": Color("#54f4ff")}))
 	if player.turret_level > 0:
-		modules.append({"icon": "badge_turret", "name": "Auto-Turret", "val": "Lv%d" % player.turret_level, "col": Color("#6eff8c")})
+		modules.append(_sub_module("turret", {"icon": "badge_turret", "name": "Auto-Turret", "val": "Lv%d" % player.turret_level, "col": Color("#6eff8c")}))
 	if player.missile_level > 0:
-		modules.append({"icon": "badge_missile", "name": "Homing Pods", "val": "Lv%d" % player.missile_level, "col": Color("#ff4c68")})
+		modules.append(_sub_module("missile", {"icon": "badge_missile", "name": "Homing Pods", "val": "Lv%d" % player.missile_level, "col": Color("#ff4c68")}))
 	if player.flank_level > 0:
-		modules.append({"icon": "badge_flank", "name": "Flank Guns", "val": "Lv%d" % player.flank_level, "col": Color("#ffe854")})
+		modules.append(_sub_module("flank", {"icon": "badge_flank", "name": "Flank Guns", "val": "Lv%d" % player.flank_level, "col": Color("#ffe854")}))
 	if player.bomb_level > 0:
-		modules.append({"icon": "badge_bomb", "name": "Gravity Bombs", "val": "Lv%d" % player.bomb_level, "col": Color("#d44cff")})
+		modules.append(_sub_module("bomb", {"icon": "badge_bomb", "name": "Gravity Bombs", "val": "Lv%d" % player.bomb_level, "col": Color("#d44cff")}))
 	if player.nova_level > 0:
-		modules.append({"icon": "badge_nova", "name": "Nova Coil", "val": "Lv%d" % player.nova_level, "col": Color("#ffd84c")})
+		modules.append(_sub_module("nova", {"icon": "badge_nova", "name": "Nova Coil", "val": "Lv%d" % player.nova_level, "col": Color("#ffd84c")}))
 	if player.spread_level > 0:
 		modules.append({"icon": "badge_spread", "name": "Spread Matrix", "val": "Lv%d" % player.spread_level, "col": Color("#ffe854")})
 	if player.max_shield > 0:
@@ -3994,6 +4099,7 @@ func _hide_all_menus() -> void:
 	hud_bar.visible = false
 	pause_hud_btn.visible = false
 	touch_focus_btn.visible = false
+	touch_swap_btn.visible = false
 	banner_label.visible = false
 
 
@@ -4002,6 +4108,7 @@ func _sync_touch_hud_visibility() -> void:
 		MetaSave.touch_mode == 1 or (MetaSave.touch_mode == 0 and player.touch_detected)
 	)
 	touch_focus_btn.visible = show_touch
+	touch_swap_btn.visible = show_touch and player.owned_sub_weapons().size() >= 2
 
 
 func _pause_game() -> void:
@@ -4013,6 +4120,7 @@ func _pause_game() -> void:
 	player.clear_touch_drag()
 	world_root.process_mode = Node.PROCESS_MODE_DISABLED
 	touch_focus_btn.visible = false
+	touch_swap_btn.visible = false
 	pause_panel.visible = true
 	if _pause_ship_sprite != null:
 		var s_def: Dictionary = MetaSave.get_selected_ship_def()
@@ -4656,6 +4764,7 @@ func _begin_hyperspace_jump() -> void:
 	player.controls_enabled = false
 	player.clear_touch_drag()
 	touch_focus_btn.visible = false
+	touch_swap_btn.visible = false
 	pause_hud_btn.visible = false
 	starfield.hyperspace_active = true
 	starfield.hyperspace_progress = 0.0
@@ -5353,6 +5462,7 @@ func _open_upgrade_draft() -> void:
 	world_root.process_mode = Node.PROCESS_MODE_DISABLED
 	GenesisMusic.set_paused_duck(true)
 	touch_focus_btn.visible = false
+	touch_swap_btn.visible = false
 	pause_hud_btn.visible = false
 	draft_panel.visible = true
 	_populate_draft_cards_ui()
@@ -5394,6 +5504,7 @@ func _on_player_died() -> void:
 	_death_timer = 1.65
 	pause_hud_btn.visible = false
 	touch_focus_btn.visible = false
+	touch_swap_btn.visible = false
 	starfield.hyperspace_active = false
 	starfield.speed_scale = 0.35
 	GenesisMusic.stop_music()
@@ -5501,45 +5612,64 @@ func _draw_hud() -> void:
 		hud_bar.draw_rect(Rect2(0.0, 19.0, xp_w, 1.0), Color("#bffaff"))
 	hud_bar.draw_line(Vector2(0.0, 22.0), Vector2(VIEW_W, 22.0), Color("#4c6cb0"), 1.0)
 
-	# --- 1b) Mega Man-Style 28-Pip Segmented Top Boss Health Bar! ---
+	# --- 1b) Boss health: one solid bar (phase colour; a pale strip drains behind it after hits) ---
+	var boss_shown: bool = false
 	for node: Node in enemy_layer.get_children():
 		if node is GameEnemy:
 			var ge: GameEnemy = node as GameEnemy
 			if ge.enemy_type == GameEnemy.Type.BOSS and ge.boss_hp_bar_visible:
+				boss_shown = true
 				var b_ratio: float = ge.boss_hp_bar_fill if ge.boss_intro_active else clampf(ge.hp / ge.max_hp, 0.0, 1.0)
 				var bar_col: Color = Color("#28e8ff") if ge.boss_shield_timer > 0.0 else (
 					Color("#ff3868") if ge.boss_phase == 3 else (Color("#ff9624") if ge.boss_phase == 2 else Color("#ffe854"))
 				)
-				var hi_col: Color = bar_col.lightened(0.55)
-				var bar_x: float = 108.0
+				# The drain strip catches up after a short hold; it never trails a filling bar.
+				if b_ratio >= _boss_bar_lag or ge.boss_intro_active:
+					_boss_bar_lag = b_ratio
+					_boss_bar_hold = 0.35
+				else:
+					var dt: float = get_process_delta_time()
+					_boss_bar_hold -= dt
+					if _boss_bar_hold <= 0.0:
+						_boss_bar_lag = move_toward(_boss_bar_lag, b_ratio, dt * 0.55)
 				var bar_y: float = 24.0
-				var total_pips: int = GameEnemy.BOSS_HP_PIPS
-
+				var x0: float = BOSS_BAR_X
+				var full_w: float = BOSS_BAR_W
 				hud_bar.draw_rect(Rect2(72.0, bar_y, 318.0, 9.0), Color("#0b1029"))
 				hud_bar.draw_string(font, Vector2(75.0, bar_y + 8.0), "BOSS", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#ff4c68"))
-
-				var exact_pips: float = b_ratio * float(total_pips)
-				var full_pips: int = int(floorf(exact_pips))
-				var frac_pip: float = exact_pips - float(full_pips)
-
-				for p_idx: int in range(total_pips):
-					var px_pip: float = bar_x + float(p_idx) * 10.0
-					hud_bar.draw_rect(Rect2(px_pip, bar_y + 1.0, 8.0, 7.0), Color("#182042"))
-					if p_idx < full_pips:
-						var is_leading_intro_pip: bool = ge.boss_intro_active and (p_idx == full_pips - 1) and full_pips < total_pips
-						var pip_c: Color = Color.WHITE if is_leading_intro_pip else bar_col
-						hud_bar.draw_rect(Rect2(px_pip, bar_y + 1.0, 8.0, 7.0), pip_c)
-						hud_bar.draw_rect(Rect2(px_pip, bar_y + 1.0, 8.0, 2.0), hi_col)
-					elif p_idx == full_pips and frac_pip > 0.05 and not ge.boss_intro_active:
-						var part_w: float = maxf(1.0, roundf(8.0 * frac_pip))
-						hud_bar.draw_rect(Rect2(px_pip, bar_y + 1.0, part_w, 7.0), bar_col)
-						hud_bar.draw_rect(Rect2(px_pip, bar_y + 1.0, part_w, 2.0), hi_col)
-
-				hud_bar.draw_line(Vector2(bar_x + 93.0, bar_y), Vector2(bar_x + 93.0, bar_y + 9.0), Color("#dce6ff"), 1.0)
-				hud_bar.draw_line(Vector2(bar_x + 186.0, bar_y), Vector2(bar_x + 186.0, bar_y + 9.0), Color("#dce6ff"), 1.0)
+				hud_bar.draw_rect(Rect2(x0, bar_y + 1.0, full_w, 7.0), Color("#182042"))
+				var lag_w: float = roundf(full_w * _boss_bar_lag)
+				var fill_w: float = roundf(full_w * b_ratio)
+				if lag_w > fill_w:
+					hud_bar.draw_rect(Rect2(x0 + fill_w, bar_y + 1.0, lag_w - fill_w, 7.0), Color("#fff1e0"))
+				if fill_w > 0.0:
+					hud_bar.draw_rect(Rect2(x0, bar_y + 1.0, fill_w, 7.0), bar_col)
+					hud_bar.draw_rect(Rect2(x0, bar_y + 1.0, fill_w, 2.0), bar_col.lightened(0.55))
+					hud_bar.draw_rect(Rect2(x0, bar_y + 7.0, fill_w, 1.0), bar_col.darkened(0.35))
+					if ge.boss_intro_active and fill_w < full_w:
+						hud_bar.draw_rect(Rect2(x0 + fill_w - 2.0, bar_y + 1.0, 2.0, 7.0), Color.WHITE)
+				# Phase marks at 2/3 and 1/3 (phase 2 and 3 start there).
+				for frac: float in [2.0 / 3.0, 1.0 / 3.0]:
+					var mx: float = x0 + roundf(full_w * frac)
+					hud_bar.draw_line(Vector2(mx, bar_y + 1.0), Vector2(mx, bar_y + 8.0), Color(0.86, 0.9, 1.0, 0.75), 1.0)
 				hud_bar.draw_rect(Rect2(72.0, bar_y, 318.0, 9.0), Color("#dce6ff"), false, 1.0)
 				hud_bar.draw_line(Vector2(105.0, bar_y), Vector2(105.0, bar_y + 9.0), Color("#dce6ff"), 1.0)
 				break
+	if not boss_shown:
+		_boss_bar_lag = 0.0
+
+	# --- 1b2) Active sub weapon (left of the boss bar row), with the swap button once 2+ are owned ---
+	if player.sub_weapon != "":
+		var icon_key: String = "badge_" + player.sub_weapon
+		if player.sub_weapon == "beam":
+			icon_key = String(_get_beam_badge_info(player.aux_beam, player.beam_level)["icon"])
+		hud_bar.draw_rect(Rect2(2.0, 24.0, 68.0, 11.0), Color(0.04, 0.06, 0.16, 0.72))
+		hud_bar.draw_texture(PixelArt.tex(icon_key), Vector2(4.0, 25.0))
+		hud_bar.draw_string(font, Vector2(17.0, 33.0), player.sub_weapon_name(player.sub_weapon), HORIZONTAL_ALIGNMENT_LEFT, 40.0, FONT_SZ, Color("#ffe854"))
+		if player.owned_sub_weapons().size() >= 2:
+			var strip: Texture2D = InputPrompts.strip_for("swap_weapon")
+			if strip != null:
+				hud_bar.draw_texture(strip, Vector2(69.0 - float(strip.get_width()), 24.0 + floorf((11.0 - float(strip.get_height())) * 0.5)))
 
 	# --- 1c) Speed-up ">> x2" badge, under the pause button and clear of the boss gauge ---
 	if _speed_up_active:

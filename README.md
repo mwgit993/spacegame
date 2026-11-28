@@ -6,6 +6,7 @@ A horizontal 16-bit style roguelite space shooter built in **Godot 4.7** (`480x2
 - **Move:** `WASD` / `Arrow Keys` / Any Connected Controller Left Stick or D-Pad / Touch Drag
 - **Focus Slow-Dodge (shows 3px core hitbox):** Hold `Shift` / Controller `LB`, `RB`, or `LT` / Touch `FOCUS` pad
 - **Fire:** Autofire ON by default (`C` or Controller `Y` toggles) / Hold `Space`, `Z`, `J`, `A`, or `X`
+- **Swap sub weapon:** `E` / Controller `B` / Touch `SWAP` pad. Only one sub weapon (Option Drones, Orbital Blades, Auto-Turret, Homing Pods, Tail & Flank Gun, Gravity Bombs, Nova Coil, or a beam mounted next to an exotic ship's gun) fires at a time, next to your main gun; drafting one switches to it, and the HUD shows the active one under the HP bar.
 - **Speed Up (2x game speed):** Hold `F` / Controller `RT` (switch it to a toggle under **Options → SPEED UP**)
 - **FPS:** **Options → FPS** caps the frame rate at 30, 60 (the default) or 120, or UNLOCKED. V-sync stays on unless the cap is above your screen's refresh rate.
 - **Soundtrack picker:** **Options → SOUNDTRACK** lists every place music plays (title, each stage, boss fights, the hyperspace jump). Up/down picks a slot, left/right cycles its original track and 5 alternatives (you hear each one as you go), and the choice is saved. Stages 1–5 play recorded songs (`assets/music/`) by default; they're listed last, after the synth tracks.
