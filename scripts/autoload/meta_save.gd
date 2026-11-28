@@ -2,6 +2,9 @@ extends Node
 
 const SAVE_PATH: String = "user://star_viper_save.json"
 
+# Recorded soundtrack tracks (see "music_recordings" in save_game / load_game).
+const MusicTracks = preload("res://scripts/music_tracks.gd")
+
 # Save format version. v1 = original 30-node tree with start-of-run combat bonuses.
 # v2 = reworked tree (DRAFT CARD unlocks, hull/shields/ships only at run start).
 const TREE_VERSION: int = 2
@@ -372,6 +375,8 @@ func save_game() -> void:
 		"speed_up_toggle": speed_up_toggle,
 		"fps_cap": fps_cap,
 		"music_picks": music_picks,
+		# The slots that had a recording when these picks were saved (see load_game).
+		"music_recordings": MusicTracks.TRACKS.keys(),
 		"selected_ship": selected_ship,
 		"tree_version": TREE_VERSION,
 		"tree_levels": tree_levels,
@@ -449,7 +454,14 @@ func load_game() -> void:
 	var saved_picks: Variant = data.get("music_picks", {})
 	if saved_picks is Dictionary:
 		for slot: Variant in (saved_picks as Dictionary).keys():
-			music_picks[String(slot)] = clampi(int((saved_picks as Dictionary)[slot]), 0, 5)
+			# GenesisMusic.get_pick() clamps it to the slot's real number of tracks.
+			music_picks[String(slot)] = maxi(0, int((saved_picks as Dictionary)[slot]))
+	# A slot that got a recording (music_tracks.gd) since this save was written plays it: drop
+	# the pick saved for it, once. The next save lists the slot, so a later pick sticks.
+	var had_recordings: Variant = data.get("music_recordings", [])
+	for slot: Variant in MusicTracks.TRACKS:
+		if not (had_recordings is Array and (had_recordings as Array).has(slot)):
+			music_picks.erase(String(slot))
 
 	_init_default_tree()
 	# _init_default_tree() resets the ship, so restore the saved choice afterwards.

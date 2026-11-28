@@ -27,6 +27,10 @@ extends Node
 # STAGE MODULES (stages 9+, scripts/stages/): each module's get_song() is built the same way
 # as an alternative and plays as that stage's original; its slot ("stage_9" ...) joins the
 # picker automatically, with the module's get_song_alternatives() as its alternatives.
+#
+# RECORDED TRACKS (scripts/music_tracks.gd): an MP3 from assets/music/ can take over a slot.
+# It plays on its own AudioStreamPlayer (looping at its loop points) instead of the synth, is
+# the slot's default, and is listed in the picker after the slot's alternatives.
 
 enum Mode { NONE, TITLE, STAGE, BOSS, HYPERSPACE }
 
@@ -44,6 +48,8 @@ const SCALE_PHRYGIAN_DOM: Array[int] = [0, 1, 4, 5, 7, 8, 10]
 
 # Alternative tracks Matthew can audition and pick per slot (Options > Soundtrack).
 const Candidates = preload("res://scripts/music_candidates.gd")
+# Recorded MP3 tracks and their loop points.
+const Tracks = preload("res://scripts/music_tracks.gd")
 
 # Per-song arrangement settings. A song dictionary may override any of these;
 # the title and hyperspace jingles always use the defaults.
@@ -162,6 +168,10 @@ var picks: Dictionary = {}
 var _preview_slot: String = ""
 var _preview_idx: int = 0
 var _cand_cache: Dictionary = {}
+
+# Recorded tracks play here instead of through the generator (see _start_recording).
+var _file_player: AudioStreamPlayer
+var _recordings: Dictionary = {} # file path -> AudioStreamMP3 with its loop set up
 
 # Bass state
 var _bass_p1: float = 0.0
@@ -454,6 +464,9 @@ func _ready() -> void:
 	_player.stream = gen
 	_player.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(_player)
+	_file_player = AudioStreamPlayer.new()
+	_file_player.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(_file_player)
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_volume(music_volume)
 
@@ -477,11 +490,13 @@ func set_paused_duck(is_paused: bool) -> void:
 func _apply_volume_db() -> void:
 	if _player == null:
 		return
-	if music_volume <= 0.01:
-		_player.volume_db = -80.0
-	else:
+	var db: float = -80.0
+	if music_volume > 0.01:
 		var duck_db: float = -6.5 if paused_duck else 0.0
-		_player.volume_db = linear_to_db(music_volume * 0.72) + duck_db
+		db = linear_to_db(music_volume * 0.72) + duck_db
+	_player.volume_db = db
+	# The recordings are about as loud as the synth (RMS ~0.19 vs 0.17-0.22), so same gain.
+	_file_player.volume_db = db
 
 
 func _deg_to_midi(root_midi: int, scale: Array, degree: int) -> int:
@@ -566,10 +581,10 @@ func set_picks(new_picks: Dictionary) -> void:
 
 # Shipped default per slot for players who haven't picked (0 = original, n = alternative #n
 # as numbered in the picker). These are Matthew's picks; a slot left out plays its original.
+# A slot with a recording (music_tracks.gd) defaults to the recording instead: stage_1 and
+# stage_2 play his MP3s (his synth picks there were #3 ORBITAL DRIVE and #2 ENGINE ROOM).
 const DEFAULT_PICKS: Dictionary = {
 	"title": 2,   # HEROES ASSEMBLE
-	"stage_1": 3, # ORBITAL DRIVE
-	"stage_2": 2, # ENGINE ROOM
 	"stage_3": 5, # JETSTREAM
 	"stage_4": 3, # VINE RUNNER
 	"stage_5": 3, # BLIZZARD
@@ -581,29 +596,42 @@ const DEFAULT_PICKS: Dictionary = {
 
 
 func get_pick(slot: String) -> int:
-	return clampi(int(picks.get(slot, DEFAULT_PICKS.get(slot, 0))), 0, candidate_count(slot))
+	var fallback: int = recording_index(slot) if has_recording(slot) else int(DEFAULT_PICKS.get(slot, 0))
+	return clampi(int(picks.get(slot, fallback)), 0, candidate_count(slot))
 
 
 func candidate_count(slot: String) -> int:
-	return _slot_candidates(slot).size()
+	return _slot_candidates(slot).size() + (1 if has_recording(slot) else 0)
+
+
+func has_recording(slot: String) -> bool:
+	return Tracks.TRACKS.has(slot)
+
+
+# A recording's place in the slot's list: right after the alternatives (-1 if it has none).
+func recording_index(slot: String) -> int:
+	return _slot_candidates(slot).size() + 1 if has_recording(slot) else -1
 
 
 # Index 0 is the original track; 1.. are the alternatives (music_candidates.gd, or a stage
-# module's get_song_alternatives()).
+# module's get_song_alternatives()), then the slot's recording if it has one.
+func _candidate_entry(slot: String, idx: int) -> Dictionary:
+	if idx == recording_index(slot):
+		return Tracks.TRACKS[slot]
+	var arr: Array = _slot_candidates(slot)
+	return arr[idx - 1]
+
+
 func candidate_name(slot: String, idx: int) -> String:
 	if idx <= 0:
 		return "ORIGINAL"
-	var arr: Array = _slot_candidates(slot)
-	var c: Dictionary = arr[idx - 1]
-	return String(c["name"])
+	return String(_candidate_entry(slot, idx)["name"])
 
 
 func candidate_info(slot: String, idx: int) -> String:
 	if idx <= 0:
 		return "THE TRACK THE GAME SHIPPED WITH"
-	var arr: Array = _slot_candidates(slot)
-	var c: Dictionary = arr[idx - 1]
-	return String(c.get("info", ""))
+	return String(_candidate_entry(slot, idx).get("info", ""))
 
 
 func slot_key(mode: Mode, stage_idx: int) -> String:
@@ -657,6 +685,8 @@ func _resolve_song(mode: Mode, stage_idx: int) -> Dictionary:
 		return {}
 	var slot: String = slot_key(mode, stage_idx)
 	var idx: int = _preview_idx if slot == _preview_slot else get_pick(slot)
+	if idx > 0 and idx == recording_index(slot):
+		return Tracks.TRACKS[slot]
 	if idx > 0 and idx <= candidate_count(slot):
 		return _candidate_song(slot, idx)
 	match mode:
@@ -711,11 +741,17 @@ func _build_song(c: Dictionary) -> Dictionary:
 func _switch_state(new_mode: Mode, stage_idx: int, force: bool = false) -> void:
 	_apply_volume_db()
 	var wrapped_stage: int = StageData.wrap_stage(stage_idx)
-	if not force and current_mode == new_mode and (new_mode == Mode.BOSS or current_stage_idx == wrapped_stage) and _player != null and _player.playing:
+	if not force and current_mode == new_mode and (new_mode == Mode.BOSS or current_stage_idx == wrapped_stage) and _player != null and (_player.playing or _file_player.playing):
 		return
 	current_mode = new_mode
 	current_stage_idx = wrapped_stage
 	_song = _resolve_song(new_mode, current_stage_idx)
+	if _song.has("file"):
+		_player.stop()
+		_playback = null
+		_start_recording(_song)
+		return
+	_file_player.stop()
 	_load_song_params()
 	_step = 0
 	_sample_in_step = 999999.0 # fires step 0 on the next sample (see _render_block)
@@ -753,6 +789,38 @@ func _switch_state(new_mode: Mode, stage_idx: int, force: bool = false) -> void:
 	if not _player.playing:
 		_player.play()
 	_playback = _player.get_stream_playback() as AudioStreamGeneratorPlayback
+
+
+# Plays a recorded track (music_tracks.gd) from the top; it loops by itself after that.
+func _start_recording(track: Dictionary) -> void:
+	var stream: AudioStreamMP3 = recording_stream(track)
+	if stream == null:
+		_file_player.stop()
+		return
+	_file_player.stream = stream
+	_file_player.play()
+
+
+# The track's MP3, loaded once, set to play through once and then repeat loop_start..loop_end.
+# AudioStreamMP3 restarts at loop_offset after beat_count beats at its bpm, so the bpm is nudged
+# from the song's tempo to make that land exactly on loop_end.
+func recording_stream(track: Dictionary) -> AudioStreamMP3:
+	var path: String = String(track["file"])
+	if _recordings.has(path):
+		return _recordings[path]
+	var stream: AudioStreamMP3 = load(path) as AudioStreamMP3
+	if stream == null:
+		push_error("GenesisMusic: could not load recording %s" % path)
+		return null
+	var loop_end: float = float(track["loop_end"])
+	var beats: int = maxi(1, roundi(loop_end / MIX_RATE * float(track["bpm"]) / 60.0))
+	stream.loop = true
+	# +0.25 sample: Godot rounds the seek down to a whole sample.
+	stream.loop_offset = (float(track["loop_start"]) + 0.25) / MIX_RATE
+	stream.beat_count = beats
+	stream.bpm = float(beats) * 60.0 * MIX_RATE / loop_end
+	_recordings[path] = stream
+	return stream
 
 
 func _song_param(key: String) -> Variant:
@@ -849,6 +917,8 @@ func _get_current_bpm() -> float:
 func _process(_delta: float) -> void:
 	if current_mode == Mode.NONE or _player == null:
 		return
+	if _song.has("file"):
+		return # a recording: _file_player streams it by itself
 	if not _player.playing:
 		_player.play()
 	if _playback == null:
