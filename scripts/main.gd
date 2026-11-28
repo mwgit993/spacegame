@@ -2413,8 +2413,14 @@ func _smoke_check_recording_save() -> bool:
 			push_error("SMOKE: soundtrack slot %s does not default to its recording" % slot)
 			ok = false
 	var rec_slot: String = String(GenesisMusic.Tracks.TRACKS.keys()[0])
-	# An old save: a synth pick on that slot, and no "music_recordings" list.
-	MetaSave.music_picks = {rec_slot: 2, "title": 1}
+	var other_slot: String = ""
+	for slot: String in GenesisMusic.get_slot_keys():
+		if not GenesisMusic.has_recording(slot):
+			other_slot = slot
+			break
+	# An old save: a synth pick on that slot and on one without a recording, and no
+	# "music_recordings" list.
+	MetaSave.music_picks = {rec_slot: 2, other_slot: 1}
 	MetaSave.save_game()
 	var rf: FileAccess = FileAccess.open(MetaSave.SAVE_PATH, FileAccess.READ)
 	var parsed: Variant = JSON.parse_string(rf.get_as_text())
@@ -2425,7 +2431,7 @@ func _smoke_check_recording_save() -> bool:
 	wf.store_string(JSON.stringify(data, "\t"))
 	wf.close()
 	MetaSave.load_game()
-	if MetaSave.music_picks.has(rec_slot) or int(MetaSave.music_picks.get("title", -1)) != 1:
+	if MetaSave.music_picks.has(rec_slot) or int(MetaSave.music_picks.get(other_slot, -1)) != 1:
 		push_error("SMOKE: loading an old save did not drop its %s pick for the recording, or lost another pick: %s" % [rec_slot, str(MetaSave.music_picks)])
 		ok = false
 	MetaSave.music_picks[rec_slot] = 2
