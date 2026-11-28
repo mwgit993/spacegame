@@ -41,7 +41,7 @@ func build() -> void:
 		dr.use_parent_material = false
 		_drips.append(dr)
 		_drip_t.append(randf())
-	add_pilot(self, Vector2(10.0, -32.0), "spino", Vector2i(36, 28), 3)
+	add_pilot(self, Vector2(10.0, -32.0), Vector2i(36, 28), 3)
 
 
 func animate(delta: float) -> void:

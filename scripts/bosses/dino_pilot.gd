@@ -16,6 +16,9 @@ const W: int = 30
 const H: int = 24
 const EXPRESSIONS: Array[String] = ["angry", "blink", "roar", "hurt", "panic"]
 
+## Every boss is flown by the same pilot (Matthew's call): the angry T-rex.
+const BOSS_PILOT: String = "rex"
+
 # skin, belly, stripe/accent, scarf
 const SPECIES: Dictionary = {
 	"rex": {"skin": Color("#5cb84a"), "belly": Color("#e6d27a"), "accent": Color("#2f7a2c"), "scarf": Color("#e8344a")},

@@ -9,7 +9,7 @@
 - **Engine:** **Godot Engine v4.7.2** (Standard GDScript with strict static typing, Forward+ / D3D12 on Windows, compatible with Linux/Steam Deck).
 - **Zero-Fragility Procedural Pipeline:** All 16-bit ship/enemy sprites, 3-frame animated giant bosses, exotic projectiles, upgrade diagrams, 16-bit PCM SFX, and the real-time 44.1 kHz multi-instrument soundtrack are generated procedurally in GDScript (paired with a custom *Final Fantasy VI*-inspired bitmap font in `assets/fonts/`).
 - **Core Roguelite Loop:**
-  - **Automatic Scrap + Magnetized XP Gems (*BALL x PIT* Style):** Blowing up enemies automatically banks **Scrap** to your counter (zero coin clutter!) while bursting into tiered cyan/violet/gold **XP Gems** and occasional **Hull Heals**.
+  - **Automatic Scrap + Magnetized XP Gems (*BALL x PIT* Style):** Blowing up enemies automatically banks **Scrap** to your counter (zero coin clutter!) while bursting into tiered green/amber/magenta **XP Cells** (little spinning energy cells) and occasional **Hull Heals**.
   - **Mid-Combat Level-Up Drafts:** Waves flow seamlessly without end-of-wave interruptions. Whenever your full-width glowing **XP Bar** fills up, combat briefly freezes for a **1-of-3 Powerup Draft** (`[BEAM]`, `[ADDON]`, or `[CORE]`, with optional **Rerolls**).
   - **54-Node *Rogue Legacy* Skill Tree & 17 Ships:** Between runs, spend Scrap in the pannable **Starforge Skill Tree** (rings around a core, hidden in fog; every rank bought grows your **Knowledge**, and each Knowledge level opens the next ring with a growth reveal) on starting hull & shields, keystones (like *Lazarus Supernova Revive*), economy perks, **18 new DRAFT CARD upgrades** that then show up in level-up drafts (Seeker Rounds, Chain Reaction, Orbital Strike, Cryo/Napalm Rounds and more), **EVOLVE nodes** that upgrade each sub weapon through 3 marks (MK II-IV) once it's drafted, and **16 secret Starships** selectable in the scrolling **Fleet Ship Loadout Bay**! The tree no longer hands out combat bonuses at the start of a run.
 
@@ -66,10 +66,10 @@
 | `scripts/enemy_art.gd` | Sprites for the stage-signature enemies and their special shots (bombs, spores, ice shards, frost puffs) |
 | `scripts/boss_painter.gd` | Procedural 3-frame native-pixel painter for all 8 giant bosses (`_0`, `_1`, `_2`) |
 | `scripts/bullet.gd` | Enemy danger-glow bullets + player piercing, wave-helix, chain-lightning, AoE, and animated pouncing Space Cats (player shots never bounce; they are freed at the screen edge) |
-| `scripts/pickup.gd` / `fx_layer.gd` | Magnetized tiered XP Gems & Hull Heals, lightning arcs, blast rings, screen shake, popups |
+| `scripts/pickup.gd` / `fx_layer.gd` | Magnetized tiered XP Cells & Hull Heals, lightning arcs, blast rings, screen shake, popups |
 | `scripts/starfield.gd` | 8 biome parallax worlds + Hyperspace Warp tunnel |
 | `scripts/autoload/meta_save.gd` | JSON save/load (`user://star_viper_save.json`) for Skill Tree ranks, unlocked ships, Scrap, stats, and options |
-| `scripts/autoload/pixel_art.gd` | Caches all ship, enemy, bullet, XP gem, upgrade diagram, and badge pixel textures |
+| `scripts/autoload/pixel_art.gd` | Caches all ship, enemy, bullet, XP cell, upgrade diagram, and badge pixel textures |
 | `scripts/autoload/retro_sfx.gd` | Synthesizes 16-bit WAV SFX (`shoot`, `laser`, `zap`, `bounce`, `meow`, `xp`, `level_up`, `boss_beam`, `boss_pose`, `boss_hp_tick`, etc.) |
 | `scripts/autoload/genesis_music.gd` | Real-time 44.1 kHz stereo diatonic music synthesizer (8 stage ensembles + universal Boss darksynth anthem), plus the alternative-track engine (extra grooves, voices and a melody composer) |
 | `scripts/music_candidates.gd` | 5 alternative tracks per built-in music slot (title, stages 1–8, boss, hyperspace), picked in Options → SOUNDTRACK |

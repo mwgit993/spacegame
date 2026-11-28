@@ -34,7 +34,7 @@ func build() -> void:
 	marker(face, "ring", Vector2(-12.0, -6.0))
 	for k2: int in range(4, 8):
 		_cables.append(_build_cable(k2, 2))
-	add_pilot(self, Vector2(2.0, -30.0), "dilo", Vector2i(36, 28), 3)
+	add_pilot(self, Vector2(2.0, -30.0), Vector2i(36, 28), 3)
 
 
 func _build_cable(k: int, z: int) -> Array[Sprite2D]:

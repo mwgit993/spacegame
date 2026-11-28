@@ -780,6 +780,8 @@ func _run_smoke_test() -> void:
 		smoke_ok = false
 	if not _smoke_check_boss_rigs():
 		smoke_ok = false
+	if not _smoke_check_xp_cells():
+		smoke_ok = false
 	MetaSave.select_ship("neko")
 	player.reset_for_new_run()
 	for upg_id: String in ["overclock", "prism", "wave", "tesla", "plasma", "laser", "option", "blades", "turret", "missile", "flank", "bomb", "nova", "spread", "shield", "rapid", "thruster", "repair"]:
@@ -1747,6 +1749,9 @@ func _smoke_check_boss_rigs() -> bool:
 			push_error("SMOKE: stage %d boss is not its animated rig with a dino pilot" % (st_i + 1))
 			ok = false
 			continue
+		if boss._rig.pilot.species != GameEnemy.DinoPilotScript.BOSS_PILOT:
+			push_error("SMOKE: stage %d boss is not flown by the boss pilot" % (st_i + 1))
+			ok = false
 		boss.boss_intro_active = false
 		boss.boss_hp_bar_visible = true
 		boss.global_position = Vector2(414.0, 134.0)
@@ -1795,23 +1800,65 @@ func _smoke_check_boss_rigs() -> bool:
 			push_error("SMOKE: stage %d boss has no dino pilot" % (st_m + 1))
 			ok = false
 			continue
+		if mboss._pilot.species != GameEnemy.DinoPilotScript.BOSS_PILOT:
+			push_error("SMOKE: stage %d boss is not flown by the boss pilot" % (st_m + 1))
+			ok = false
 		var mpods: int = _smoke_count_pods()
 		mboss._start_boss_death_sequence()
 		mboss._finish_boss_death()
 		if _smoke_count_pods() != mpods + 1:
 			push_error("SMOKE: stage %d boss pilot did not bail out" % (st_m + 1))
 			ok = false
-	# The pods fly off and free themselves.
+	# The pods warp away off the right edge and free themselves.
 	for pod: Node in fx_layer.get_children():
 		if pod.get_script() != null and String((pod.get_script() as Script).resource_path).ends_with("pilot_pod.gd"):
+			var pod2d: Node2D = pod as Node2D
+			var max_x: float = pod2d.global_position.x
 			for f4: int in range(300):
+				if pod.is_queued_for_deletion():
+					break
 				pod.call("_process", 1.0 / 60.0)
+				max_x = maxf(max_x, pod2d.global_position.x)
 			if not pod.is_queued_for_deletion():
 				push_error("SMOKE: an escape pod never left")
+				ok = false
+			elif max_x < 480.0:
+				push_error("SMOKE: an escape pod left without warping off the right edge (x %.0f)" % max_x)
 				ok = false
 	for shot_node: Node in bullet_layer.get_children():
 		shot_node.queue_free()
 	_smoke_clear_enemies()
+	return ok
+
+
+# XP pickups are spinning energy cells: every size has 4 different frames, and a pickup cycles
+# through them.
+func _smoke_check_xp_cells() -> bool:
+	var ok: bool = true
+	for size_key: String in ["small", "med", "big"]:
+		var seen: Dictionary = {}
+		for f: int in range(4):
+			var key: String = "pickup_xp_%s_%d" % [size_key, f]
+			if not PixelArt._cache.has(key):
+				push_error("SMOKE: no XP cell sprite " + key)
+				ok = false
+				continue
+			seen[(PixelArt.tex(key) as ImageTexture).get_image().get_data()] = true
+		if seen.size() < 3:
+			push_error("SMOKE: the %s XP cell doesn't spin" % size_key)
+			ok = false
+	var p: GamePickup = GamePickup.new()
+	pickup_layer.add_child(p)
+	p.setup(Vector2(240, 140), GamePickup.Kind.XP, 1, null)
+	var first: Texture2D = p._sprite.texture
+	var changed: bool = false
+	for i: int in range(20):
+		p._process(1.0 / 60.0)
+		changed = changed or p._sprite.texture != first
+	if not changed:
+		push_error("SMOKE: an XP pickup doesn't animate its spin")
+		ok = false
+	p.queue_free()
 	return ok
 
 

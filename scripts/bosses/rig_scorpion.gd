@@ -61,7 +61,7 @@ func build() -> void:
 		_jaws_a.append(ja)
 		_jaws_b.append(jb)
 
-	add_pilot(self, Vector2(-2.0, -12.0), "raptor", Vector2i(34, 28), 3)
+	add_pilot(self, Vector2(-2.0, -12.0), Vector2i(34, 28), 3)
 
 
 func animate(_delta: float) -> void:

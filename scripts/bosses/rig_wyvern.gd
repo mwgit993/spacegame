@@ -51,7 +51,7 @@ func build() -> void:
 	marker(_head, "maw", Vector2(-32.0, 6.0))
 	marker(_head, "spread", Vector2(-32.0, 6.0))
 
-	add_pilot(self, Vector2(4.0, -18.0), "ptero", Vector2i(34, 28), 4)
+	add_pilot(self, Vector2(4.0, -18.0), Vector2i(34, 28), 4)
 	_wings.append(part(self, Kit.cached("wyv_wing_near", _paint_wing.bind(false)), Vector2(14.0, -6.0), Vector2(7.0, 59.0), 3))
 
 

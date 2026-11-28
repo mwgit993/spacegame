@@ -73,7 +73,7 @@ func build() -> void:
 		_charges.append(ch)
 		_flashes.append(fl)
 
-	add_pilot(self, Vector2(-14.0, -32.0), "rex", Vector2i(36, 28), 4)
+	add_pilot(self, Vector2(-14.0, -32.0), Vector2i(36, 28), 4)
 
 
 func animate(delta: float) -> void:
