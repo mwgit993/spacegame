@@ -14,6 +14,14 @@ extends RefCounted
 # after beat_count beats at its bpm). To add a song: drop the MP3 in assets/music/, run
 # --import, find two downbeats that repeat (same music before both), and add an entry here.
 const TRACKS: Dictionary = {
+	# 124 BPM. The quiet intro and the first section play once, then 47.47 s -> 111.33 s (33 bars)
+	# repeats. The jump comes at the end of the climax, where the drums cut out before the outro,
+	# and lands where the first section ends the same way, on the drum break in the middle of
+	# the song, so the loop runs straight on into the second half.
+	"title": {
+		"name": "TITLE THEME", "info": "RECORDED MP3  124 BPM", "file": "res://assets/music/title.mp3",
+		"bpm": 124.0, "loop_start": 2093198, "loop_end": 4909816,
+	},
 	# 120 BPM. The 4-bar intro plays once, then 8.05 s -> 98.05 s (45 bars) repeats. The jump
 	# back comes at the end of the near-silent stop bar before the last section (a reprise of
 	# the main part), and lands on the first beat after the intro, where the main part begins.
