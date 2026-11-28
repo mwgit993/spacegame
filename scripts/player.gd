@@ -160,6 +160,15 @@ var _option_sprites: Array[Sprite2D] = []
 var _blade_sprites: Array[Sprite2D] = []
 var _blade_block_cd: Array[float] = []
 
+# Sub weapon evolutions bought in the skill tree's EVOLVE nodes (SUB_WEAPONS id -> marks 0-3,
+# so 1 = MK II ... 3 = MK IV), read at run start. They only change a sub weapon once it's drafted.
+var sub_evo: Dictionary = {}
+var _option_block_cd: Array[float] = [0.0, 0.0, 0.0, 0.0]
+var _blade_throw_t: float = 0.0     # MK IV blades: time into the buzzsaw cycle
+var _nova_echo_t: float = -1.0      # MK IV nova: seconds until the echo pulse (< 0: none due)
+const BLADE_THROW_PERIOD: float = 3.2
+const BLADE_THROW_TIME: float = 0.7
+
 
 func _ready() -> void:
 	collision_layer = 1
@@ -296,6 +305,13 @@ func reset_for_new_run() -> void:
 	_turret_aim_dir = Vector2.RIGHT
 	for i: int in range(MAX_BLADES):
 		_blade_block_cd[i] = 0.0
+	sub_evo.clear()
+	for sub_id: String in SUB_WEAPONS:
+		sub_evo[sub_id] = MetaSave.get_sub_evolution(sub_id)
+	for i: int in range(4):
+		_option_block_cd[i] = 0.0
+	_blade_throw_t = 0.0
+	_nova_echo_t = -1.0
 
 	# Hull perks of the newer ships: a built-in addon or a rank of a DRAFT CARD perk.
 	turret_level = mini(4, int(starters.get("turret", 0)))
@@ -557,6 +573,11 @@ func sub_weapon_name(id: String) -> String:
 	return ""
 
 
+# Marks bought for a sub weapon's evolution: 0 (stock) .. 3 (MK IV).
+func evo(sub_id: String) -> int:
+	return int(sub_evo.get(sub_id, 0))
+
+
 # Options only fly (and fire) while they're the active sub weapon.
 func _live_option_count() -> int:
 	return option_count if is_sub_active("option") else 0
@@ -582,7 +603,7 @@ func _sync_blades() -> void:
 		bl.visible = visible and (i < count)
 		if bl.visible and count > 0:
 			var ang: float = _blade_orbit_angle + TAU * float(i) / float(count)
-			bl.global_position = global_position + Vector2(cos(ang), sin(ang)) * 25.0
+			bl.global_position = global_position + Vector2(cos(ang), sin(ang)) * _blade_radius()
 
 
 func _process(delta: float) -> void:
@@ -709,19 +730,19 @@ func _process(delta: float) -> void:
 		_aux_timer = maxf(0.0, _aux_timer - delta)
 		if fire_pressed and _aux_timer <= 0.0:
 			_fire_aux_beam()
-			_aux_timer = 0.34 / fire_rate_bonus
+			_aux_timer = (0.25 if evo("beam") >= 2 else 0.34) / fire_rate_bonus
 
 	if is_sub_active("missile"):
 		_missile_cooldown = maxf(0.0, _missile_cooldown - delta)
 		if fire_pressed and _missile_cooldown <= 0.0:
 			_fire_missiles()
-			_missile_cooldown = maxf(0.28, 0.84 - float(missile_level) * 0.13) / (0.55 + 0.45 * fire_rate_bonus)
+			_missile_cooldown = maxf(0.28, 0.84 - float(missile_level) * 0.13) / (0.55 + 0.45 * fire_rate_bonus) * (0.8 if evo("missile") >= 2 else 1.0)
 
 	if is_sub_active("flank"):
 		_flank_cooldown = maxf(0.0, _flank_cooldown - delta)
 		if fire_pressed and _flank_cooldown <= 0.0:
 			_fire_flank_guns()
-			_flank_cooldown = 0.27 / fire_rate_bonus
+			_flank_cooldown = (0.21 if evo("flank") >= 2 else 0.27) / fire_rate_bonus
 
 	if is_sub_active("turret"):
 		_turret_cooldown = maxf(0.0, _turret_cooldown - delta)
@@ -740,7 +761,11 @@ func _process(delta: float) -> void:
 		_nova_cooldown = maxf(0.0, _nova_cooldown - delta)
 		if _nova_cooldown <= 0.0:
 			_trigger_nova_pulse(false)
-			_nova_cooldown = maxf(3.0, 5.4 - float(nova_level) * 0.75)
+			_nova_cooldown = maxf(3.0, 5.4 - float(nova_level) * 0.75) * (0.8 if evo("nova") >= 1 else 1.0)
+		if _nova_echo_t >= 0.0:
+			_nova_echo_t -= delta
+			if _nova_echo_t < 0.0:
+				_trigger_nova_pulse(false, true)
 
 	_update_run_perks(delta, fire_pressed)
 
@@ -911,6 +936,16 @@ func _reflect_burst() -> void:
 		fx.spawn_ring_blast(global_position, radius, Color("#54f4ff"))
 
 
+# Orbit radius of the blades: wider from MK II, and MK IV flings them out every few seconds.
+func _blade_radius() -> float:
+	var r: float = 31.0 if evo("blades") >= 1 else 25.0
+	if evo("blades") >= 3:
+		var phase: float = _blade_throw_t - (BLADE_THROW_PERIOD - BLADE_THROW_TIME)
+		if phase > 0.0:
+			r += 34.0 * sin(PI * phase / BLADE_THROW_TIME)
+	return r
+
+
 func _update_orbiting_blades(delta: float) -> void:
 	var count: int = _active_blade_count()
 	_blade_orbit_angle += delta * (4.4 + float(blade_level) * 0.45)
@@ -918,8 +953,11 @@ func _update_orbiting_blades(delta: float) -> void:
 	var deal_slice_tick: bool = (_blade_dmg_timer <= 0.0)
 	if deal_slice_tick:
 		_blade_dmg_timer = 0.13
+	if evo("blades") >= 3:
+		_blade_throw_t = fmod(_blade_throw_t + delta, BLADE_THROW_PERIOD)
+	var orbit_r: float = _blade_radius()
 
-	var slice_dmg: float = (1.35 + 0.45 * float(blade_level)) * damage_bonus
+	var slice_dmg: float = (1.35 + 0.45 * float(blade_level)) * damage_bonus * (1.35 if evo("blades") >= 1 else 1.0)
 
 	for i: int in range(MAX_BLADES):
 		var bl: Sprite2D = _blade_sprites[i]
@@ -929,7 +967,7 @@ func _update_orbiting_blades(delta: float) -> void:
 		bl.visible = true
 		_blade_block_cd[i] = maxf(0.0, _blade_block_cd[i] - delta)
 		var ang: float = _blade_orbit_angle + TAU * float(i) / float(count)
-		var b_pos: Vector2 = global_position + Vector2(cos(ang), sin(ang)) * 25.0
+		var b_pos: Vector2 = global_position + Vector2(cos(ang), sin(ang)) * orbit_r
 		bl.global_position = b_pos
 		bl.rotation += delta * 14.0
 
@@ -956,6 +994,11 @@ func _update_orbiting_blades(delta: float) -> void:
 							fx.spawn_hit_sparks(gb.global_position, Color("#28e8ff"), 5)
 						RetroSfx.play("shield_hit", -14.0, 0.08)
 						gb.queue_free()
+						if evo("blades") >= 2:
+							# MK III: the blocked shot flies back at the nearest enemy.
+							var tgt: Node2D = _find_closest_threat()
+							var back_dir: Vector2 = (tgt.global_position - b_pos).normalized() if tgt != null else Vector2.RIGHT
+							_spawn_player_bullet(b_pos, back_dir * 340.0, slice_dmg, "bullet_shard", 0, false, 3.0)
 						break
 
 
@@ -978,6 +1021,26 @@ func _record_trail_and_options(delta: float) -> void:
 		opt.global_position = opt.global_position.lerp(_trail[idx], clampf(22.0 * delta, 0.0, 1.0))
 		var pulse: float = 0.92 + 0.12 * sin(Time.get_ticks_msec() * 0.015 + float(i))
 		opt.scale = Vector2(pulse, pulse)
+		if evo("option") >= 3:
+			_option_guard(i, delta)
+
+
+# MK IV options: each option swats an enemy shot that touches it, then needs a moment.
+func _option_guard(i: int, delta: float) -> void:
+	_option_block_cd[i] = maxf(0.0, _option_block_cd[i] - delta)
+	if _option_block_cd[i] > 0.0 or bullet_container == null:
+		return
+	var o_pos: Vector2 = _option_sprites[i].global_position
+	for child: Node in bullet_container.get_children():
+		if child is GameBullet:
+			var gb: GameBullet = child as GameBullet
+			if not gb.is_player_bullet and o_pos.distance_squared_to(gb.global_position) <= 80.0:
+				_option_block_cd[i] = 0.7
+				if fx != null:
+					fx.spawn_hit_sparks(gb.global_position, Color("#54f4ff"), 5)
+				RetroSfx.play("shield_hit", -15.0, 0.08)
+				gb.queue_free()
+				return
 
 
 func _toggle_autofire() -> void:
@@ -1139,12 +1202,12 @@ func _fire_primary() -> float:
 	for e_idx: int in range(emitters.size()):
 		var origin: Vector2 = emitters[e_idx]
 		var is_ship: bool = e_idx < ship_emitters.size()
-		var mul: float = 1.0 if is_ship else 0.65
+		var mul: float = 1.0 if is_ship else (0.85 if evo("option") >= 1 else 0.65)
 		var mode: String = active_beam if is_ship else opt_mode
 		var mp: Dictionary = p if is_ship else op
 		var tex_key: String = String(mp["tex"])
 		var speed: float = float(mp["spd"])
-		var pierce: int = int(mp["pierce"])
+		var pierce: int = int(mp["pierce"]) + (1 if not is_ship and evo("option") >= 2 else 0)
 		var dmg: float = float(mp["dmg"]) * damage_bonus * power
 		_cur_emitter_src = -1 if is_ship else e_idx - ship_emitters.size()
 
@@ -1185,7 +1248,7 @@ func _fire_primary() -> float:
 
 	# Co-Axial Aux Tech Beam on the original Exotic Ships: every 2nd volley also fires the drafted
 	# Elemental/Tech Beam (the newer ships fire it on a timer, see _process).
-	if is_sub_active("beam") and VOLLEY_AUX_WEAPONS.has(signature_weapon) and (_volley_count % 2 == 0):
+	if is_sub_active("beam") and VOLLEY_AUX_WEAPONS.has(signature_weapon) and ((_volley_count % 3 != 0) if evo("beam") >= 2 else (_volley_count % 2 == 0)):
 		_fire_aux_beam()
 
 	if active_beam == "cat" and (_volley_count % 5 == 1):
@@ -1197,16 +1260,22 @@ func _fire_primary() -> float:
 
 func _fire_aux_beam() -> void:
 	var ap: Dictionary = _get_mode_params(aux_beam, maxi(1, beam_level))
-	_spawn_mode_shot(
-		aux_beam,
-		maxi(1, beam_level),
-		global_position + Vector2(12.0, 0.0),
-		Vector2(float(ap["spd"]), 0.0),
-		float(ap["dmg"]) * damage_bonus * 0.85,
-		String(ap["tex"]),
-		int(ap["pierce"]),
-		1.0 if _wave_flip else -1.0
-	)
+	var dmg: float = float(ap["dmg"]) * damage_bonus * (1.06 if evo("beam") >= 1 else 0.85)
+	# MK IV: twin beams, one either side of the nose.
+	var offsets: Array[float] = [0.0]
+	if evo("beam") >= 3:
+		offsets = [-4.0, 4.0]
+	for oy: float in offsets:
+		_spawn_mode_shot(
+			aux_beam,
+			maxi(1, beam_level),
+			global_position + Vector2(12.0, oy),
+			Vector2(float(ap["spd"]), 0.0),
+			dmg,
+			String(ap["tex"]),
+			int(ap["pierce"]),
+			1.0 if _wave_flip else -1.0
+		)
 
 
 # What the options fire when the ship's own weapon only works from the hull.
@@ -1612,13 +1681,26 @@ func _fire_missiles() -> void:
 	if bullet_container == null:
 		return
 	var m_dmg: float = (1.85 + 0.55 * float(missile_level)) * damage_bonus
-	_spawn_player_bullet(global_position + Vector2(2.0, 7.0), Vector2(145.0, 65.0), m_dmg, "bullet_missile", 0, true, 4.0)
+	var salvo: Array[GameBullet] = []
+	salvo.append(_spawn_player_bullet(global_position + Vector2(2.0, 7.0), Vector2(145.0, 65.0), m_dmg, "bullet_missile", 0, true, 4.0))
 	if missile_level >= 2:
-		_spawn_player_bullet(global_position + Vector2(2.0, -7.0), Vector2(145.0, -65.0), m_dmg, "bullet_missile", 0, true, 4.0)
+		salvo.append(_spawn_player_bullet(global_position + Vector2(2.0, -7.0), Vector2(145.0, -65.0), m_dmg, "bullet_missile", 0, true, 4.0))
 	if missile_level >= 3:
-		_spawn_player_bullet(global_position + Vector2(-2.0, 10.0), Vector2(125.0, 105.0), m_dmg * 0.85, "bullet_missile", 0, true, 4.0)
+		salvo.append(_spawn_player_bullet(global_position + Vector2(-2.0, 10.0), Vector2(125.0, 105.0), m_dmg * 0.85, "bullet_missile", 0, true, 4.0))
 	if missile_level >= 4:
-		_spawn_player_bullet(global_position + Vector2(-2.0, -10.0), Vector2(125.0, -105.0), m_dmg * 0.85, "bullet_missile", 0, true, 4.0)
+		salvo.append(_spawn_player_bullet(global_position + Vector2(-2.0, -10.0), Vector2(125.0, -105.0), m_dmg * 0.85, "bullet_missile", 0, true, 4.0))
+	if evo("missile") >= 2:
+		salvo.append(_spawn_player_bullet(global_position + Vector2(6.0, 0.0), Vector2(175.0, 0.0), m_dmg, "bullet_missile", 0, true, 4.0))
+	for m: GameBullet in salvo:
+		if evo("missile") >= 1:
+			m.aoe_radius = 20.0 * aoe_scale_mult
+			m.aoe_color = Color("#ff9624")
+		if evo("missile") >= 3:
+			# Cluster warheads: 4 sparks on impact (or after a while in flight).
+			m.star_burst_count = 4
+			m.star_burst_time = 2.4
+			m.star_burst_spread = 0.9
+			m.star_burst_dmg = m_dmg * 0.35
 	RetroSfx.play("missile", -11.5, 0.06)
 
 
@@ -1626,7 +1708,7 @@ func _fire_flank_guns() -> void:
 	if bullet_container == null:
 		return
 	var f_dmg: float = (0.95 + 0.30 * float(flank_level)) * damage_bonus
-	var f_pierce: int = 1 if flank_level >= 3 else 0
+	var f_pierce: int = (1 if flank_level >= 3 else 0) + (1 if evo("flank") >= 1 else 0)
 	var angles: Array[float] = [PI, 2.35, -2.35]
 	if flank_level >= 2:
 		angles = [PI, 2.15, -2.15, 1.35, -1.35]
@@ -1634,7 +1716,9 @@ func _fire_flank_guns() -> void:
 		angles = [PI, 2.35, -2.35, PI * 0.5, -PI * 0.5]
 	for ang: float in angles:
 		var dir: Vector2 = Vector2.from_angle(ang)
-		_spawn_player_bullet(global_position + dir * 8.0, dir * 310.0, f_dmg, "bullet_flank", f_pierce, false, 3.0)
+		var fb: GameBullet = _spawn_player_bullet(global_position + dir * 8.0, dir * 310.0, f_dmg, "bullet_flank", f_pierce, false, 3.0)
+		if evo("flank") >= 3:
+			fb.split_count = 2
 
 
 func _find_closest_threat() -> Node2D:
@@ -1664,28 +1748,54 @@ func _fire_auto_turret() -> void:
 		return
 	var t_dmg: float = (0.92 + 0.28 * float(turret_level)) * damage_bonus
 	var muzzle: Vector2 = global_position + Vector2(-1.0, -6.0) + _turret_aim_dir * 6.0
-	_spawn_player_bullet(muzzle, _turret_aim_dir * 425.0, t_dmg, "bullet_dart", 1 if turret_level >= 4 else 0, false, 3.0)
+	var t_pierce: int = (1 if turret_level >= 4 else 0) + (1 if evo("turret") >= 1 else 0)
+	# MK III: a double tap (two darts a hair apart, 80% damage each).
+	var dirs: Array[Vector2] = [_turret_aim_dir]
+	if evo("turret") >= 2:
+		dirs = [_turret_aim_dir.rotated(-0.05), _turret_aim_dir.rotated(0.05)]
+		t_dmg *= 0.8
+	for d: Vector2 in dirs:
+		var tb: GameBullet = _spawn_player_bullet(muzzle, d * 425.0, t_dmg, "bullet_dart", t_pierce, false, 3.0)
+		if evo("turret") >= 3:
+			tb.split_count = 2
 
 
 func _fire_gravity_bomb() -> void:
 	if bullet_container == null:
 		return
 	var b_dmg: float = (2.8 + 0.9 * float(bomb_level)) * damage_bonus
-	var b: GameBullet = _spawn_player_bullet(global_position + Vector2(0.0, 8.0), Vector2(185.0, -28.0), b_dmg, "bullet_bomb", 0, false, 4.5)
-	b.gravity_pull = 245.0
-	b.aoe_radius = (36.0 + float(bomb_level) * 9.0) * aoe_scale_mult
-	b.aoe_color = Color("#b84cff")
-	b.explode_on_floor = true
+	_drop_bomb(global_position + Vector2(0.0, 8.0), Vector2(185.0, -28.0), b_dmg)
+	if evo("bomb") >= 3:
+		# MK IV: a second bomb lobbed higher, so the two land apart.
+		_drop_bomb(global_position + Vector2(0.0, -6.0), Vector2(150.0, -105.0), b_dmg)
 	RetroSfx.play("missile", -12.0, 0.06)
 
 
-func _trigger_nova_pulse(reactive_burst: bool) -> void:
+func _drop_bomb(pos: Vector2, vel: Vector2, b_dmg: float) -> void:
+	var b: GameBullet = _spawn_player_bullet(pos, vel, b_dmg, "bullet_bomb", 0, false, 4.5)
+	b.gravity_pull = 245.0
+	b.aoe_radius = (36.0 + float(bomb_level) * 9.0) * aoe_scale_mult * (1.3 if evo("bomb") >= 1 else 1.0)
+	b.aoe_color = Color("#b84cff")
+	b.aoe_clears_shots = evo("bomb") >= 2
+	b.explode_on_floor = true
+
+
+# echo: MK IV's follow-up pulse (70% damage, a little wider, never echoes again).
+func _trigger_nova_pulse(reactive_burst: bool, echo: bool = false) -> void:
 	var radius: float = (74.0 + float(nova_level) * 14.0) * aoe_scale_mult * (1.18 if reactive_burst else 1.0)
 	var n_dmg: float = (3.2 + 1.4 * float(nova_level)) * damage_bonus
+	if evo("nova") >= 1:
+		radius *= 1.12
+	if echo:
+		radius *= 1.15
+		n_dmg *= 0.7
+	elif evo("nova") >= 3:
+		_nova_echo_t = 0.45
 	if fx != null:
-		fx.spawn_ring_blast(global_position, radius, Color("#28e8ff") if reactive_burst else Color("#ffe854"))
-		fx.add_shake(2.5)
-	RetroSfx.play("zap", -9.0, 0.04)
+		var ring_col: Color = Color("#28e8ff") if reactive_burst else Color("#ffe854")
+		fx.spawn_ring_blast(global_position, radius, Color("#ff9cf0") if echo else ring_col)
+		fx.add_shake(1.5 if echo else 2.5)
+	RetroSfx.play("zap", -12.0 if echo else -9.0, 0.04)
 
 	var r2: float = radius * radius
 	for node: Node in get_tree().get_nodes_in_group("enemies"):
@@ -1693,6 +1803,9 @@ func _trigger_nova_pulse(reactive_burst: bool) -> void:
 			var en: Node2D = node as Node2D
 			if global_position.distance_squared_to(en.global_position) <= r2:
 				en.call("take_damage", n_dmg)
+				# MK III: the pulse chills what it hits.
+				if evo("nova") >= 2 and is_instance_valid(en) and en.has_method("apply_chill"):
+					en.call("apply_chill", 1.5, 0.55)
 
 	var clear_r2: float = (radius * 0.78) * (radius * 0.78)
 	if bullet_container != null:

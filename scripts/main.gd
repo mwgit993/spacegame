@@ -534,6 +534,13 @@ var _tree_selected_id: String = "hull_1"
 var _tree_cam_offset: Vector2 = Vector2(0.0, -68.0)
 var _tree_dragging: bool = false
 var _tree_drag_moved: bool = false
+var _tree_zoom: float = 1.0
+var _tree_fog_r: float = 0.0          # blueprint radius of the fog-free disc (eases out in the reveal)
+var _tree_know_shown: float = 0.0     # Knowledge meter value as drawn (eases toward the real one)
+var _tree_grow_t: float = -1.0        # 0..1 through the "tree grows" reveal, -1 when not playing
+var _tree_grow_from_r: float = 0.0
+var _tree_draw_count: int = 0
+const TREE_GROW_TIME: float = 2.6
 
 # Ship Loadout Fleet Bay UI state
 var _loadout_scrap_lbl: Label
@@ -689,6 +696,8 @@ func _run_smoke_test() -> void:
 			if choice.has("short"):
 				push_error("SMOKE: locked draft card offered: " + String(choice["id"]))
 				smoke_ok = false
+	if not _smoke_check_tree_knowledge():
+		smoke_ok = false
 	# Buy every node of the Starforge Skill Tree (parents first), then walk the cursor around.
 	MetaSave.scrap = 999999
 	_enter_hangar("SMOKE TEST SUMMARY")
@@ -766,6 +775,8 @@ func _run_smoke_test() -> void:
 	if not _smoke_check_option_trail():
 		smoke_ok = false
 	if not await _smoke_check_sub_weapons():
+		smoke_ok = false
+	if not _smoke_check_sub_evolutions():
 		smoke_ok = false
 	if not _smoke_check_boss_rigs():
 		smoke_ok = false
@@ -925,12 +936,193 @@ func _smoke_finish(smoke_ok: bool) -> void:
 		p.stop()
 	if not await _smoke_check_module_draws():
 		smoke_ok = false
+	if not await _smoke_check_tree_draw():
+		smoke_ok = false
 	if not smoke_ok:
 		push_error("STAR_VIPER_SMOKE_TEST_FAILED")
 		get_tree().quit(1)
 		return
 	print("STAR_VIPER_SMOKE_TEST_PASSED")
 	get_tree().quit(0)
+
+
+# Rogue Legacy-style tree: every node sits on its ring, the rings can't lock (the ranks inside the
+# open rings always reach the next Knowledge level), a fresh tree shows only ring 1, the 4th rank
+# opens ring 2 and starts the growth reveal, the cursor never lands in the fog, and the reveal
+# zooms back out of its pull-back.
+func _smoke_check_tree_knowledge() -> bool:
+	var ok: bool = true
+	var levels: Array[int] = MetaSave.KNOWLEDGE_LEVELS
+	if levels.size() != SkillTreeData.max_ring():
+		push_error("SMOKE: %d Knowledge levels for %d rings" % [levels.size(), SkillTreeData.max_ring()])
+		ok = false
+	for def: Dictionary in SkillTreeData.NODES:
+		var id: String = String(def["id"])
+		var ring: int = SkillTreeData.get_ring(id)
+		if id != "core_root" and (ring < 1 or SkillTreeData.get_node_def(String(def["parent"])).is_empty()):
+			push_error("SMOKE: tree node %s has no parent in the tree" % id)
+			ok = false
+		if absf(Vector2(def["pos"]).length() - SkillTreeData.ring_radius(ring)) > 3.0:
+			push_error("SMOKE: tree node %s is off its ring %d (radius %.0f)" % [id, ring, Vector2(def["pos"]).length()])
+			ok = false
+		var evolves: String = String(def.get("evolves", ""))
+		if evolves != "" and (not player.SUB_WEAPONS.has(evolves) or (def["rank_desc"] as Array).size() != int(def["max_level"])):
+			push_error("SMOKE: EVOLVE node %s is broken" % id)
+			ok = false
+	for sub_id: String in player.SUB_WEAPONS:
+		if SkillTreeData.get_evolution_node(sub_id) == "":
+			push_error("SMOKE: sub weapon %s has no EVOLVE node" % sub_id)
+			ok = false
+	for lvl: int in range(1, levels.size()):
+		var avail: int = 0
+		for def: Dictionary in SkillTreeData.NODES:
+			var ring: int = SkillTreeData.get_ring(String(def["id"]))
+			if ring >= 1 and ring <= lvl:
+				avail += int(def["max_level"])
+		if avail < levels[lvl]:
+			push_error("SMOKE: rings 1-%d hold %d ranks but Knowledge %d needs %d: the tree can lock" % [lvl, avail, lvl + 1, levels[lvl]])
+			ok = false
+
+	MetaSave._init_default_tree()
+	MetaSave.scrap = 99999
+	_enter_hangar("")
+	if MetaSave.get_knowledge_level() != 1 or MetaSave.is_node_visible("regen_bay") or not MetaSave.is_node_visible("hull_1"):
+		push_error("SMOKE: a fresh tree should show ring 1 only (Knowledge %d)" % MetaSave.get_knowledge_level())
+		ok = false
+	_tree_selected_id = "hull_1"
+	for i: int in range(levels[1] - 1):
+		_on_buy_tree_node()
+	if MetaSave.is_node_revealed("regen_bay") or MetaSave.can_buy_node("regen_bay") or _tree_grow_t >= 0.0:
+		push_error("SMOKE: ring 2 opened before Knowledge 2")
+		ok = false
+	_on_buy_tree_node()
+	if MetaSave.get_knowledge_level() != 2 or not MetaSave.can_buy_node("regen_bay") or _tree_grow_t < 0.0:
+		push_error("SMOKE: Knowledge %d rank did not open ring 2 and start the growth reveal" % levels[1])
+		ok = false
+	for f: int in range(40):
+		_update_tree_view(0.02)
+	if _tree_zoom >= 0.99 or _tree_fog_r <= _tree_open_radius(1):
+		push_error("SMOKE: the growth reveal did not pull back (zoom %.2f) and roll back the fog" % _tree_zoom)
+		ok = false
+	for f: int in range(200):
+		_update_tree_view(0.02)
+	if _tree_grow_t >= 0.0 or _tree_zoom != 1.0 or not is_equal_approx(_tree_fog_r, _tree_open_radius(2)):
+		push_error("SMOKE: the growth reveal did not finish (t %.2f, zoom %.2f)" % [_tree_grow_t, _tree_zoom])
+		ok = false
+	_tree_selected_id = "core_root"
+	for dir: Vector2 in [Vector2.UP, Vector2.UP, Vector2.LEFT, Vector2.UP, Vector2.RIGHT, Vector2.RIGHT, Vector2.DOWN, Vector2.DOWN, Vector2.LEFT, Vector2.LEFT]:
+		_move_tree_selection(dir)
+		if not MetaSave.is_node_visible(_tree_selected_id):
+			push_error("SMOKE: the tree cursor moved onto %s, hidden in the fog" % _tree_selected_id)
+			ok = false
+	MetaSave._init_default_tree()
+	_reset_tree_view()
+	return ok
+
+
+# EVOLVE nodes: run start reads the marks, and each sub weapon changes at MK II-IV and not before.
+func _smoke_check_sub_evolutions() -> bool:
+	var ok: bool = true
+	var saved: Dictionary = MetaSave.tree_levels.duplicate()
+	_smoke_clear_enemies()
+	MetaSave.select_ship("neko") # an exotic ship, so a drafted laser is the AUX BEAM sub weapon
+	for marks: int in [0, 3]:
+		for sub_id: String in player.SUB_WEAPONS:
+			MetaSave.tree_levels[SkillTreeData.get_evolution_node(sub_id)] = marks
+		player.reset_for_new_run()
+		player.global_position = Vector2(80.0, 134.0)
+		player.controls_enabled = true
+		var evolved: bool = marks >= 3
+		for sub_id: String in player.SUB_WEAPONS:
+			if player.evo(sub_id) != marks:
+				push_error("SMOKE: run start read %d marks for %s, expected %d" % [player.evo(sub_id), sub_id, marks])
+				ok = false
+		for upg: String in ["missile", "turret", "flank", "bomb", "nova", "blades", "laser", "option"]:
+			player.apply_run_upgrade(upg)
+		var what: String = "MK IV" if evolved else "stock"
+		var got: Dictionary = {}
+		for shot_node: Node in bullet_layer.get_children():
+			bullet_layer.remove_child(shot_node)
+			shot_node.queue_free()
+		player._fire_missiles()
+		player._fire_auto_turret()
+		player._fire_flank_guns()
+		player._fire_gravity_bomb()
+		player._fire_aux_beam()
+		for node: Node in bullet_layer.get_children():
+			var b: GameBullet = node as GameBullet
+			var key: String = b.anim_tex_a
+			got[key] = int(got.get(key, 0)) + 1
+			match key:
+				"bullet_missile":
+					if (b.aoe_radius > 0.0) != evolved or (b.star_burst_count == 4) != evolved:
+						push_error("SMOKE: %s missiles: blast %.0f, cluster %d" % [what, b.aoe_radius, b.star_burst_count])
+						ok = false
+				"bullet_dart", "bullet_flank":
+					if (b.split_count == 2) != evolved or (b.pierce_left >= 1) != evolved:
+						push_error("SMOKE: %s %s: pierce %d, split %d" % [what, key, b.pierce_left, b.split_count])
+						ok = false
+				"bullet_bomb":
+					if b.aoe_clears_shots != evolved:
+						push_error("SMOKE: %s bombs: clears shots %s" % [what, str(b.aoe_clears_shots)])
+						ok = false
+		var want: Dictionary = {"bullet_missile": 1, "bullet_dart": 1, "bullet_bomb": 1, "bullet_laser": 1}
+		if evolved:
+			want = {"bullet_missile": 2, "bullet_dart": 2, "bullet_bomb": 2, "bullet_laser": 2}
+		for key: String in want:
+			if int(got.get(key, 0)) != int(want[key]):
+				push_error("SMOKE: %s fired %d %s, expected %d" % [what, int(got.get(key, 0)), key, int(want[key])])
+				ok = false
+		if not is_equal_approx(player._blade_radius(), 31.0 if evolved else 25.0):
+			push_error("SMOKE: %s blades orbit at %.1f" % [what, player._blade_radius()])
+			ok = false
+		player._trigger_nova_pulse(false)
+		if (player._nova_echo_t >= 0.0) != evolved:
+			push_error("SMOKE: %s nova echo timer %.2f" % [what, player._nova_echo_t])
+			ok = false
+		# MK IV options swat an enemy shot sitting on them.
+		player._select_sub_weapon("option", false)
+		var opt_pos: Vector2 = player._option_sprites[0].global_position
+		var enemy_shot: GameBullet = GameBullet.new()
+		bullet_layer.add_child(enemy_shot)
+		enemy_shot.setup(opt_pos, Vector2.ZERO, 1.0, false, "bullet_enemy_orange", 0, false, 2.5, fx_layer)
+		player._record_trail_and_options(0.0)
+		if enemy_shot.is_queued_for_deletion() != evolved:
+			push_error("SMOKE: %s options %s an enemy shot on them" % [what, "kept" if evolved else "blocked"])
+			ok = false
+	for shot_node: Node in bullet_layer.get_children():
+		bullet_layer.remove_child(shot_node)
+		shot_node.queue_free()
+	MetaSave.tree_levels = saved
+	player.controls_enabled = false
+	player.reset_for_new_run()
+	return ok
+
+
+# The skill tree canvas really draws (draw hooks only run in a frame), at rest and mid-reveal.
+func _smoke_check_tree_draw() -> bool:
+	var ok: bool = true
+	MetaSave._init_default_tree()
+	MetaSave.tree_levels["hull_1"] = 4
+	_enter_hangar("")
+	GenesisMusic.stop_music() # the hangar starts the title music; the test has already stopped it
+	var before: int = _tree_draw_count
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if _tree_draw_count == before:
+		push_error("SMOKE: the skill tree canvas did not draw")
+		ok = false
+	_start_tree_growth(1)
+	_tree_grow_t = 0.4
+	_update_tree_view(0.0)
+	before = _tree_draw_count
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if _tree_draw_count == before or _tree_zoom >= 0.99:
+		push_error("SMOKE: the skill tree did not draw pulled back mid-reveal (zoom %.2f)" % _tree_zoom)
+		ok = false
+	MetaSave._init_default_tree()
+	return ok
 
 
 # Stage-signature enemies: every sprite exists, every type runs its behaviour for a few seconds
@@ -3122,7 +3314,8 @@ func _leave_options() -> void:
 
 
 # =================================================================================
-# ROGUE LEGACY-STYLE 30-NODE PANNABLE STARFORGE SKILL TREE!
+# ROGUE LEGACY-STYLE STARFORGE SKILL TREE: rings around the core, hidden in fog until your
+# Knowledge (ranks bought) opens them; only owned nodes and their children show.
 # =================================================================================
 func _build_skill_tree_ui() -> void:
 	hangar_panel = Control.new()
@@ -3243,73 +3436,200 @@ func _build_skill_tree_ui() -> void:
 	hangar_panel.add_child(t_launch_btn)
 
 
+# Blueprint position -> canvas position, through the camera and zoom.
+func _tree_screen(pos: Vector2) -> Vector2:
+	return (_tree_canvas.size * 0.5 + (pos - _tree_cam_offset) * _tree_zoom).round()
+
+
+# Blueprint radius of the open (fog-free) disc at a Knowledge level: halfway past its ring.
+func _tree_open_radius(level: int) -> float:
+	return SkillTreeData.ring_radius(level) + SkillTreeData.RING_STEP * 0.5
+
+
+# Knowledge as one number for the meter: level - 1 plus the progress toward the next level.
+func _tree_knowledge_value() -> float:
+	return float(MetaSave.get_knowledge_level() - 1) + MetaSave.get_knowledge_progress()
+
+
+# Snap the view to the current state (entering the hangar, skipping the growth reveal).
+func _reset_tree_view() -> void:
+	_tree_grow_t = -1.0
+	_tree_zoom = 1.0
+	_tree_fog_r = _tree_open_radius(MetaSave.get_knowledge_level())
+	_tree_know_shown = _tree_knowledge_value()
+	if not MetaSave.is_node_visible(_tree_selected_id):
+		_tree_selected_id = "core_root"
+
+
+# The "tree grows" reveal after a purchase raises the Knowledge level: the view pulls back to the
+# whole tree, the fog rolls back to the new ring while its nodes sprout, then it zooms back in.
+func _start_tree_growth(from_level: int) -> void:
+	_tree_grow_t = 0.0
+	_tree_grow_from_r = _tree_open_radius(from_level)
+	_tree_summary_lbl.text = "KNOWLEDGE %d: THE TREE GROWS!" % MetaSave.get_knowledge_level()
+	RetroSfx.play("level_up", -4.0, 0.0)
+
+
+func _update_tree_view(delta: float) -> void:
+	_tree_know_shown = move_toward(_tree_know_shown, _tree_knowledge_value(), 1.2 * delta)
+	var target_r: float = _tree_open_radius(MetaSave.get_knowledge_level())
+	var sel_def: Dictionary = SkillTreeData.get_node_def(_tree_selected_id)
+	var sel_pos: Vector2 = Vector2(sel_def["pos"]) if not sel_def.is_empty() else Vector2.ZERO
+	if _tree_grow_t >= 0.0:
+		_tree_grow_t += delta / TREE_GROW_TIME
+		if _tree_grow_t < 1.0:
+			var t: float = _tree_grow_t
+			var fit_zoom: float = clampf((_tree_canvas.size.y * 0.5 - 4.0) / target_r, 0.18, 1.0)
+			var pull: float = smoothstep(0.0, 0.22, t) * (1.0 - smoothstep(0.8, 1.0, t))
+			_tree_zoom = lerpf(1.0, fit_zoom, pull)
+			_tree_cam_offset = sel_pos.lerp(Vector2.ZERO, pull)
+			_tree_fog_r = lerpf(_tree_grow_from_r, target_r, smoothstep(0.24, 0.72, t))
+			return
+		_tree_grow_t = -1.0
+	_tree_zoom = 1.0
+	_tree_fog_r = target_r
+	if not _tree_dragging:
+		_tree_cam_offset = _tree_cam_offset.lerp(sel_pos, clampf(10.0 * delta, 0.0, 1.0))
+
+
 func _draw_skill_tree_canvas() -> void:
+	_tree_draw_count += 1
 	var font: Font = PixelArt.ui_font if PixelArt.ui_font != null else ThemeDB.fallback_font
 	var c_size: Vector2 = _tree_canvas.size
-	var origin: Vector2 = (c_size * 0.5 - _tree_cam_offset).round()
+	var z: float = _tree_zoom
+	var core_s: Vector2 = _tree_screen(Vector2.ZERO)
+	var fog_r: float = _tree_fog_r
+	var know_lvl: int = MetaSave.get_knowledge_level()
+	var growing: bool = _tree_grow_t >= 0.0
+	var now: float = float(Time.get_ticks_msec()) * 0.001
+	var detail: bool = z > 0.62   # zoomed in enough for icons and rank labels
 
-	# 1) Blueprint Coordinate Grid
-	var grid_step: float = 32.0
-	var gx_start: float = fposmod(origin.x, grid_step)
-	var gy_start: float = fposmod(origin.y, grid_step)
-	var gx: float = gx_start
-	while gx < c_size.x:
-		_tree_canvas.draw_line(Vector2(gx, 0.0), Vector2(gx, c_size.y), Color(0.14, 0.22, 0.45, 0.35), 1.0)
-		gx += grid_step
-	var gy: float = gy_start
-	while gy < c_size.y:
-		_tree_canvas.draw_line(Vector2(0.0, gy), Vector2(c_size.x, gy), Color(0.14, 0.22, 0.45, 0.35), 1.0)
-		gy += grid_step
+	# 1) Blueprint grid, then faint guide circles for the open rings.
+	var grid_step: float = 32.0 * z
+	if grid_step >= 6.0:
+		var gx: float = fposmod(core_s.x, grid_step)
+		while gx < c_size.x:
+			_tree_canvas.draw_line(Vector2(gx, 0.0), Vector2(gx, c_size.y), Color(0.14, 0.22, 0.45, 0.35), 1.0)
+			gx += grid_step
+		var gy: float = fposmod(core_s.y, grid_step)
+		while gy < c_size.y:
+			_tree_canvas.draw_line(Vector2(0.0, gy), Vector2(c_size.x, gy), Color(0.14, 0.22, 0.45, 0.35), 1.0)
+			gy += grid_step
+	for ring: int in range(1, SkillTreeData.max_ring() + 1):
+		var rr: float = SkillTreeData.ring_radius(ring)
+		if rr < fog_r:
+			_tree_canvas.draw_arc(core_s, rr * z, 0.0, TAU, 96, Color(0.3, 0.45, 0.85, 0.18), 1.0)
 
-	# 2) Directional Wing Labels
-	_tree_canvas.draw_string(font, origin + Vector2(-46.0, -34.0), "NORTH: HULL & SHIELDS", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(0.94, 0.35, 0.45, 0.55))
-	_tree_canvas.draw_string(font, origin + Vector2(30.0, -16.0), "EAST: WEAPON MODS", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.65, 0.25, 0.55))
-	_tree_canvas.draw_string(font, origin + Vector2(-46.0, 44.0), "SOUTH: SCRAP & XP", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.91, 0.33, 0.55))
-	_tree_canvas.draw_string(font, origin + Vector2(-132.0, -16.0), "WEST: WEIRD LAB", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.38, 0.78, 0.55))
-
-	# 3) Parent -> Child Conduits
+	# 2) Conduits. Only from an owned node: to a child you can see, or (dimly) toward one waiting
+	# in a closed ring, where it runs off into the fog drawn next. Nothing shows past the frontier.
 	for def: Dictionary in SkillTreeData.NODES:
 		var p_id: String = String(def["parent"])
-		if p_id == "":
+		if p_id == "" or MetaSave.get_level(p_id) <= 0:
 			continue
 		var p_def: Dictionary = SkillTreeData.get_node_def(p_id)
-		if p_def.is_empty():
-			continue
 		var id: String = String(def["id"])
-		var pa: Vector2 = origin + Vector2(p_def["pos"])
-		var pb: Vector2 = origin + Vector2(def["pos"])
-		var child_lvl: int = MetaSave.get_level(id)
-		var revealed: bool = MetaSave.is_node_revealed(id)
-		var line_col: Color = Color(0.18, 0.24, 0.42, 0.55)
+		var pa: Vector2 = _tree_screen(Vector2(p_def["pos"]))
+		var pb: Vector2 = _tree_screen(Vector2(def["pos"]))
+		var line_col: Color = Color(0.4, 0.55, 0.9, 0.35)
 		var line_w: float = 1.0
-		if child_lvl > 0:
+		if MetaSave.get_level(id) > 0:
 			var ncol: Color = def["color"]
 			line_col = Color(ncol.r, ncol.g, ncol.b, 0.92)
 			line_w = 2.0
-		elif revealed:
+		elif MetaSave.is_node_revealed(id):
 			line_col = Color(0.55, 0.75, 1.0, 0.72)
 			line_w = 1.5
 		_tree_canvas.draw_line(pa, pb, line_col, line_w)
 
-	# 4) Visual Skill Tree Nodes (24x24 icon boxes + rank indicators + selection cursor)
+	# 3) The fog: everything past the open radius, with a billowing cloud edge that glows (a bright
+	# shockwave while it rolls back), and slow wisps drifting in it.
+	var fog_s: float = fog_r * z
+	var far_s: float = 0.0
+	for corner: Vector2 in [Vector2.ZERO, Vector2(c_size.x, 0.0), c_size, Vector2(0.0, c_size.y)]:
+		far_s = maxf(far_s, core_s.distance_to(corner) + 4.0)
+	if fog_s < far_s:
+		var fog_col: Color = Color(0.04, 0.05, 0.13)
+		var bands: Array[Vector3] = [Vector3(0.0, 6.0, 0.75), Vector3(6.0, 99999.0, 0.95)]
+		for band: Vector3 in bands:
+			var r0: float = fog_s + band.x
+			var r1: float = minf(fog_s + band.y, far_s)
+			if r0 >= r1:
+				continue
+			var col: Color = Color(fog_col, band.z)
+			var segs: int = 72
+			for k: int in range(segs):
+				var a0: float = TAU * float(k) / float(segs)
+				var a1: float = TAU * float(k + 1) / float(segs)
+				var d0: Vector2 = Vector2(cos(a0), sin(a0))
+				var d1: Vector2 = Vector2(cos(a1), sin(a1))
+				_tree_canvas.draw_colored_polygon(PackedVector2Array([core_s + d0 * r0, core_s + d0 * r1, core_s + d1 * r1, core_s + d1 * r0]), col)
+		for w: int in range(22):
+			var wa: float = float(w) * 2.399 + now * (0.05 if w % 2 == 0 else -0.04)
+			var wr: float = fog_s + 22.0 + float((w * 37) % 120) * maxf(z, 0.4)
+			var wp: Vector2 = core_s + Vector2(cos(wa), sin(wa)) * wr
+			_tree_canvas.draw_circle(wp, (10.0 + float(w % 4) * 5.0) * maxf(z, 0.5), Color(0.32, 0.36, 0.62, 0.07))
+		# Cloud rim: overlapping puffs along the edge, slowly breathing, lit on their inner side.
+		var puffs: int = clampi(int(TAU * fog_s / 13.0), 18, 200)
+		for k: int in range(puffs):
+			var pa: float = TAU * (float(k) + 0.5) / float(puffs)
+			var pr: float = 6.0 + 2.5 * sin(float(k) * 2.3) + 1.2 * sin(now * 0.8 + float(k))
+			var pd: Vector2 = Vector2(cos(pa), sin(pa))
+			var pc: Vector2 = core_s + pd * (fog_s + pr * 0.7)
+			_tree_canvas.draw_circle(pc, pr, Color(0.07, 0.08, 0.19, 0.96))
+			_tree_canvas.draw_circle(pc - pd * (pr * 0.45), pr * 0.5, Color(0.2, 0.23, 0.42, 0.45))
+		var edge_a: float = 0.22 + 0.1 * sin(now * 2.2)
+		if growing:
+			edge_a = 0.9
+		_tree_canvas.draw_arc(core_s, fog_s - 1.0, 0.0, TAU, 128, Color(0.55, 0.75, 1.0, edge_a), 2.0 if growing else 1.0)
+
+	# 4) Wing labels beside the four ring-1 nodes (over the fog, so they always read).
+	if detail:
+		_tree_canvas.draw_string(font, _tree_screen(Vector2(16.0, -62.0)), "HULL & SHIELDS", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(0.94, 0.35, 0.45, 0.7))
+		_tree_canvas.draw_string(font, _tree_screen(Vector2(38.0, 36.0)), "WEAPON MODS", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.65, 0.25, 0.7))
+		_tree_canvas.draw_string(font, _tree_screen(Vector2(16.0, 70.0)), "SCRAP & XP", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.91, 0.33, 0.7))
+		_tree_canvas.draw_string(font, _tree_screen(Vector2(-94.0, 36.0)), "WEIRD LAB", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.38, 0.78, 0.7))
+
+	# 5) The Starforge Citadel at the core grows a ring of towers for every Knowledge level.
+	for k: int in range(know_lvl):
+		var cr: float = (17.0 + 5.0 * float(k)) * z
+		var ca: float = 0.55 - 0.06 * float(k)
+		_tree_canvas.draw_arc(core_s, cr, 0.0, TAU, 48, Color(0.16, 0.9, 1.0, ca), 1.0)
+		var towers: int = 4 + 2 * k
+		var spin: float = now * (0.5 if k % 2 == 0 else -0.4)
+		for tw: int in range(towers):
+			var ta: float = spin + TAU * float(tw) / float(towers)
+			var tp: Vector2 = core_s + Vector2(cos(ta), sin(ta)) * cr
+			var ts: float = maxf(1.0, 2.0 * z)
+			_tree_canvas.draw_rect(Rect2(tp - Vector2(ts, ts) * 0.5, Vector2(ts, ts)), Color(0.6, 0.95, 1.0, ca + 0.2))
+
+	# 6) Nodes you can see: owned ones and the frontier. While the tree grows, a new node pops in
+	# as the fog's edge passes it.
 	var pulse: float = 0.55 + 0.45 * sin(float(Time.get_ticks_msec()) * 0.008)
 	for def: Dictionary in SkillTreeData.NODES:
 		var id: String = String(def["id"])
-		var np: Vector2 = origin + Vector2(def["pos"])
+		var lvl: int = MetaSave.get_level(id)
+		if not MetaSave.is_node_visible(id):
+			continue
+		var bp: Vector2 = def["pos"]
+		var pop: float = 1.0
+		if lvl <= 0:
+			pop = clampf((fog_r - bp.length()) / 26.0, 0.0, 1.0)
+			if pop <= 0.0:
+				continue
+		var np: Vector2 = _tree_screen(bp)
 		if np.x < -30.0 or np.x > c_size.x + 30.0 or np.y < -30.0 or np.y > c_size.y + 30.0:
 			continue
 
-		var lvl: int = MetaSave.get_level(id)
 		var max_lvl: int = int(def["max_level"])
-		var revealed: bool = MetaSave.is_node_revealed(id)
 		var affordable: bool = MetaSave.can_buy_node(id)
 		var ncol: Color = def["color"]
 		var is_ship_node: bool = String(def.get("unlocks_ship", "")) != ""
-		var half: float = 13.0 if is_ship_node else 11.0
+		var half: float = (13.0 if is_ship_node else 11.0) * z * lerpf(0.3, 1.0, pop)
+		half = maxf(half, 2.0)
 		var box_r: Rect2 = Rect2(np.x - half, np.y - half, half * 2.0, half * 2.0)
 
-		var bg_col: Color = Color("#090f26")
-		var border_col: Color = Color("#2c3a60")
+		var bg_col: Color = Color("#0d1838")
+		var border_col: Color = Color("#6c88c4")
 		if lvl >= max_lvl:
 			bg_col = ncol.darkened(0.68)
 			border_col = ncol.lightened(0.25)
@@ -3319,16 +3639,16 @@ func _draw_skill_tree_canvas() -> void:
 		elif affordable:
 			bg_col = Color("#122844")
 			border_col = Color("#3ce878").lerp(Color("#ffe854"), pulse)
-		elif revealed:
-			bg_col = Color("#0d1838")
-			border_col = Color("#6c88c4")
+		if pop < 1.0:
+			border_col = border_col.lerp(Color.WHITE, 1.0 - pop)
 
 		_tree_canvas.draw_rect(box_r, bg_col)
-		_tree_canvas.draw_rect(box_r, border_col, false, 2.0 if (lvl > 0 or affordable or is_ship_node) else 1.0)
-		if String(def.get("unlocks_upgrade", "")) != "":
-			_draw_tree_card_tag(Vector2(box_r.end.x - 3.0, box_r.position.y - 3.0), lvl > 0)
-
-		if revealed or lvl > 0:
+		_tree_canvas.draw_rect(box_r, border_col, false, 2.0 if (detail and (lvl > 0 or affordable or is_ship_node)) else 1.0)
+		if detail and pop >= 1.0:
+			if String(def.get("unlocks_upgrade", "")) != "":
+				_draw_tree_card_tag(Vector2(box_r.end.x - 3.0, box_r.position.y - 3.0), lvl > 0)
+			elif String(def.get("evolves", "")) != "":
+				_draw_tree_evolve_tag(Vector2(box_r.end.x - 4.0, box_r.position.y - 3.0), lvl)
 			var icon_tex: Texture2D = PixelArt.tex(String(def["icon"]))
 			if icon_tex != null:
 				_tree_canvas.draw_texture(icon_tex, (np - Vector2(5.0, 5.0)).round())
@@ -3337,19 +3657,51 @@ func _draw_skill_tree_canvas() -> void:
 				var r_str: String = "MAX" if lvl >= max_lvl else "%d/%d" % [lvl, max_lvl]
 				var r_col: Color = Color("#ffe854") if lvl >= max_lvl else (Color.WHITE if lvl > 0 else Color("#8ca8dc"))
 				_tree_canvas.draw_string(font, Vector2(np.x - 9.0, np.y + half + 9.0), r_str, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, r_col)
-		else:
-			_tree_canvas.draw_string(font, Vector2(np.x - 3.0, np.y + 4.0), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#4e6294"))
 
 		if id == _tree_selected_id:
-			var sel_r: Rect2 = box_r.grow(3.0)
-			_tree_canvas.draw_rect(sel_r, Color.WHITE, false, 2.0)
+			_tree_canvas.draw_rect(box_r.grow(3.0 if detail else 2.0), Color.WHITE, false, 2.0 if detail else 1.0)
 
-	# 5) Legend for DRAFT CARD nodes (fixed in the canvas corner, on a backing so nodes behind don't clash)
-	var legend: String = "= NEW DRAFT CARD"
-	var legend_w: float = font.get_string_size(legend, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x
-	_tree_canvas.draw_rect(Rect2(2.0, c_size.y - 15.0, legend_w + 17.0, 13.0), Color(0.02, 0.04, 0.14, 0.88))
-	_draw_tree_card_tag(Vector2(5.0, c_size.y - 13.0), true)
-	_tree_canvas.draw_string(font, Vector2(14.0, c_size.y - 5.0), legend, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(0.75, 0.82, 1.0, 0.85))
+	# 7) Knowledge meter (top left): fills with every rank bought; each fill opens a new ring.
+	var shown: float = _tree_know_shown
+	var max_k: int = MetaSave.KNOWLEDGE_LEVELS.size()
+	var shown_lvl: int = mini(max_k, int(floorf(shown + 0.0001)) + 1)
+	var fill: float = 1.0 if shown_lvl >= max_k else clampf(shown - float(shown_lvl - 1), 0.0, 1.0)
+	_tree_canvas.draw_rect(Rect2(2.0, 2.0, 112.0, 22.0), Color(0.02, 0.04, 0.14, 0.9))
+	_tree_canvas.draw_rect(Rect2(2.0, 2.0, 112.0, 22.0), Color(0.36, 0.48, 0.77, 0.9), false, 1.0)
+	var k_txt: String = "KNOWLEDGE MAX" if shown_lvl >= max_k else "KNOWLEDGE %d" % shown_lvl
+	_tree_canvas.draw_string(font, Vector2(6.0, 12.0), k_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#c8a8ff"))
+	var bar: Rect2 = Rect2(6.0, 15.0, 104.0, 5.0)
+	_tree_canvas.draw_rect(bar, Color("#1a1440"))
+	var fill_col: Color = Color("#ffe854") if shown_lvl >= max_k else Color("#b070ff").lerp(Color("#e8d0ff"), 0.5 + 0.5 * sin(now * 3.0))
+	_tree_canvas.draw_rect(Rect2(bar.position, Vector2(roundf(bar.size.x * fill), bar.size.y)), fill_col)
+	_tree_canvas.draw_rect(bar, Color("#8c78d0"), false, 1.0)
+
+	# 8) While the tree grows: a banner. Otherwise the legend for the node tags (bottom left).
+	if growing:
+		var msg: String = "THE TREE GROWS!  RING %d OPEN" % know_lvl
+		var msg_w: float = font.get_string_size(msg, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x
+		var flash: float = 0.75 + 0.25 * sin(now * 10.0)
+		var mx: float = roundf((c_size.x - msg_w) * 0.5)
+		_tree_canvas.draw_rect(Rect2(mx - 6.0, c_size.y - 19.0, msg_w + 12.0, 15.0), Color(0.05, 0.03, 0.16, 0.92))
+		_tree_canvas.draw_rect(Rect2(mx - 6.0, c_size.y - 19.0, msg_w + 12.0, 15.0), Color(0.8, 0.65, 1.0, flash), false, 1.0)
+		_tree_canvas.draw_string(font, Vector2(mx, c_size.y - 8.0), msg, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(1.0, 0.91, 0.33, flash))
+	else:
+		var legend: String = "= NEW DRAFT CARD"
+		var legend_w: float = font.get_string_size(legend, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x
+		var any_evolve: bool = false
+		for def: Dictionary in SkillTreeData.NODES:
+			if String(def.get("evolves", "")) != "" and MetaSave.is_node_visible(String(def["id"])):
+				any_evolve = true
+				break
+		var legend_h: float = 26.0 if any_evolve else 13.0
+		if any_evolve:
+			legend_w = maxf(legend_w, font.get_string_size("= EVOLVES A SUB WEAPON", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ).x)
+		_tree_canvas.draw_rect(Rect2(2.0, c_size.y - 2.0 - legend_h, legend_w + 17.0, legend_h), Color(0.02, 0.04, 0.14, 0.88))
+		_draw_tree_card_tag(Vector2(5.0, c_size.y - 13.0), true)
+		_tree_canvas.draw_string(font, Vector2(14.0, c_size.y - 5.0), legend, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(0.75, 0.82, 1.0, 0.85))
+		if any_evolve:
+			_draw_tree_evolve_tag(Vector2(4.0, c_size.y - 27.0), 3)
+			_tree_canvas.draw_string(font, Vector2(14.0, c_size.y - 18.0), "= EVOLVES A SUB WEAPON", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color(0.75, 0.82, 1.0, 0.85))
 
 
 # Small playing-card glyph marking skill tree nodes that add a draft upgrade.
@@ -3358,6 +3710,18 @@ func _draw_tree_card_tag(top_left: Vector2, owned: bool) -> void:
 	_tree_canvas.draw_rect(r, Color("#ffe854") if owned else Color("#2c3a60"))
 	_tree_canvas.draw_rect(r, Color.WHITE if owned else Color("#8ca8dc"), false, 1.0)
 	_tree_canvas.draw_rect(Rect2(r.position + Vector2(2.0, 3.0), Vector2(2.0, 2.0)), Color("#d44cff") if owned else Color("#6c88c4"))
+
+
+# Three stacked chevron pips on EVOLVE nodes, lit for each mark bought.
+func _draw_tree_evolve_tag(top_left: Vector2, marks: int) -> void:
+	var o: Vector2 = top_left.round()
+	_tree_canvas.draw_rect(Rect2(o, Vector2(7.0, 11.0)), Color("#0a0c16"))
+	for m: int in range(3):
+		var lit: bool = m < marks
+		var y: float = o.y + 8.0 - 3.0 * float(m)
+		var col: Color = Color("#ffe854") if lit else Color("#4e6294")
+		_tree_canvas.draw_line(Vector2(o.x + 1.0, y + 1.0), Vector2(o.x + 3.0, y - 1.0), col, 1.0)
+		_tree_canvas.draw_line(Vector2(o.x + 3.0, y - 1.0), Vector2(o.x + 5.0, y + 1.0), col, 1.0)
 
 
 func _on_tree_canvas_gui_input(event: InputEvent) -> void:
@@ -3371,7 +3735,7 @@ func _on_tree_canvas_gui_input(event: InputEvent) -> void:
 				if _tree_dragging and not _tree_drag_moved:
 					_click_tree_at(mb.position)
 				_tree_dragging = false
-	elif event is InputEventMouseMotion and _tree_dragging:
+	elif event is InputEventMouseMotion and _tree_dragging and _tree_grow_t < 0.0:
 		var mm: InputEventMouseMotion = event as InputEventMouseMotion
 		if mm.relative.length_squared() > 1.5:
 			_tree_drag_moved = true
@@ -3380,10 +3744,14 @@ func _on_tree_canvas_gui_input(event: InputEvent) -> void:
 
 
 func _click_tree_at(local_pos: Vector2) -> void:
-	var origin: Vector2 = _tree_canvas.size * 0.5 - _tree_cam_offset
+	if _tree_grow_t >= 0.0:
+		_reset_tree_view()
+		return
 	for def: Dictionary in SkillTreeData.NODES:
 		var id: String = String(def["id"])
-		var np: Vector2 = origin + Vector2(def["pos"])
+		if not MetaSave.is_node_visible(id):
+			continue
+		var np: Vector2 = _tree_screen(Vector2(def["pos"]))
 		if local_pos.distance_to(np) <= 15.0:
 			if _tree_selected_id == id and MetaSave.can_buy_node(id):
 				_on_buy_tree_node()
@@ -3397,6 +3765,9 @@ func _click_tree_at(local_pos: Vector2) -> void:
 func _move_tree_selection(dir: Vector2) -> void:
 	if dir.length_squared() < 0.05:
 		return
+	if _tree_grow_t >= 0.0:
+		_reset_tree_view() # any move skips the growth reveal
+		return
 	var cur_def: Dictionary = SkillTreeData.get_node_def(_tree_selected_id)
 	if cur_def.is_empty():
 		_tree_selected_id = "core_root"
@@ -3409,7 +3780,7 @@ func _move_tree_selection(dir: Vector2) -> void:
 
 	for def: Dictionary in SkillTreeData.NODES:
 		var cid: String = String(def["id"])
-		if cid == _tree_selected_id:
+		if cid == _tree_selected_id or not MetaSave.is_node_visible(cid):
 			continue
 		var delta_v: Vector2 = Vector2(def["pos"]) - cur_pos
 		var dist: float = delta_v.length()
@@ -3438,15 +3809,19 @@ func _refresh_skill_tree_ui() -> void:
 	var id: String = String(def["id"])
 	var lvl: int = MetaSave.get_level(id)
 	var max_lvl: int = int(def["max_level"])
-	var revealed: bool = MetaSave.is_node_revealed(id)
 
-	if revealed or lvl > 0:
+	if MetaSave.is_node_visible(id):
 		var pips: String = ""
 		for p_i: int in range(max_lvl):
 			pips += "■" if p_i < lvl else "□"
 		_tree_node_title_lbl.text = "%s  [%s]  (%s)" % [String(def["name"]), pips, String(def["cat"])]
 		_tree_node_title_lbl.add_theme_color_override("font_color", def["color"])
-		_tree_node_desc_lbl.text = String(def["desc"])
+		# EVOLVE nodes describe the next mark (the last one once all three are in).
+		var ranks: Array = def.get("rank_desc", [])
+		if ranks.is_empty():
+			_tree_node_desc_lbl.text = String(def["desc"])
+		else:
+			_tree_node_desc_lbl.text = String(ranks[mini(lvl, ranks.size() - 1)])
 
 		if lvl >= max_lvl:
 			_tree_buy_btn.text = "UNLOCKED / MAX"
@@ -3458,12 +3833,10 @@ func _refresh_skill_tree_ui() -> void:
 			_tree_buy_btn.disabled = not MetaSave.can_buy_node(id)
 			InputPrompts.bind_button(_tree_buy_btn, "buy")
 	else:
-		# Not reachable yet: still say what the node gives, so players can plan a route to it.
-		var p_def: Dictionary = SkillTreeData.get_node_def(String(def["parent"]))
-		var p_name: String = String(p_def.get("name", "PARENT NODE"))
-		_tree_node_title_lbl.text = "%s (NEEDS %s)" % [String(def["name"]), p_name]
+		# Still in the fog (only reachable if the save changed under the cursor).
+		_tree_node_title_lbl.text = "???"
 		_tree_node_title_lbl.add_theme_color_override("font_color", Color("#7c96c8"))
-		_tree_node_desc_lbl.text = String(def["desc"])
+		_tree_node_desc_lbl.text = "Hidden in the fog. Buy nodes to grow your Knowledge."
 		_tree_buy_btn.text = "LOCKED"
 		_tree_buy_btn.disabled = true
 		InputPrompts.bind_button(_tree_buy_btn, "")
@@ -3472,8 +3845,11 @@ func _refresh_skill_tree_ui() -> void:
 
 
 func _on_buy_tree_node() -> void:
+	if _tree_grow_t >= 0.0:
+		_reset_tree_view()
 	var def: Dictionary = SkillTreeData.get_node_def(_tree_selected_id)
 	var ship_id: String = String(def.get("unlocks_ship", ""))
+	var know_before: int = MetaSave.get_knowledge_level()
 	if MetaSave.buy_node(_tree_selected_id):
 		if ship_id != "":
 			RetroSfx.play("unlock_ship", -5.0, 0.01)
@@ -3482,6 +3858,8 @@ func _on_buy_tree_node() -> void:
 		else:
 			RetroSfx.play("powerup", -6.5, 0.03)
 			_tree_summary_lbl.text = "NODES: %d / %d" % [MetaSave.get_unlocked_node_count(), SkillTreeData.NODES.size()]
+		if MetaSave.get_knowledge_level() > know_before:
+			_start_tree_growth(know_before)
 		_refresh_skill_tree_ui()
 
 
@@ -4444,6 +4822,7 @@ func _enter_hangar(summary_msg: String) -> void:
 	else:
 		_tree_summary_lbl.text = summary_msg
 
+	_reset_tree_view()
 	_refresh_skill_tree_ui()
 
 
@@ -4945,10 +5324,7 @@ func _process(delta: float) -> void:
 		_title_ship_sprite.texture = PixelArt.tex(String(s_def["sprite_1" if alt else "sprite_0"]))
 
 	elif state == State.HANGAR:
-		if not _tree_dragging:
-			var sel_def: Dictionary = SkillTreeData.get_node_def(_tree_selected_id)
-			if not sel_def.is_empty():
-				_tree_cam_offset = _tree_cam_offset.lerp(Vector2(sel_def["pos"]), clampf(10.0 * delta, 0.0, 1.0))
+		_update_tree_view(delta)
 		_tree_canvas.queue_redraw()
 
 	elif state == State.LOADOUT and _loadout_preview_ship != null:
@@ -5780,8 +6156,17 @@ func _draw_hud() -> void:
 		if player.sub_weapon == "beam":
 			icon_key = String(_get_beam_badge_info(player.aux_beam, player.beam_level)["icon"])
 		hud_bar.draw_rect(Rect2(2.0, 24.0, 68.0, 11.0), Color(0.04, 0.06, 0.16, 0.72))
-		hud_bar.draw_texture(PixelArt.tex(icon_key), Vector2(4.0, 25.0))
-		hud_bar.draw_string(font, Vector2(17.0, 33.0), player.sub_weapon_name(player.sub_weapon), HORIZONTAL_ALIGNMENT_LEFT, 40.0, FONT_SZ, Color("#ffe854"))
+		var badge: Texture2D = PixelArt.tex(icon_key)
+		hud_bar.draw_texture(badge, Vector2(4.0, 25.0))
+		# Evolution marks bought in the skill tree (MK II-IV): a column of pips after the badge.
+		var name_x: float = 17.0
+		var marks: int = player.evo(player.sub_weapon)
+		if marks > 0:
+			var pip_x: float = 5.0 + float(badge.get_width())
+			for m: int in range(marks):
+				hud_bar.draw_rect(Rect2(pip_x, 32.0 - 3.0 * float(m), 2.0, 2.0), Color("#ffe854"))
+			name_x = maxf(name_x, pip_x + 4.0)
+		hud_bar.draw_string(font, Vector2(name_x, 33.0), player.sub_weapon_name(player.sub_weapon), HORIZONTAL_ALIGNMENT_LEFT, 57.0 - name_x, FONT_SZ, Color("#ffe854"))
 		if player.owned_sub_weapons().size() >= 2:
 			var strip: Texture2D = InputPrompts.strip_for("swap_weapon")
 			if strip != null:

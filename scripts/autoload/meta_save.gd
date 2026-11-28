@@ -124,6 +124,8 @@ func get_unlocked_node_count() -> int:
 	return count
 
 
+# Rogue Legacy-style fog: a node can be bought (and is shown) once its parent is owned and its
+# ring of the tree is open. Owned nodes always show (is_node_visible).
 func is_node_revealed(id: String) -> bool:
 	var def: Dictionary = SkillTreeData.get_node_def(id)
 	if def.is_empty():
@@ -131,7 +133,50 @@ func is_node_revealed(id: String) -> bool:
 	var parent_id: String = String(def["parent"])
 	if parent_id == "":
 		return true
-	return get_level(parent_id) > 0
+	return get_level(parent_id) > 0 and is_ring_open(SkillTreeData.get_ring(id))
+
+
+func is_node_visible(id: String) -> bool:
+	return get_level(id) > 0 or is_node_revealed(id)
+
+
+# --- Knowledge: every rank bought adds 1. Reaching KNOWLEDGE_LEVELS[L - 1] makes it level L, and
+# ring L of the tree opens (ring 1 is open from the start). One entry per ring, and the ranks in
+# the rings open below each threshold must cover it, or the tree could lock (the smoke test checks).
+const KNOWLEDGE_LEVELS: Array[int] = [0, 4, 10, 18, 28, 40]
+
+
+func get_knowledge() -> int:
+	return get_total_upgrade_ranks()
+
+
+func get_knowledge_level() -> int:
+	var k: int = get_knowledge()
+	var lvl: int = 1
+	for i: int in range(1, KNOWLEDGE_LEVELS.size()):
+		if k >= KNOWLEDGE_LEVELS[i]:
+			lvl = i + 1
+	return lvl
+
+
+# 0..1 progress from this Knowledge level to the next (1.0 once every ring is open).
+func get_knowledge_progress() -> float:
+	var lvl: int = get_knowledge_level()
+	if lvl >= KNOWLEDGE_LEVELS.size():
+		return 1.0
+	var lo: int = KNOWLEDGE_LEVELS[lvl - 1]
+	var hi: int = KNOWLEDGE_LEVELS[lvl]
+	return clampf(float(get_knowledge() - lo) / float(hi - lo), 0.0, 1.0)
+
+
+func is_ring_open(ring: int) -> bool:
+	return ring <= get_knowledge_level()
+
+
+# Marks (0-3) bought for a sub weapon's EVOLVE node (player.SUB_WEAPONS id).
+func get_sub_evolution(sub_id: String) -> int:
+	var node_id: String = SkillTreeData.get_evolution_node(sub_id)
+	return get_level(node_id) if node_id != "" else 0
 
 
 func get_node_cost(id: String) -> int:

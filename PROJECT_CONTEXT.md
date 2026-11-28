@@ -11,7 +11,7 @@
 - **Core Roguelite Loop:**
   - **Automatic Scrap + Magnetized XP Gems (*BALL x PIT* Style):** Blowing up enemies automatically banks **Scrap** to your counter (zero coin clutter!) while bursting into tiered cyan/violet/gold **XP Gems** and occasional **Hull Heals**.
   - **Mid-Combat Level-Up Drafts:** Waves flow seamlessly without end-of-wave interruptions. Whenever your full-width glowing **XP Bar** fills up, combat briefly freezes for a **1-of-3 Powerup Draft** (`[BEAM]`, `[ADDON]`, or `[CORE]`, with optional **Rerolls**).
-  - **46-Node *Rogue Legacy* Skill Tree & 17 Ships:** Between runs, spend Scrap in the pannable **Starforge Skill Tree** on starting hull & shields, keystones (like *Lazarus Supernova Revive*), economy perks, **18 new DRAFT CARD upgrades** that then show up in level-up drafts (Seeker Rounds, Chain Reaction, Orbital Strike, Cryo/Napalm Rounds and more), and **16 secret Starships** selectable in the scrolling **Fleet Ship Loadout Bay**! The tree no longer hands out combat bonuses at the start of a run.
+  - **54-Node *Rogue Legacy* Skill Tree & 17 Ships:** Between runs, spend Scrap in the pannable **Starforge Skill Tree** (rings around a core, hidden in fog; every rank bought grows your **Knowledge**, and each Knowledge level opens the next ring with a growth reveal) on starting hull & shields, keystones (like *Lazarus Supernova Revive*), economy perks, **18 new DRAFT CARD upgrades** that then show up in level-up drafts (Seeker Rounds, Chain Reaction, Orbital Strike, Cryo/Napalm Rounds and more), **EVOLVE nodes** that upgrade each sub weapon through 3 marks (MK II-IV) once it's drafted, and **16 secret Starships** selectable in the scrolling **Fleet Ship Loadout Bay**! The tree no longer hands out combat bonuses at the start of a run.
 
 ---
 
@@ -59,7 +59,7 @@
 | File | Role |
 | :--- | :--- |
 | `project.godot` | Godot 4.7 config, `480×270` integer scaling, FF6 global font, 5 autoloads |
-| `scripts/skill_tree_data.gd` | 17 Playable Ship definitions + 46-node *Rogue Legacy* Starforge Skill Tree (the 10 newer ships draw from `scripts/ship_art.gd`) |
+| `scripts/skill_tree_data.gd` | 17 Playable Ship definitions + 54-node *Rogue Legacy* Starforge Skill Tree (rings, Knowledge levels, EVOLVE nodes) (the 10 newer ships draw from `scripts/ship_art.gd`) |
 | `scripts/main.gd` | State machine (`TITLE`, `STATS`, `OPTIONS`, `HANGAR`, `LOADOUT`, `INTRO_WARP`, `PLAYING`, `PAUSED`, `DRAFT`, `HYPERSPACE`, `GAME_OVER_DELAY`), XP leveling, Skill Tree & Loadout UIs, split Pause menu, `--smoke-test` |
 | `scripts/player.gd` | Multi-controller + Keyboard + Touch flight, 7 ship blasters, 5 Tech Beams, 7 visible Hull Addons, crits, Lazarus Revive |
 | `scripts/enemy.gd` | 4 generic enemy types (re-skinned per stage) + 20 stage-signature enemies (`THEMED`: asteroids, turrets, blimps, spore pods, ice crystals, golems, jellyfish, viruses...) + 8 animated 3-phase Stage Bosses (Mega Man intro, 28-pip HP fill, adaptive plating, death meltdown) |
