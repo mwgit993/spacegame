@@ -5,6 +5,7 @@ signal hp_changed(current_hp: int, max_hp: int, shield_charges: int, max_shield:
 signal player_died()
 signal touch_state_changed()
 signal grazed(xp: int)
+signal sub_weapon_changed(id: String)
 
 const MIN_X: float = 18.0
 const MAX_X: float = 462.0
@@ -46,6 +47,15 @@ var blade_level: int = 0                # 0..4 Orbiting chakram sawblades
 var turret_level: int = 0               # 0..4 360-degree roof smart auto-turret dome
 var bomb_level: int = 0                 # 0..3 Underbelly singularity gravity bomb bay
 var nova_level: int = 0                 # 0..3 Wing EMP shockwave capacitor fins
+
+# Only ONE sub weapon fires at a time (Matt's call: the ship got silly with every addon on).
+# The swap button (swap_weapon in InputPrompts: E / pad B / the touch SWAP button) cycles
+# through the ones owned, in this order; drafting one switches to it. "beam" is a drafted Tech
+# Beam mounted next to an exotic ship's own gun (aux_beam); on the vulcan ship a beam replaces
+# the main gun instead, so it isn't a sub weapon there. The main gun and every passive card
+# (CORE / MOD / GUARD / TECH) stay on.
+const SUB_WEAPONS: Array[String] = ["option", "blades", "turret", "missile", "flank", "bomb", "nova", "beam"]
+var sub_weapon: String = ""             # the active one; "" while none is owned
 
 # In-run Core Ship Systems & Meta Stats
 var move_speed: float = 155.0
@@ -295,6 +305,9 @@ func reset_for_new_run() -> void:
 	leech_level = mini(3, int(starters.get("leech", 0)))
 	last_stand_level = mini(1, int(starters.get("last_stand", 0)))
 	last_stand_ready = last_stand_level > 0
+	sub_weapon = ""
+	var owned_subs: Array[String] = owned_sub_weapons()
+	_select_sub_weapon(owned_subs[0] if not owned_subs.is_empty() else "", false)
 
 	_lance_fx.clear()
 	_slash_fx.clear()
@@ -452,20 +465,114 @@ func apply_run_upgrade(upgrade_id: String) -> void:
 			mines_level = mini(3, mines_level + 1)
 		"salvage":
 			salvage_level = mini(2, salvage_level + 1)
+	var drafted_sub: String = _sub_weapon_of_card(upgrade_id)
+	if drafted_sub != "" and sub_weapon_level(drafted_sub) > 0:
+		_select_sub_weapon(drafted_sub, false)
 	hp_changed.emit(hp, max_hp, shield_charges, max_shield)
+
+
+# --- Sub weapon swap ------------------------------------------------------------------------
+
+# The sub weapon a draft card belongs to ("" for the main gun and the passive cards).
+func _sub_weapon_of_card(upgrade_id: String) -> String:
+	if upgrade_id in ["laser", "wave", "prism", "tesla", "plasma"]:
+		return "beam" if aux_beam != "" else ""
+	return upgrade_id if SUB_WEAPONS.has(upgrade_id) else ""
+
+
+# Rank of a sub weapon (0 = not owned).
+func sub_weapon_level(id: String) -> int:
+	match id:
+		"option":
+			return option_count
+		"blades":
+			return blade_level
+		"turret":
+			return turret_level
+		"missile":
+			return missile_level
+		"flank":
+			return flank_level
+		"bomb":
+			return bomb_level
+		"nova":
+			return nova_level
+		"beam":
+			return beam_level if aux_beam != "" else 0
+	return 0
+
+
+func owned_sub_weapons() -> Array[String]:
+	var owned: Array[String] = []
+	for id: String in SUB_WEAPONS:
+		if sub_weapon_level(id) > 0:
+			owned.append(id)
+	return owned
+
+
+func is_sub_active(id: String) -> bool:
+	return sub_weapon == id and sub_weapon_level(id) > 0
+
+
+# The swap button: the next owned sub weapon (wraps). Does nothing with fewer than 2.
+func swap_sub_weapon() -> void:
+	var owned: Array[String] = owned_sub_weapons()
+	if owned.size() < 2:
+		return
+	var i: int = owned.find(sub_weapon)
+	_select_sub_weapon(owned[(i + 1) % owned.size()], true)
+
+
+func _select_sub_weapon(id: String, announce: bool) -> void:
+	var changed: bool = id != sub_weapon
+	sub_weapon = id
+	_sync_options()
+	_sync_blades()
+	if announce and fx != null:
+		fx.spawn_popup(global_position + Vector2(-18.0, -16.0), sub_weapon_name(id), Color("#ffe854"))
+		RetroSfx.play("ui", -6.0, 0.03)
+	if changed:
+		sub_weapon_changed.emit(id)
+	queue_redraw()
+
+
+func sub_weapon_name(id: String) -> String:
+	match id:
+		"option":
+			return "OPTION"
+		"blades":
+			return "BLADES"
+		"turret":
+			return "TURRET"
+		"missile":
+			return "PODS"
+		"flank":
+			return "FLANK"
+		"bomb":
+			return "BOMBS"
+		"nova":
+			return "NOVA"
+		"beam":
+			return aux_beam.to_upper()
+	return ""
+
+
+# Options only fly (and fire) while they're the active sub weapon.
+func _live_option_count() -> int:
+	return option_count if is_sub_active("option") else 0
 
 
 func _sync_options() -> void:
 	for i: int in range(4):
 		var opt: Sprite2D = _option_sprites[i]
-		opt.visible = visible and (i < option_count)
+		opt.visible = visible and (i < _live_option_count())
 		if opt.visible:
 			var idx: int = mini(_trail.size() - 1, (i + 1) * OPTION_TRAIL_SPACING)
 			opt.global_position = _trail[idx]
 
 
 func _active_blade_count() -> int:
-	return 0 if blade_level <= 0 else mini(MAX_BLADES, 1 + blade_level)
+	return 0 if not is_sub_active("blades") else mini(MAX_BLADES, 1 + blade_level)
 
 
 func _sync_blades() -> void:
@@ -504,7 +611,7 @@ func _process(delta: float) -> void:
 			RetroSfx.play("powerup", -11.0, 0.03)
 			hp_changed.emit(hp, max_hp, shield_charges, max_shield)
 
-	if blade_level > 0 and visible:
+	if is_sub_active("blades") and visible:
 		_update_orbiting_blades(delta)
 	if signature_weapon == "orbit" and visible:
 		_update_orbit_pods(delta)
@@ -598,38 +705,38 @@ func _process(delta: float) -> void:
 		var base_interval: float = _fire_primary()
 		_fire_cooldown = base_interval / fire_rate_bonus
 
-	if aux_beam != "" and not VOLLEY_AUX_WEAPONS.has(signature_weapon):
+	if is_sub_active("beam") and not VOLLEY_AUX_WEAPONS.has(signature_weapon):
 		_aux_timer = maxf(0.0, _aux_timer - delta)
 		if fire_pressed and _aux_timer <= 0.0:
 			_fire_aux_beam()
 			_aux_timer = 0.34 / fire_rate_bonus
 
-	if missile_level > 0:
+	if is_sub_active("missile"):
 		_missile_cooldown = maxf(0.0, _missile_cooldown - delta)
 		if fire_pressed and _missile_cooldown <= 0.0:
 			_fire_missiles()
 			_missile_cooldown = maxf(0.28, 0.84 - float(missile_level) * 0.13) / (0.55 + 0.45 * fire_rate_bonus)
 
-	if flank_level > 0:
+	if is_sub_active("flank"):
 		_flank_cooldown = maxf(0.0, _flank_cooldown - delta)
 		if fire_pressed and _flank_cooldown <= 0.0:
 			_fire_flank_guns()
 			_flank_cooldown = 0.27 / fire_rate_bonus
 
-	if turret_level > 0:
+	if is_sub_active("turret"):
 		_turret_cooldown = maxf(0.0, _turret_cooldown - delta)
 		_aim_auto_turret(delta)
 		if fire_pressed and _turret_cooldown <= 0.0:
 			_fire_auto_turret()
 			_turret_cooldown = maxf(0.11, 0.30 - float(turret_level) * 0.045) / (0.6 + 0.4 * fire_rate_bonus)
 
-	if bomb_level > 0:
+	if is_sub_active("bomb"):
 		_bomb_cooldown = maxf(0.0, _bomb_cooldown - delta)
 		if fire_pressed and _bomb_cooldown <= 0.0:
 			_fire_gravity_bomb()
 			_bomb_cooldown = maxf(0.55, 1.35 - float(bomb_level) * 0.22)
 
-	if nova_level > 0:
+	if is_sub_active("nova"):
 		_nova_cooldown = maxf(0.0, _nova_cooldown - delta)
 		if _nova_cooldown <= 0.0:
 			_trigger_nova_pulse(false)
@@ -864,7 +971,7 @@ func _record_trail_and_options(delta: float) -> void:
 		if _trail.size() > TRAIL_MAX_POINTS:
 			_trail.pop_back()
 
-	for i: int in range(option_count):
+	for i: int in range(_live_option_count()):
 		var opt: Sprite2D = _option_sprites[i]
 		opt.visible = true
 		var idx: int = mini(_trail.size() - 1, (i + 1) * OPTION_TRAIL_SPACING)
@@ -884,6 +991,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		var ke: InputEventKey = event as InputEventKey
 		if ke.pressed and not ke.echo and ke.physical_keycode == KEY_C and controls_enabled:
 			_toggle_autofire()
+			return
+		if ke.pressed and not ke.echo and ke.physical_keycode == KEY_E and controls_enabled and visible:
+			swap_sub_weapon()
+			return
+	if event is InputEventJoypadButton:
+		var jb: InputEventJoypadButton = event as InputEventJoypadButton
+		if jb.pressed and jb.button_index == JOY_BUTTON_B and controls_enabled and visible:
+			swap_sub_weapon()
 			return
 
 	if not controls_enabled or not visible or MetaSave.touch_mode == 2:
@@ -930,6 +1045,9 @@ func _is_in_touch_playfield(pos: Vector2) -> bool:
 	if pos.y < 23.0 or pos.y > 264.0:
 		return false
 	if Rect2(410.0, 224.0, 66.0, 38.0).has_point(pos):
+		return false
+	# The touch SWAP button above FOCUS (main.touch_swap_btn).
+	if Rect2(410.0, 192.0, 66.0, 32.0).has_point(pos):
 		return false
 	return true
 
@@ -1002,7 +1120,7 @@ func _fire_primary() -> float:
 		for pod: Sprite2D in _orbit_pods:
 			ship_emitters.append(pod.global_position + Vector2(4.0, 0.0))
 	var emitters: Array[Vector2] = ship_emitters.duplicate()
-	for i: int in range(option_count):
+	for i: int in range(_live_option_count()):
 		emitters.append(_option_sprites[i].global_position + Vector2(6.0, 0.0))
 
 	_wave_flip = not _wave_flip
@@ -1067,7 +1185,7 @@ func _fire_primary() -> float:
 
 	# Co-Axial Aux Tech Beam on the original Exotic Ships: every 2nd volley also fires the drafted
 	# Elemental/Tech Beam (the newer ships fire it on a timer, see _process).
-	if aux_beam != "" and VOLLEY_AUX_WEAPONS.has(signature_weapon) and (_volley_count % 2 == 0):
+	if is_sub_active("beam") and VOLLEY_AUX_WEAPONS.has(signature_weapon) and (_volley_count % 2 == 0):
 		_fire_aux_beam()
 
 	if active_beam == "cat" and (_volley_count % 5 == 1):
@@ -1636,7 +1754,7 @@ func take_player_hit() -> void:
 	if invuln_timer > 0.0 or not visible or not controls_enabled:
 		return
 
-	if nova_level > 0:
+	if is_sub_active("nova"):
 		_trigger_nova_pulse(true)
 
 	if shield_charges > 0:
@@ -1739,29 +1857,29 @@ func _draw() -> void:
 			draw_arc(Vector2.ZERO, c_r, a0, a0 + 0.5, 6, Color(0.16, 0.91, 1.0, 0.22), 1.0)
 
 	# --- Visibly Mounted Hull Addons & Active Beam Nose Barrel! ---
-	if active_beam != "vulcan" or aux_beam != "":
+	if active_beam != "vulcan" or is_sub_active("beam"):
 		var nose_col: Color = _get_beam_nose_color()
 		draw_rect(Rect2(11.0, -2.0, 4.0, 4.0), nose_col)
 		draw_rect(Rect2(12.0, -1.0, 3.0, 2.0), Color.WHITE)
 
-	if missile_level > 0:
+	if is_sub_active("missile"):
 		draw_rect(Rect2(-1.0, -9.0, 6.0, 3.0), Color("#f03c4e"))
 		draw_rect(Rect2(-1.0, 6.0, 6.0, 3.0), Color("#f03c4e"))
 
-	if flank_level > 0:
+	if is_sub_active("flank"):
 		draw_rect(Rect2(-13.0, -2.0, 5.0, 4.0), Color("#8ca6d8"))
 		draw_rect(Rect2(-5.0, -10.0, 4.0, 3.0), Color("#ffe854"))
 		draw_rect(Rect2(-5.0, 7.0, 4.0, 3.0), Color("#ffe854"))
 
-	if bomb_level > 0:
+	if is_sub_active("bomb"):
 		draw_rect(Rect2(-4.0, 6.0, 6.0, 4.0), Color("#681d94"))
 		draw_circle(Vector2(-1.0, 8.0), 1.5, Color("#ff4cd4"))
 
-	if nova_level > 0:
+	if is_sub_active("nova"):
 		draw_line(Vector2(-6.0, -8.0), Vector2(-10.0, -12.0), Color("#ffe854"), 1.5)
 		draw_line(Vector2(-6.0, 8.0), Vector2(-10.0, 12.0), Color("#ffe854"), 1.5)
 
-	if turret_level > 0:
+	if is_sub_active("turret"):
 		var dome_pos: Vector2 = Vector2(-1.0, -6.0)
 		var local_aim: Vector2 = _turret_aim_dir.rotated(-rotation)
 		draw_circle(dome_pos, 3.2, Color("#197a44"))
