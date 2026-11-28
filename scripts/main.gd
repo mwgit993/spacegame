@@ -418,6 +418,12 @@ var pause_panel: Control
 
 # Title & Menu focus buttons
 var _title_ship_sprite: Sprite2D
+var _title_back_fx: Control
+var _title_front_fx: Control
+var _title_t: float = 0.0               # seconds since the title screen opened (menu slide-in)
+var _title_plume: Array[Vector4] = []   # engine particles: x, y, age, speed
+var _title_twinkles: Array[Vector3] = [] # logo twinkles: x, y, age
+var _title_shooters: Array[Vector3] = [] # shooting stars: x, y, age
 var _title_start_btn: Button
 var _title_tree_btn: Button
 var _title_loadout_btn: Button
@@ -781,6 +787,8 @@ func _run_smoke_test() -> void:
 	if not _smoke_check_boss_rigs():
 		smoke_ok = false
 	if not _smoke_check_xp_cells():
+		smoke_ok = false
+	if not _smoke_check_scenery():
 		smoke_ok = false
 	MetaSave.select_ship("neko")
 	player.reset_for_new_run()
@@ -1641,6 +1649,11 @@ func _smoke_check_sub_weapons() -> bool:
 	for gem: Node in pickup_layer.get_children():
 		pickup_layer.remove_child(gem)
 		gem.queue_free()
+	# A gem spawned late (call_deferred from an earlier kill) could still level the ship up, so no
+	# level-ups at all until the check is done.
+	var held_xp_to_next: int = xp_to_next
+	xp_to_next = 1 << 30
+	_pending_level_ups = 0
 	MetaSave.select_ship("neko")
 	player.reset_for_new_run()
 	player.global_position = Vector2(80.0, 134.0)
@@ -1714,6 +1727,7 @@ func _smoke_check_sub_weapons() -> bool:
 	player.reset_for_new_run()
 	_spawn_queue.append_array(held_spawns)
 	_wave_clear_delay = held_clear_delay
+	xp_to_next = held_xp_to_next
 	return ok
 
 
@@ -1859,6 +1873,36 @@ func _smoke_check_xp_cells() -> bool:
 		push_error("SMOKE: an XP pickup doesn't animate its spin")
 		ok = false
 	p.queue_free()
+	return ok
+
+
+# The 16-bit dressing: the painted logo and planets exist, menu windows are gradient boxes, and
+# the title menu slides in and runs its effects.
+func _smoke_check_scenery() -> bool:
+	var ok: bool = true
+	var logo: Texture2D = Scenery.logo()
+	if logo == null or logo.get_width() < 200 or logo.get_height() < 30:
+		push_error("SMOKE: the title logo didn't paint")
+		ok = false
+	for kind: String in Scenery.PLANETS.keys():
+		var pl: Texture2D = Scenery.planet(kind)
+		if pl == null or pl.get_width() < int(Scenery.PLANETS[kind]["r"]) * 2:
+			push_error("SMOKE: planet %s didn't paint" % kind)
+			ok = false
+	if not (_make_ff6_box() is StyleBoxTexture):
+		push_error("SMOKE: menu windows aren't gradient boxes")
+		ok = false
+	_title_t = 0.0
+	_update_title_fx(0.0)
+	var start_x: float = _title_menu_btns[0].position.x
+	for i: int in range(150):
+		_update_title_fx(1.0 / 60.0)
+	if start_x > -100.0 or absf(_title_menu_btns[_title_menu_btns.size() - 1].position.x - TITLE_BTN_X) > 0.5:
+		push_error("SMOKE: the title menu doesn't slide in (%.0f -> %.0f)" % [start_x, _title_menu_btns[_title_menu_btns.size() - 1].position.x])
+		ok = false
+	if _title_plume.is_empty():
+		push_error("SMOKE: the title ship has no engine plume")
+		ok = false
 	return ok
 
 
@@ -2739,14 +2783,9 @@ func _build_world() -> void:
 	player.sub_weapon_changed.connect(func(_id: String) -> void: _sync_touch_hud_visibility())
 
 
-func _make_ff6_box(bg: Color = Color(0.06, 0.10, 0.34, 0.94), border: Color = Color("#dce6ff"), border_w: int = 2, margin: float = 4.0) -> StyleBoxFlat:
-	var sb: StyleBoxFlat = StyleBoxFlat.new()
-	sb.bg_color = bg
-	sb.border_color = border
-	sb.set_border_width_all(border_w)
-	sb.set_corner_radius_all(2)
-	sb.set_content_margin_all(margin)
-	return sb
+# Every menu window: a 16-bit gradient box with a bevelled border (Scenery.window_box).
+func _make_ff6_box(bg: Color = Color(0.06, 0.10, 0.34, 0.94), border: Color = Color("#dce6ff"), border_w: int = 2, margin: float = 4.0) -> StyleBoxTexture:
+	return Scenery.window_box(bg, border, border_w, margin)
 
 
 func _style_menu_btn(btn: Button, accent: Color = Color("#dce6ff")) -> void:
@@ -2831,25 +2870,32 @@ func _build_title_ui() -> void:
 	title_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	ui_layer.add_child(title_panel)
 
-	var logo: Label = Label.new()
-	logo.position = Vector2(28.0, 22.0)
-	logo.size = Vector2(340.0, 30.0)
-	logo.text = "STAR VIPER"
-	logo.add_theme_font_size_override("font_size", 20)
-	logo.add_theme_color_override("font_color", Color("#28e8ff"))
+	# Behind everything on the title: shooting stars, the subtitle ribbon, the ship's engine
+	# plume and the dino pilot's flybys (_draw_title_back).
+	_title_back_fx = Control.new()
+	_title_back_fx.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_title_back_fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_title_back_fx.draw.connect(_draw_title_back)
+	title_panel.add_child(_title_back_fx)
+
+	var logo: TextureRect = TextureRect.new()
+	logo.texture = Scenery.logo()
+	logo.position = TITLE_LOGO_POS
+	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title_panel.add_child(logo)
 
 	var sub: Label = Label.new()
-	sub.position = Vector2(30.0, 50.0)
-	sub.size = Vector2(320.0, 16.0)
+	sub.position = Vector2(30.0, 49.0)
+	sub.size = Vector2(226.0, 12.0)
 	sub.text = "16-BIT GALACTIC ROGUELITE"
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sub.add_theme_font_size_override("font_size", FONT_SZ)
 	sub.add_theme_color_override("font_color", Color("#ffe854"))
 	title_panel.add_child(sub)
 
 	_title_ship_sprite = Sprite2D.new()
 	_title_ship_sprite.texture = PixelArt.tex("player_idle")
-	_title_ship_sprite.scale = Vector2(3.0, 3.0)
+	_title_ship_sprite.scale = Vector2(2.0, 2.0)
 	_title_ship_sprite.position = Vector2(356.0, 134.0)
 	title_panel.add_child(_title_ship_sprite)
 
@@ -2894,6 +2940,142 @@ func _build_title_ui() -> void:
 		"  AUTOFIRE ", {"act": "autofire"}, "  PAUSE ", {"act": "pause"}, "  SPEED UP ", {"act": "speed"},
 	])
 	title_panel.add_child(foot)
+
+	# Above the menu: the pointer next to the selected button and twinkles on the logo.
+	_title_front_fx = Control.new()
+	_title_front_fx.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_title_front_fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_title_front_fx.draw.connect(_draw_title_front)
+	title_panel.add_child(_title_front_fx)
+
+
+# --- Title screen life (Matthew: "more 16-bit than 8-bit, a lot more life and personality") ----
+const TITLE_LOGO_POS: Vector2 = Vector2(22.0, 6.0)
+const TITLE_BTN_X: float = 30.0
+const TITLE_POD_EVERY: float = 13.0      # seconds between the dino pilot's flybys
+const PilotPodScript = preload("res://scripts/bosses/pilot_pod.gd")
+const TitleKit = preload("res://scripts/bosses/boss_kit.gd")
+const TitlePilot = preload("res://scripts/bosses/dino_pilot.gd")
+
+
+func _update_title_fx(delta: float) -> void:
+	_title_t += delta
+	# The menu slides in from the left, one button after another.
+	for i: int in range(_title_menu_btns.size()):
+		var k: float = clampf(_title_t * 4.0 - float(i) * 0.35, 0.0, 1.0)
+		var e: float = 1.0 - pow(1.0 - k, 3.0)
+		_title_menu_btns[i].position.x = roundf(lerpf(-240.0, TITLE_BTN_X, e))
+	# Engine plume behind the hero ship.
+	var ship_p: Vector2 = _title_ship_sprite.position
+	if delta > 0.0:
+		for n: int in range(2):
+			_title_plume.append(Vector4(ship_p.x - 20.0, ship_p.y + randf_range(-3.0, 3.0), 0.0, randf_range(90.0, 150.0)))
+	for i: int in range(_title_plume.size() - 1, -1, -1):
+		var p: Vector4 = _title_plume[i]
+		p.z += delta
+		p.x -= p.w * delta
+		_title_plume[i] = p
+		if p.z > 0.4:
+			_title_plume.remove_at(i)
+	# Twinkles on the logo's lettering, and the odd shooting star.
+	if randf() < delta * 5.0:
+		var logo_size: Vector2 = Scenery.logo().get_size()
+		var q: Vector2i = Vector2i(randi() % int(logo_size.x), randi() % int(logo_size.y))
+		if Scenery.logo_solid_at(q):
+			_title_twinkles.append(Vector3(TITLE_LOGO_POS.x + float(q.x), TITLE_LOGO_POS.y + float(q.y), 0.0))
+	if randf() < delta * 0.5:
+		_title_shooters.append(Vector3(randf_range(160.0, 520.0), randf_range(-10.0, 60.0), 0.0))
+	for arr: Array[Vector3] in [_title_twinkles, _title_shooters]:
+		for i: int in range(arr.size() - 1, -1, -1):
+			var v: Vector3 = arr[i]
+			v.z += delta
+			arr[i] = v
+			if v.z > 0.6:
+				arr.remove_at(i)
+	_title_back_fx.queue_redraw()
+	_title_front_fx.queue_redraw()
+
+
+func _draw_title_back() -> void:
+	var c: Control = _title_back_fx
+	for s: Vector3 in _title_shooters:
+		var head: Vector2 = Vector2(s.x, s.y) + Vector2(-260.0, 130.0) * s.z
+		var a: float = 1.0 - s.z / 0.6
+		c.draw_line(head, head + Vector2(26.0, -13.0), Color(0.7, 0.9, 1.0, 0.5 * a), 1.0)
+		c.draw_rect(Rect2(head.round(), Vector2(2, 2)), Color(1, 1, 1, a))
+	# The subtitle's ribbon.
+	var rib: Rect2 = Rect2(26.0, 47.0, 234.0, 13.0)
+	c.draw_rect(rib, Color("#3a0e5c"))
+	c.draw_rect(Rect2(rib.position, Vector2(rib.size.x, 6.0)), Color("#5c1c8c"))
+	c.draw_rect(rib, Color("#ff64b8"), false, 1.0)
+	for side: float in [-1.0, 1.0]:
+		var tip: float = rib.position.x - 6.0 if side < 0.0 else rib.end.x + 6.0
+		var edge: float = rib.position.x if side < 0.0 else rib.end.x
+		c.draw_colored_polygon(PackedVector2Array([Vector2(edge, rib.position.y), Vector2(tip, rib.get_center().y), Vector2(edge, rib.end.y)]), Color("#ff64b8"))
+	# Engine plume: white hot at the nozzle, through yellow and orange to red.
+	for p: Vector4 in _title_plume:
+		var k: float = p.z / 0.4
+		var col: Color = Color.WHITE.lerp(Color("#ffe854"), minf(1.0, k * 3.0)).lerp(Color("#ff5a24"), clampf(k * 2.0 - 0.5, 0.0, 1.0))
+		var sz: float = 3.0 if k < 0.3 else (2.0 if k < 0.7 else 1.0)
+		c.draw_rect(Rect2(Vector2(p.x, p.y).round(), Vector2(sz, sz)), Color(col, 1.0 - k * 0.8))
+	_draw_title_pod(c)
+
+
+## Every so often the boss pilot buzzes the title screen in its escape pod: it zooms in from the
+## left, stops to shake its fist at your ship ("GRRR!!"), then warps away to the right.
+func _draw_title_pod(c: Control) -> void:
+	var cyc: float = fposmod(_title_t - 3.0, TITLE_POD_EVERY)
+	if _title_t < 3.0 or cyc > 4.2:
+		return
+	var face: Texture2D = TitlePilot.face_texture(TitlePilot.BOSS_PILOT, "roar" if cyc > 1.4 and cyc < 2.6 else "angry")
+	var body: Texture2D = TitleKit.cached("pod_body", PilotPodScript._paint_pod)
+	var fist: Texture2D = TitleKit.cached("pod_fist", PilotPodScript._paint_fist)
+	var y: float = 206.0 + sin(cyc * 4.0) * 3.0
+	var x: float = 300.0
+	var flip: float = 1.0
+	var stretch: float = 1.0
+	if cyc < 1.2:
+		x = lerpf(-30.0, 300.0, 1.0 - pow(1.0 - cyc / 1.2, 2.0))
+	elif cyc >= 3.0:
+		flip = -1.0
+		var k: float = cyc - 3.0
+		x = 300.0 + 40.0 * k + 900.0 * k * k
+		stretch = 1.0 + minf(k * 5.0, 1.5)
+		c.draw_rect(Rect2(300.0, y - 2.0, maxf(0.0, x - 312.0), 4.0), Color(0.48, 0.9, 1.0, 0.4))
+	elif cyc >= 2.6:
+		x += randf_range(-1.0, 1.0)
+	var at: Vector2 = Vector2(x, y).round()
+	if cyc < 3.0:
+		var shake: float = (-0.6 + sin(_title_t * 26.0) * 0.45) if cyc > 1.2 else -0.2
+		c.draw_set_transform(at + Vector2(3.0, -4.0), shake, Vector2.ONE)
+		c.draw_texture(fist, Vector2(-2.0, -9.0))
+	c.draw_set_transform(at, 0.0, Vector2(flip * stretch, 1.0 / maxf(1.0, stretch * 0.8)))
+	c.draw_texture(face, -face.get_size() * 0.5 + Vector2(0.0, -9.0))
+	c.draw_texture(body, -body.get_size() * 0.5 + Vector2(0.0, 2.0))
+	c.draw_set_transform(Vector2.ZERO)
+	if cyc > 1.4 and cyc < 2.6:
+		var font: Font = PixelArt.ui_font if PixelArt.ui_font != null else ThemeDB.fallback_font
+		c.draw_string(font, at + Vector2(-22.0, -24.0), "GRRR!!", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#ff4c68"))
+
+
+func _draw_title_front() -> void:
+	var c: Control = _title_front_fx
+	# Logo twinkles: little four-point stars.
+	for tw: Vector3 in _title_twinkles:
+		var k: float = sin(tw.z / 0.6 * PI)
+		var r: float = 1.0 + 3.0 * k
+		var p: Vector2 = Vector2(tw.x, tw.y)
+		c.draw_line(p - Vector2(r, 0.0), p + Vector2(r, 0.0), Color(1, 1, 1, k), 1.0)
+		c.draw_line(p - Vector2(0.0, r), p + Vector2(0.0, r), Color(1, 1, 1, k), 1.0)
+		c.draw_rect(Rect2(p - Vector2(1, 1), Vector2(2, 2)), Color(1, 1, 0.8, k))
+	# The pointer: a shaded arrow bobbing beside the selected button.
+	var focus: Control = get_viewport().gui_get_focus_owner()
+	if focus is Button and _title_menu_btns.has(focus as Button):
+		var b: Button = focus as Button
+		var tip: Vector2 = Vector2(b.position.x - 4.0 + sin(_title_t * 9.0) * 2.0, b.position.y + b.size.y * 0.5).round()
+		c.draw_colored_polygon(PackedVector2Array([tip + Vector2(2.0, 0.0), tip + Vector2(-10.0, -8.0), tip + Vector2(-10.0, 8.0)]), Scenery.INK)
+		c.draw_colored_polygon(PackedVector2Array([tip, tip + Vector2(-9.0, -6.0), tip + Vector2(-9.0, 6.0)]), Color.WHITE)
+		c.draw_colored_polygon(PackedVector2Array([tip, tip + Vector2(-9.0, 0.0), tip + Vector2(-9.0, 6.0)]), Color("#9ab6e8"))
 
 
 func _build_stats_ui() -> void:
@@ -3598,6 +3780,11 @@ func _draw_skill_tree_canvas() -> void:
 			line_col = Color(0.55, 0.75, 1.0, 0.72)
 			line_w = 1.5
 		_tree_canvas.draw_line(pa, pb, line_col, line_w)
+		if MetaSave.get_level(id) > 0:
+			# Energy pulses flowing out along owned conduits.
+			var ph: float = fposmod(now * 0.7 + float(absi(id.hash()) % 100) * 0.01, 1.0)
+			var dot: Vector2 = pa.lerp(pb, ph).round()
+			_tree_canvas.draw_rect(Rect2(dot - Vector2(1.0, 1.0), Vector2(3.0, 3.0)), Color(line_col.lightened(0.6), 0.9))
 
 	# 3) The fog: everything past the open radius, with a billowing cloud edge that glows (a bright
 	# shockwave while it rolls back), and slow wisps drifting in it.
@@ -3639,6 +3826,9 @@ func _draw_skill_tree_canvas() -> void:
 		if growing:
 			edge_a = 0.9
 		_tree_canvas.draw_arc(core_s, fog_s - 1.0, 0.0, TAU, 128, Color(0.55, 0.75, 1.0, edge_a), 2.0 if growing else 1.0)
+
+	# 3b) Planets far behind the tree (Matthew's request), drifting slowly with the view.
+	_draw_tree_planets(c_size, now)
 
 	# 4) Wing labels beside the four ring-1 nodes (over the fog, so they always read).
 	if detail:
@@ -3700,7 +3890,16 @@ func _draw_skill_tree_canvas() -> void:
 		if pop < 1.0:
 			border_col = border_col.lerp(Color.WHITE, 1.0 - pop)
 
+		if lvl > 0 and detail:
+			_tree_canvas.draw_circle(np, half * 1.7, Color(ncol, 0.1 + 0.05 * pulse))
 		_tree_canvas.draw_rect(box_r, bg_col)
+		if detail and half >= 6.0:
+			# 16-bit bevel: a lighter top half, a highlight along the top and left, shade below.
+			var inner: Rect2 = box_r.grow(-2.0)
+			_tree_canvas.draw_rect(Rect2(inner.position, Vector2(inner.size.x, inner.size.y * 0.5)), Color(1, 1, 1, 0.07))
+			_tree_canvas.draw_line(inner.position, Vector2(inner.end.x, inner.position.y), Color(border_col.lightened(0.5), 0.55), 1.0)
+			_tree_canvas.draw_line(inner.position, Vector2(inner.position.x, inner.end.y), Color(border_col.lightened(0.5), 0.35), 1.0)
+			_tree_canvas.draw_line(Vector2(inner.position.x, inner.end.y), inner.end, Color(0, 0, 0, 0.45), 1.0)
 		_tree_canvas.draw_rect(box_r, border_col, false, 2.0 if (detail and (lvl > 0 or affordable or is_ship_node)) else 1.0)
 		if detail and pop >= 1.0:
 			if String(def.get("unlocks_upgrade", "")) != "":
@@ -3763,6 +3962,37 @@ func _draw_skill_tree_canvas() -> void:
 
 
 # Small playing-card glyph marking skill tree nodes that add a draft upgrade.
+# The planets behind the skill tree: anchored to the canvas corners (clear of the open rings),
+# shifting a little as the view pans, with a moon circling the gas giant.
+const TREE_PLANETS: Array = [
+	["gas", Vector2(-0.37, -0.3)], ["ringed", Vector2(0.37, 0.27)], ["lava", Vector2(0.31, -0.33)], ["ice", Vector2(-0.24, 0.36)],
+]
+
+
+func _draw_tree_planets(c_size: Vector2, now: float) -> void:
+	for i: int in range(TREE_PLANETS.size()):
+		var spec: Array = TREE_PLANETS[i]
+		var tex: Texture2D = Scenery.planet(String(spec[0]))
+		var anchor: Vector2 = spec[1]
+		var drift: Vector2 = Vector2(sin(now * 0.05 + float(i)), cos(now * 0.04 + float(i) * 2.0)) * 3.0
+		var p: Vector2 = c_size * 0.5 + anchor * c_size - _tree_cam_offset * 0.12 + drift
+		var moon_p: Vector2 = Vector2.ZERO
+		var moon_front: bool = false
+		if i == 0:
+			var a: float = now * 0.35
+			moon_p = p + Vector2(cos(a) * 44.0, sin(a) * 12.0)
+			moon_front = sin(a) > 0.0
+			if not moon_front:
+				_tree_draw_body(Scenery.planet("moon"), moon_p)
+		_tree_draw_body(tex, p)
+		if i == 0 and moon_front:
+			_tree_draw_body(Scenery.planet("moon"), moon_p)
+
+
+func _tree_draw_body(tex: Texture2D, center: Vector2) -> void:
+	_tree_canvas.draw_texture(tex, (center - tex.get_size() * 0.5).round(), Color(1, 1, 1, 0.92))
+
+
 func _draw_tree_card_tag(top_left: Vector2, owned: bool) -> void:
 	var r: Rect2 = Rect2(top_left.round(), Vector2(6.0, 8.0))
 	_tree_canvas.draw_rect(r, Color("#ffe854") if owned else Color("#2c3a60"))
@@ -4605,9 +4835,9 @@ func _build_draft_ui() -> void:
 		btn.add_child(short_lbl)
 
 		# Selected: brighter fill and a thick white frame that sticks out 2 px past the card.
-		var box_sel: StyleBoxFlat = _make_ff6_box(Color("#1d3796"), Color.WHITE, 3)
+		var box_sel: StyleBoxTexture = _make_ff6_box(Color("#1d3796"), Color.WHITE, 3)
 		box_sel.set_expand_margin_all(2.0)
-		var box_press: StyleBoxFlat = _make_ff6_box(Color("#2c50c4"), Color.WHITE, 3)
+		var box_press: StyleBoxTexture = _make_ff6_box(Color("#2c50c4"), Color.WHITE, 3)
 		box_press.set_expand_margin_all(2.0)
 		_draft_cards.append({
 			"btn": btn,
@@ -4771,6 +5001,9 @@ func _enter_title() -> void:
 	_clear_entities()
 	GenesisMusic.play_title()
 
+	_title_t = 0.0
+	_title_plume.clear()
+	_update_title_fx(0.0)
 	var ship_def: Dictionary = MetaSave.get_selected_ship_def()
 	_title_start_btn.text = "START RUN [%s]" % String(ship_def["short"])
 	_title_ship_sprite.texture = PixelArt.tex(String(ship_def["sprite_0"]))
@@ -5380,6 +5613,7 @@ func _process(delta: float) -> void:
 		var alt: bool = (int(Time.get_ticks_msec() / 75) % 2 == 0)
 		var s_def: Dictionary = MetaSave.get_selected_ship_def()
 		_title_ship_sprite.texture = PixelArt.tex(String(s_def["sprite_1" if alt else "sprite_0"]))
+		_update_title_fx(delta)
 
 	elif state == State.HANGAR:
 		_update_tree_view(delta)
@@ -5908,8 +6142,7 @@ func _populate_draft_cards_ui() -> void:
 			var col: Color = choice["color"]
 
 			btn.visible = true
-			var box_idle: StyleBoxFlat = card["box_idle"]
-			box_idle.border_color = col
+			card["box_idle"] = _make_ff6_box(Color("#0a1236"), col, 2)
 
 			var title_lbl: Label = card["title_lbl"]
 			title_lbl.text = String(choice["title"])
