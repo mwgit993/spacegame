@@ -1630,6 +1630,15 @@ func _smoke_check_module_draws() -> bool:
 func _smoke_check_sub_weapons() -> bool:
 	var ok: bool = true
 	_smoke_clear_enemies()
+	# Hold back queued spawns and drop loose XP gems: this check runs real frames, and a kill
+	# there could level the ship up, open a draft and switch the controls off mid-check.
+	var held_spawns: Array[Dictionary] = _spawn_queue.duplicate()
+	_spawn_queue.clear()
+	var held_clear_delay: float = _wave_clear_delay
+	_wave_clear_delay = 999.0 # and the empty wave must not start the next one
+	for gem: Node in pickup_layer.get_children():
+		pickup_layer.remove_child(gem)
+		gem.queue_free()
 	MetaSave.select_ship("neko")
 	player.reset_for_new_run()
 	player.global_position = Vector2(80.0, 134.0)
@@ -1701,6 +1710,8 @@ func _smoke_check_sub_weapons() -> bool:
 	player.controls_enabled = false
 	MetaSave.select_ship("neko")
 	player.reset_for_new_run()
+	_spawn_queue.append_array(held_spawns)
+	_wave_clear_delay = held_clear_delay
 	return ok
 
 
