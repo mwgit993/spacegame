@@ -37,6 +37,7 @@ var chill_time: float = 0.0             # Cryo Rounds: seconds of slow applied o
 var chill_factor: float = 1.0           # Cryo Rounds: enemy time scale while chilled
 var burn_dps: float = 0.0               # Napalm Rounds: burn damage per second for 2 s
 var split_count: int = 0                # Shrapnel Burst: fragments spawned when the shot is spent on a hit
+var aoe_clears_shots: bool = false      # MK III gravity bombs: the blast also deletes enemy shots in it
 var life_left: float = -1.0             # > 0: detonate/expire after this many seconds (Proximity Mines)
 # Enemy-bullet state driven by the player's Chrono Field / Graze Dynamo perks
 var grazed: bool = false
@@ -554,6 +555,14 @@ func _trigger_aoe_detonation(direct_hit: Node) -> void:
 		var en: Node2D = node as Node2D
 		if global_position.distance_squared_to(en.global_position) <= r2 and en.has_method("take_damage"):
 			en.call("take_damage", damage * 0.65)
+	if aoe_clears_shots and get_parent() != null:
+		for child: Node in get_parent().get_children():
+			if child is GameBullet and not (child as GameBullet).is_player_bullet:
+				var gb: GameBullet = child as GameBullet
+				if global_position.distance_squared_to(gb.global_position) <= r2:
+					if fx != null:
+						fx.spawn_hit_sparks(gb.global_position, aoe_color, 2)
+					gb.queue_free()
 
 
 func _trigger_tesla_chain(origin_enemy: Node) -> void:
