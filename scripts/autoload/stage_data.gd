@@ -549,6 +549,57 @@ func _install_art(m: RefCounted, built: Dictionary) -> void:
 # Enemy HP growth by stage index. The built-in stages 1-8 keep their original steep curve
 # (`base` per stage, 1.34 for regular enemies). Past stage 8 it grows 12% per stage, so stage
 # 28 is ~75x stage 1 instead of ~2,700x (a full run's upgrades can't keep up with the latter).
+# --- Checkpoints (Matthew's request) -------------------------------------------------------------
+# A run plays the stages in a shuffled order (main._run_route: stage 1 always first). Every 4th
+# level is a checkpoint: its boss is a giant dino robot from a fixed lineup (CheckpointBosses), the
+# last one the mega T-rex. Beating one lets a later run continue right after it, and everything
+# gets much tougher past each one: on top of the usual per-level growth, enemy HP, shot speed and
+# fire rate step up per checkpoint passed. "Level" below is the 0-based position in the run,
+# counting on through loops; difficulty follows the level, not which stage is playing.
+const CHECKPOINT_EVERY: int = 4
+const CHECKPOINT_HP_STEP: float = 0.3     # +30% enemy and boss HP per checkpoint passed
+const CHECKPOINT_SHOT_STEP: float = 0.05  # +5% enemy shot speed per checkpoint passed
+const CHECKPOINT_FIRE_STEP: float = 0.06  # +6% enemy fire rate per checkpoint passed
+
+
+func checkpoint_count() -> int:
+	return floori(stage_count() / float(CHECKPOINT_EVERY))
+
+
+func is_checkpoint_level(level: int) -> bool:
+	var pos: int = posmod(level, stage_count())
+	return pos % CHECKPOINT_EVERY == CHECKPOINT_EVERY - 1 and floori(pos / float(CHECKPOINT_EVERY)) < checkpoint_count()
+
+
+## Which checkpoint (0-based) this level's boss is, or the number passed before it.
+func checkpoint_index(level: int) -> int:
+	return floori(posmod(level, stage_count()) / float(CHECKPOINT_EVERY))
+
+
+func checkpoint_hp_mult(level: int) -> float:
+	return 1.0 + CHECKPOINT_HP_STEP * float(checkpoint_index(level))
+
+
+func checkpoint_shot_mult(level: int) -> float:
+	return 1.0 + CHECKPOINT_SHOT_STEP * float(checkpoint_index(level))
+
+
+func checkpoint_fire_mult(level: int) -> float:
+	return 1.0 + CHECKPOINT_FIRE_STEP * float(checkpoint_index(level))
+
+
+## The boss HP for a level: the HP of the boss that level's position would have in stage order
+## (so a stage 20 boss shuffled up to level 2 isn't a wall), before loop and checkpoint scaling.
+func boss_base_hp(level: int, fallback_stage: int) -> float:
+	var pos: int = wrap_stage(level)
+	if pos < GameEnemy.STAGE_BOSS_HP.size():
+		return GameEnemy.STAGE_BOSS_HP[pos]
+	var m: RefCounted = get_module(pos)
+	if m == null:
+		m = get_module(fallback_stage)
+	return float(m.call("get_boss_hp")) if m != null else GameEnemy.STAGE_BOSS_HP[GameEnemy.STAGE_BOSS_HP.size() - 1]
+
+
 func stage_hp_growth(stage_index: int, base: float = 1.34) -> float:
 	var early: int = mini(stage_index, 7)
 	var late: int = maxi(0, stage_index - 7)

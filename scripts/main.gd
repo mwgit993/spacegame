@@ -425,6 +425,8 @@ var _title_plume: Array[Vector4] = []   # engine particles: x, y, age, speed
 var _title_twinkles: Array[Vector3] = [] # logo twinkles: x, y, age
 var _title_shooters: Array[Vector3] = [] # shooting stars: x, y, age
 var _title_start_btn: Button
+var _title_continue_btn: Button
+var _title_all_btns: Array[Button] = []
 var _title_tree_btn: Button
 var _title_loadout_btn: Button
 var _title_menu_btns: Array[Button] = []
@@ -484,6 +486,13 @@ var _joy_nav_cooldown: float = 0.0
 # Run, XP Leveling & Stage progression metrics
 var wave: int = 0
 var current_stage_idx: int = 0
+# Checkpoints (Matthew's request, see StageData's notes): each run plays the stages in a shuffled
+# order, stage 1 first. current_level is the 0-based place in the run (wave's stage, counting on
+# through loops); current_stage_idx is which stage is playing there.
+var current_level: int = 0
+var _run_route: Array[int] = []     # this run's order: level -> stage (empty = in order)
+var _run_start_level: int = 0       # 0, or the level after the checkpoint a run continued from
+var _cleared_checkpoint: int = -1   # set when a checkpoint boss falls, for the hyperspace banner
 var score: int = 0
 var run_scrap: int = 0
 var run_kills: int = 0
@@ -763,6 +772,8 @@ func _run_smoke_test() -> void:
 	if not _smoke_check_themed_enemies():
 		smoke_ok = false
 	if not _smoke_check_stage_modules():
+		smoke_ok = false
+	if not _smoke_check_checkpoints():
 		smoke_ok = false
 	# Exercise every ship's signature blaster, beams, addons, rerolls, and Lazarus revive!
 	for ship_d: Dictionary in SkillTreeData.SHIPS:
@@ -1347,6 +1358,8 @@ func _smoke_check_stage_modules() -> bool:
 		return false
 	var saved_wave: int = wave
 	var saved_stage: int = current_stage_idx
+	var saved_route: Array[int] = _run_route.duplicate()
+	_run_route.clear() # these checks play the stages in order
 	for m: RefCounted in StageData.get_modules():
 		if not _smoke_check_module(m):
 			ok = false
@@ -1358,6 +1371,7 @@ func _smoke_check_stage_modules() -> bool:
 		ok = false
 	wave = saved_wave
 	current_stage_idx = saved_stage
+	_run_route = saved_route
 	_pending_hyperspace = false
 	_smoke_clear_enemies()
 	_spawn_queue.clear()
@@ -1903,6 +1917,141 @@ func _smoke_check_scenery() -> bool:
 	if _title_plume.is_empty():
 		push_error("SMOKE: the title ship has no engine plume")
 		ok = false
+	return ok
+
+
+# Checkpoints: the run order, which levels are checkpoints, the difficulty step, the robot boss
+# on a checkpoint's boss wave, every robot in the lineup (rig, pilot, HP, each of its moves, the
+# pilot bailing out, the checkpoint saved), and continuing a run after a checkpoint.
+func _smoke_check_checkpoints() -> bool:
+	var ok: bool = true
+	var n: int = StageData.stage_count()
+	var saved_route: Array[int] = _run_route.duplicate()
+	var saved_wave: int = wave
+	var saved_level: int = current_level
+	var saved_stage: int = current_stage_idx
+	var saved_cp: int = MetaSave.checkpoint
+	var orders: Dictionary = {}
+	for k: int in range(4):
+		_build_run_route()
+		var sorted: Array[int] = _run_route.duplicate()
+		sorted.sort()
+		var every_once: bool = sorted.size() == n
+		for i: int in range(sorted.size()):
+			every_once = every_once and sorted[i] == i
+		if _run_route[0] != 0 or not every_once:
+			push_error("SMOKE: a run must start on stage 1 and play every stage once: %s" % str(_run_route))
+			ok = false
+		orders[str(_run_route)] = true
+	if orders.size() < 2:
+		push_error("SMOKE: the stage order isn't shuffled")
+		ok = false
+	if _stage_for_level(n + 5) != _run_route[5] + n:
+		push_error("SMOKE: the second loop doesn't replay the run's order")
+		ok = false
+	var cps: int = StageData.checkpoint_count()
+	for level: int in range(n):
+		var want: bool = level % 4 == 3 and floori(level / 4.0) < cps
+		if StageData.is_checkpoint_level(level) != want:
+			push_error("SMOKE: level %d checkpoint = %s" % [level + 1, str(not want)])
+			ok = false
+	if GameEnemy.CheckpointBosses.is_final(0) or not GameEnemy.CheckpointBosses.is_final(StageData.checkpoint_index((cps - 1) * 4 + 3)):
+		push_error("SMOKE: the mega T-rex isn't the last checkpoint")
+		ok = false
+	if StageData.checkpoint_hp_mult(4) <= StageData.checkpoint_hp_mult(3) or StageData.checkpoint_fire_mult(8) <= StageData.checkpoint_fire_mult(7):
+		push_error("SMOKE: passing a checkpoint doesn't make things tougher")
+		ok = false
+	# A checkpoint level's boss wave brings the robot.
+	_smoke_clear_enemies()
+	_spawn_queue.clear()
+	wave = 3 * StageData.WAVES_PER_STAGE + 3
+	_begin_next_wave()
+	var boss_item: Dictionary = {}
+	for it: Dictionary in _spawn_queue:
+		if int(it["type"]) == int(GameEnemy.Type.BOSS):
+			boss_item = it
+	if int(boss_item.get("cp", -1)) != 0 or int(boss_item.get("level", -1)) != 3 or int(boss_item.get("stage", -1)) != _run_route[3] or current_level != 3:
+		push_error("SMOKE: level 4's boss wave didn't queue checkpoint 1's robot: %s" % str(boss_item))
+		ok = false
+	_spawn_queue.clear()
+	_pending_hyperspace = false
+	# Every robot in the lineup.
+	MetaSave.checkpoint = 0
+	MetaSave.game_beaten = false
+	var moves: Array[Array] = [["volley", "fan"], ["wave"], ["beams"], ["behind"], ["ring"], ["rain"]]
+	for tier: int in range(cps):
+		var level: int = tier * 4 + 3
+		var st_i: int = _run_route[level]
+		var b: GameEnemy = _spawn_enemy_now({"type": GameEnemy.Type.BOSS, "pos": Vector2(396.0, 134.0), "hp_mult": 1.0, "phase": 0.0, "squad": 1, "stage": st_i, "level": level, "cp": tier})
+		if b._rig == null or b._boss_ai == null or not b._rig.has_muzzle("mouth") or not b._rig.has_muzzle("arm"):
+			push_error("SMOKE: checkpoint %d's boss isn't the dino robot" % (tier + 1))
+			ok = false
+			b.queue_free()
+			continue
+		if b._rig.pilot == null or b._rig.pilot.species != GameEnemy.DinoPilotScript.BOSS_PILOT:
+			push_error("SMOKE: checkpoint %d's robot isn't flown by the boss pilot" % (tier + 1))
+			ok = false
+		var want_hp: float = StageData.boss_base_hp(level, st_i) * GameEnemy.CheckpointBosses.HP_MULT * StageData.checkpoint_hp_mult(level)
+		if absf(b.max_hp - want_hp) > 1.0:
+			push_error("SMOKE: checkpoint %d's robot has %.0f HP, expected %.0f" % [tier + 1, b.max_hp, want_hp])
+			ok = false
+		b.boss_intro_active = false
+		b.boss_hp_bar_visible = true
+		for ph: int in [1, 2, 3]:
+			b.boss_phase = ph
+			for k: int in range(16):
+				b._boss_attack()
+				b._rig._process(1.0 / 60.0)
+		var used: Dictionary = b._boss_ai.get("used")
+		var top: int = 99 if GameEnemy.CheckpointBosses.is_final(tier) else tier
+		for lvl: int in range(mini(top + 1, moves.size())):
+			for m: Variant in moves[lvl]:
+				if not used.has(String(m)):
+					push_error("SMOKE: checkpoint %d's robot never used %s" % [tier + 1, String(m)])
+					ok = false
+		var pods: int = _smoke_count_pods()
+		b._start_boss_death_sequence()
+		b._finish_boss_death()
+		if _smoke_count_pods() != pods + 1:
+			push_error("SMOKE: checkpoint %d's pilot didn't bail out" % (tier + 1))
+			ok = false
+		if MetaSave.checkpoint != tier + 1:
+			push_error("SMOKE: beating checkpoint %d saved checkpoint %d" % [tier + 1, MetaSave.checkpoint])
+			ok = false
+		for shot: Node in bullet_layer.get_children():
+			shot.queue_free()
+	if not MetaSave.game_beaten:
+		push_error("SMOKE: beating the mega T-rex isn't saved")
+		ok = false
+	_cleared_checkpoint = -1
+	# Continuing after a checkpoint.
+	MetaSave.checkpoint = 2
+	_layout_title_menu()
+	if not _title_continue_btn.visible or not _title_continue_btn.text.contains("STAGE 9") or not _title_menu_btns.has(_title_continue_btn):
+		push_error("SMOKE: the title doesn't offer CONTINUE (STAGE 9) after checkpoint 2 (%s)" % _title_continue_btn.text)
+		ok = false
+	MetaSave.checkpoint = 0
+	_layout_title_menu()
+	if _title_continue_btn.visible or _title_menu_btns.has(_title_continue_btn):
+		push_error("SMOKE: CONTINUE shows before any checkpoint")
+		ok = false
+	_start_run(2)
+	if wave != 8 * StageData.WAVES_PER_STAGE or current_level != 8 or current_stage_idx != _run_route[8] or _pending_level_ups != 8:
+		push_error("SMOKE: continuing after checkpoint 2 starts wave %d level %d with %d drafts" % [wave, current_level, _pending_level_ups])
+		ok = false
+	_update_intro_warp(1.0)
+	_update_intro_warp(1.0)
+	if current_level != 8 or current_stage_idx != _run_route[8]:
+		push_error("SMOKE: a continued run's first wave isn't stage 9 (level %d)" % (current_level + 1))
+		ok = false
+	_pending_level_ups = 0
+	_smoke_clear_enemies()
+	_spawn_queue.clear()
+	MetaSave.checkpoint = saved_cp
+	_run_route = saved_route
+	wave = saved_wave
+	current_level = saved_level
+	current_stage_idx = saved_stage
 	return ok
 
 
@@ -2901,6 +3050,7 @@ func _build_title_ui() -> void:
 
 	var menu_specs: Array[Dictionary] = [
 		{"label": "START RUN", "cb": _start_run, "accent": Color("#3ce878")},
+		{"label": "CONTINUE", "cb": _continue_run, "accent": Color("#3ce878")},
 		{"label": "SKILL TREE", "cb": _open_hangar_from_title, "accent": Color("#ffe854")},
 		{"label": "SHIP LOADOUT", "cb": _enter_loadout, "accent": Color("#ff64b8")},
 		{"label": "STATS", "cb": _enter_stats, "accent": Color("#28e8ff")},
@@ -2923,12 +3073,16 @@ func _build_title_ui() -> void:
 		)
 		title_panel.add_child(btn)
 		_title_menu_btns.append(btn)
-		if i == 0:
-			_title_start_btn = btn
-		elif i == 1:
-			_title_tree_btn = btn
-		elif i == 2:
-			_title_loadout_btn = btn
+		match String(spec["label"]):
+			"START RUN":
+				_title_start_btn = btn
+			"CONTINUE":
+				_title_continue_btn = btn
+			"SKILL TREE":
+				_title_tree_btn = btn
+			"SHIP LOADOUT":
+				_title_loadout_btn = btn
+	_title_all_btns = _title_menu_btns.duplicate()
 
 	# Controls legend: shows key caps or Xbox buttons for whichever device was used last.
 	var foot: PromptBar = PromptBar.new()
@@ -3076,6 +3230,31 @@ func _draw_title_front() -> void:
 		c.draw_colored_polygon(PackedVector2Array([tip + Vector2(2.0, 0.0), tip + Vector2(-10.0, -8.0), tip + Vector2(-10.0, 8.0)]), Scenery.INK)
 		c.draw_colored_polygon(PackedVector2Array([tip, tip + Vector2(-9.0, -6.0), tip + Vector2(-9.0, 6.0)]), Color.WHITE)
 		c.draw_colored_polygon(PackedVector2Array([tip, tip + Vector2(-9.0, 0.0), tip + Vector2(-9.0, 6.0)]), Color("#9ab6e8"))
+
+
+# --- Continuing after a checkpoint -------------------------------------------------------------
+
+func _continue_checkpoint() -> int:
+	return mini(MetaSave.checkpoint, StageData.checkpoint_count() - 1)
+
+
+func _continue_run() -> void:
+	_start_run(_continue_checkpoint())
+
+
+# CONTINUE only shows once a run has got past a checkpoint; the buttons close up to fit.
+func _layout_title_menu() -> void:
+	var cp: int = _continue_checkpoint()
+	_title_continue_btn.visible = cp > 0
+	_title_continue_btn.text = "CONTINUE (STAGE %d)" % (cp * StageData.CHECKPOINT_EVERY + 1)
+	_title_menu_btns.clear()
+	for b: Button in _title_all_btns:
+		if b.visible:
+			_title_menu_btns.append(b)
+	var gap: float = 25.0 if _title_menu_btns.size() <= 6 else 22.0
+	for i: int in range(_title_menu_btns.size()):
+		_title_menu_btns[i].position.y = 72.0 + float(i) * gap
+		_title_menu_btns[i].size.y = 22.0 if gap > 22.0 else 20.0
 
 
 func _build_stats_ui() -> void:
@@ -4729,7 +4908,7 @@ func _open_options_from_pause() -> void:
 func _retire_from_pause() -> void:
 	_unfreeze_world()
 	MetaSave.record_run_end(wave, run_scrap, run_kills, score, run_bosses)
-	_enter_hangar("RETIRED S%d  |  +%d SCRAP!" % [current_stage_idx + 1, run_scrap])
+	_enter_hangar("RETIRED S%d  |  +%d SCRAP!" % [current_level + 1, run_scrap])
 
 
 func _quit_from_pause() -> void:
@@ -5017,6 +5196,7 @@ func _enter_title() -> void:
 
 	_title_loadout_btn.text = "SHIP LOADOUT (%d/%d)" % [MetaSave.get_unlocked_ship_count(), SkillTreeData.SHIPS.size()]
 
+	_layout_title_menu()
 	_title_sel_idx = clampi(_title_sel_idx, 0, _title_menu_btns.size() - 1)
 	_title_menu_btns[_title_sel_idx].grab_focus()
 
@@ -5117,7 +5297,9 @@ func _enter_hangar(summary_msg: String) -> void:
 	_refresh_skill_tree_ui()
 
 
-func _start_run() -> void:
+## from_checkpoint > 0 continues a run right after that checkpoint (with a free level-up draft
+## for every level skipped, so the ship isn't bare).
+func _start_run(from_checkpoint: int = 0) -> void:
 	_unfreeze_world()
 	RetroSfx.play("powerup", -5.0, 0.02)
 	_clear_entities()
@@ -5127,15 +5309,20 @@ func _start_run() -> void:
 	state = State.INTRO_WARP
 	_intro_timer = 0.0
 	_intro_flash_done = false
-	current_stage_idx = 0
-	starfield.set_stage(0)
+	_build_run_route()
+	_run_start_level = clampi(from_checkpoint, 0, StageData.checkpoint_count() - 1) * StageData.CHECKPOINT_EVERY
+	_cleared_checkpoint = -1
+	current_level = _run_start_level
+	current_stage_idx = _stage_for_level(current_level)
+	starfield.next_stage_idx = -1
+	starfield.set_stage(current_stage_idx)
 	starfield.hyperspace_active = true
 	starfield.hyperspace_progress = 0.25
 	starfield.speed_scale = 2.4
 	hud_bar.visible = true
 	pause_hud_btn.visible = false
 
-	wave = 0
+	wave = _run_start_level * StageData.WAVES_PER_STAGE
 	score = 0
 	run_scrap = 0
 	run_kills = 0
@@ -5145,7 +5332,7 @@ func _start_run() -> void:
 	run_xp_dropped = 0
 	xp_to_next = _calc_xp_for_level(1)
 	rerolls_left = MetaSave.get_starting_rerolls()
-	_pending_level_ups = 0
+	_pending_level_ups = _run_start_level
 	_pending_hyperspace = false
 	run_ranks.clear()
 	_squad_counts.clear()
@@ -5164,8 +5351,9 @@ func _start_run() -> void:
 		run_ranks["shield"] = MetaSave.get_starting_shields()
 
 	var ship_def: Dictionary = MetaSave.get_selected_ship_def()
-	GenesisMusic.play_stage(0)
-	_show_banner("%s LAUNCHING!\nSTAGE 1: OUTER ORBIT" % String(ship_def["name"]), ship_def["color"], INTRO_DURATION)
+	GenesisMusic.play_stage(current_stage_idx)
+	var first: Dictionary = StageData.get_stage(current_stage_idx)
+	_show_banner("%s LAUNCHING!\nSTAGE %d: %s" % [String(ship_def["name"]), current_level + 1, String(first["name"])], ship_def["color"], INTRO_DURATION)
 	hud_bar.queue_redraw()
 
 
@@ -5211,33 +5399,61 @@ func _clear_entities() -> void:
 	_spawn_queue.clear()
 
 
+# The stage this run plays at a level: its slot in _run_route, plus whole loops.
+func _stage_for_level(level: int) -> int:
+	var n: int = StageData.stage_count()
+	var pos: int = posmod(level, n)
+	var base: int = _run_route[pos] if pos < _run_route.size() else pos
+	return base + (level - pos)
+
+
+# A fresh order for a run: stage 1 first, the rest shuffled.
+func _build_run_route() -> void:
+	var rest: Array[int] = []
+	for i: int in range(1, StageData.stage_count()):
+		rest.append(i)
+	rest.shuffle()
+	_run_route = [0]
+	_run_route.append_array(rest)
+
+
 func _begin_next_wave() -> void:
 	wave += 1
-	current_stage_idx = StageData.get_stage_index_for_wave(wave)
+	current_level = StageData.get_stage_index_for_wave(wave)
+	current_stage_idx = _stage_for_level(current_level)
 	# Stage modules (stages 9+): this stage's sprites must be ready, and the next stage's are
 	# built on a worker thread meanwhile (no-ops for stages 1-8).
+	var next_stage: int = _stage_for_level(current_level + 1)
 	StageData.prepare_stage(current_stage_idx)
-	StageData.prefetch_stage(current_stage_idx + 1)
+	StageData.prefetch_stage(next_stage)
+	starfield.next_stage_idx = next_stage
 	starfield.set_stage(current_stage_idx)
 
 	var st: Dictionary = StageData.get_stage(current_stage_idx)
 	var sub_wave: int = StageData.get_wave_in_stage(wave)
 	var is_boss: bool = StageData.is_boss_wave(wave)
-	var stage_display_num: int = current_stage_idx + 1
+	var stage_display_num: int = current_level + 1
 
 	_wave_clock = 0.0
 	_wave_clear_delay = 0.70
 	_spawn_queue.clear()
 
-	var hp_mult: float = StageData.stage_hp_growth(current_stage_idx) * (1.0 + float(sub_wave - 1) * 0.16)
+	var hp_mult: float = StageData.stage_hp_growth(current_level) * (1.0 + float(sub_wave - 1) * 0.16)
 
 	if is_boss:
 		_pending_hyperspace = true
 		starfield.speed_scale = 1.40
 		GenesisMusic.play_boss(current_stage_idx)
-		_show_banner("WARNING! %s!" % String(st["boss_name"]), Color("#ff4c68"), 2.8)
 		RetroSfx.play("boss_siren", -5.5, 0.0)
 		_queue_enemy(0.35, GameEnemy.Type.BOSS, Vector2(420.0, -110.0), hp_mult, 0.0, -1)
+		if StageData.is_checkpoint_level(current_level):
+			# Every 4th level: the checkpoint's giant dino robot instead of the stage's boss.
+			var cp: int = StageData.checkpoint_index(current_level)
+			(_spawn_queue[_spawn_queue.size() - 1] as Dictionary)["cp"] = cp
+			var head: String = "FINAL CHECKPOINT!" if GameEnemy.CheckpointBosses.is_final(cp) else "CHECKPOINT %d!" % (cp + 1)
+			_show_banner("%s\nWARNING! %s!" % [head, GameEnemy.CheckpointBosses.boss_name(cp)], Color("#ff4c68"), 3.2)
+		else:
+			_show_banner("WARNING! %s!" % String(st["boss_name"]), Color("#ff4c68"), 2.8)
 	else:
 		_pending_hyperspace = false
 		starfield.speed_scale = 1.15 + minf(0.35, float(wave) * 0.025)
@@ -5249,7 +5465,7 @@ func _begin_next_wave() -> void:
 
 		# Groups alternate between the stage's own enemies (share = "themed") and the generic
 		# fodder patterns; later stages have more groups, packed closer together ("pace").
-		var diff: Dictionary = StageData.get_difficulty(current_stage_idx)
+		var diff: Dictionary = StageData.get_difficulty(current_level)
 		var pace: float = float(diff["pace"])
 		var share: float = float(diff["themed"])
 		var t: float = 0.65
@@ -5307,7 +5523,7 @@ func _queue_generic_group(roll: int, sub_wave: int, t: float, hp_mult: float) ->
 			_queue_enemy(t + float(absi(k - 3)) * 0.22, GameEnemy.Type.SCOUT_SINE, Vector2(502.0, clampf(center_y + wing_off, 48.0, 214.0)), hp_mult, float(k) * 0.4, sq_id)
 		return 2.6
 	_queue_enemy(t, GameEnemy.Type.CRUISER, Vector2(512.0, randf_range(72.0, 120.0)), hp_mult, 0.0, -1)
-	if current_stage_idx >= 1 or sub_wave >= 2:
+	if current_level >= 1 or sub_wave >= 2:
 		_queue_enemy(t + 0.7, GameEnemy.Type.CRUISER, Vector2(518.0, randf_range(148.0, 196.0)), hp_mult, 1.5, -1)
 	_queue_enemy(t + 0.4, GameEnemy.Type.SWOOPER, Vector2(504.0, 62.0), hp_mult, 0.0, -1)
 	_queue_enemy(t + 0.8, GameEnemy.Type.SWOOPER, Vector2(504.0, 202.0), hp_mult, 1.2, -1)
@@ -5529,6 +5745,7 @@ func _queue_enemy(spawn_time: float, e_type: GameEnemy.Type, pos: Vector2, hp_mu
 		"phase": phase,
 		"squad": sq_id,
 		"stage": current_stage_idx,
+		"level": current_level,
 		"variant": variant,
 	}
 	if kind != "":
@@ -5562,9 +5779,18 @@ func _begin_hyperspace_jump() -> void:
 		player.heal(stage_heal)
 		fx_layer.spawn_popup(player.global_position + Vector2(-18.0, -16.0), "NANITE +%d HP!" % stage_heal, Color("#3ce878"))
 
-	var next_stage: Dictionary = StageData.get_stage(current_stage_idx + 1)
+	var next_stage: Dictionary = StageData.get_stage(_stage_for_level(current_level + 1))
 	var clear_head: String = String(StageData.get_stage(current_stage_idx).get("clear_banner", "HYPERSPACE JUMP!"))
-	_show_banner("%s\nNEXT: %s" % [clear_head, String(next_stage["name"])], Color("#28e8ff"), _hyper_duration)
+	var head_col: Color = Color("#28e8ff")
+	if _cleared_checkpoint >= 0:
+		if GameEnemy.CheckpointBosses.is_final(_cleared_checkpoint):
+			clear_head = "VICTORY! THE MEGA T-REX IS DOWN!"
+			head_col = Color("#ffe854")
+		else:
+			clear_head = "CHECKPOINT %d CLEARED!" % (_cleared_checkpoint + 1)
+			head_col = Color("#3ce878")
+		_cleared_checkpoint = -1
+	_show_banner("%s\nNEXT: %s" % [clear_head, String(next_stage["name"])], head_col, _hyper_duration)
 	GenesisMusic.play_hyperspace()
 	RetroSfx.play("powerup", -5.0, 0.02)
 
@@ -5578,7 +5804,7 @@ func _update_hyperspace(delta: float) -> void:
 
 	if prog >= 0.55 and not _hyper_swapped_stage:
 		_hyper_swapped_stage = true
-		starfield.set_stage(current_stage_idx + 1)
+		starfield.set_stage(_stage_for_level(current_level + 1))
 
 	if _hyper_timer >= _hyper_duration:
 		starfield.hyperspace_active = false
@@ -5664,7 +5890,7 @@ func _process(delta: float) -> void:
 		_death_timer -= delta
 		if _death_timer <= 0.0:
 			MetaSave.record_run_end(wave, run_scrap, run_kills, score, run_bosses)
-			var msg: String = "FELL ON S%d-W%d  |  +%d SCRAP!" % [current_stage_idx + 1, wave, run_scrap]
+			var msg: String = "FELL ON S%d-W%d  |  +%d SCRAP!" % [current_level + 1, wave, run_scrap]
 			_enter_hangar(msg)
 
 
@@ -5980,6 +6206,8 @@ func _spawn_enemy_now(item: Dictionary) -> GameEnemy:
 	enemy_layer.add_child(e)
 	var e_type: GameEnemy.Type = item["type"]
 	e.module_kind = String(item.get("kind", ""))
+	e.diff_level = int(item.get("level", -1))
+	e.checkpoint_tier = int(item.get("cp", -1))
 	e.setup(
 		e_type,
 		Vector2(item["pos"]),
@@ -6024,6 +6252,12 @@ func _on_enemy_destroyed(enemy: GameEnemy, killed_by_player: bool) -> void:
 	var is_boss_kill: bool = (enemy.enemy_type == GameEnemy.Type.BOSS)
 	if is_boss_kill:
 		run_bosses += 1
+		if enemy.checkpoint_tier >= 0:
+			# Past a checkpoint: later runs can start right after it.
+			var final_cp: bool = GameEnemy.CheckpointBosses.is_final(enemy.checkpoint_tier)
+			MetaSave.reach_checkpoint(enemy.checkpoint_tier, final_cp)
+			_cleared_checkpoint = enemy.checkpoint_tier
+			fx_layer.spawn_popup(enemy.global_position + Vector2(-60.0, -40.0), "VICTORY!" if final_cp else "CHECKPOINT!", Color("#ffe854"))
 	score += enemy.score_value
 	var e_pos: Vector2 = enemy.global_position
 
@@ -6374,7 +6608,7 @@ func _draw_hud() -> void:
 	hud_bar.draw_string(font, Vector2(120.0, 14.0), lv_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SZ, Color("#54f4ff"))
 
 	var st_head: String = "%d-%s " % [
-		current_stage_idx + 1,
+		current_level + 1,
 		"BOSS" if StageData.is_boss_wave(wave) else str(sub_w),
 	]
 	var st_txt: String = _fit_hud_stage_text(font, st_head, String(st["name"]))

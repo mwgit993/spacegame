@@ -64,6 +64,16 @@ World layering is `world_root` → `pickup_layer`, `enemy_layer`, `player`, `bul
 - An enemy that leaves the screen emits `destroyed(self, false)`, and so does a space mine that bursts on its own. Only `true` awards score, Scrap or XP; an enemy with `scrap_drop` 0 gives no Scrap.
 - Pickups spawned from kill handlers go through `call_deferred` (`_spawn_pickup_deferred`), because the kill happens inside a physics callback.
 
+**Checkpoints and the run order** (Matthew's request).
+- A run plays the stages in a shuffled order. `main._build_run_route` puts stage 1 first and shuffles the rest into `_run_route` (level → stage).
+- `current_level` is the 0-based place in the run, counting on through loops: wave → level → `_stage_for_level` → `current_stage_idx`. Content comes from the stage: backgrounds, music, enemies and each stage's own boss. Difficulty comes from the level.
+- `_queue_enemy` stamps `"level"` on every spawn. `GameEnemy.diff_level` drives HP, loops, the difficulty table and boss scaling. `StageData.boss_base_hp(level)` gives a boss the HP of the boss at that position in stage order, so a shuffled late boss isn't a wall.
+- Every 4th level (`StageData.is_checkpoint_level` / `checkpoint_index`) is a checkpoint. Its boss wave brings a giant dino robot instead of the stage's boss: the spawn item gets `"cp"`, and `GameEnemy.checkpoint_tier` builds `rig_dino_mech.gd` plus the `mech_boss.gd` AI from `scripts/bosses/checkpoint_bosses.gd`.
+- The robots are a fixed lineup: raptor, triceratops, pterodactyl, stego, spino and ankylo, then the MEGA T-REX at the last checkpoint. Each one adds attacks on top of the last: volley, fan, wave, vertical beams (columns of stationary shots that fade, via `GameBullet.life_left`), shots from behind, rings, rain. Each attack that needs a warning spans two `attack()` calls, with the telegraph drawn in `draw()`.
+- Past each checkpoint, enemy HP, shot speed and fire rate step up (`StageData.CHECKPOINT_*_STEP`) on top of the per-level growth.
+- Beating a robot calls `MetaSave.reach_checkpoint`, which saves `checkpoint` and `game_beaten`. The title then shows CONTINUE (`_layout_title_menu`), and `_start_run(cp)` starts at level `cp * 4` with one free draft per level skipped.
+- The smoke test (`_smoke_check_checkpoints`) covers the order, the checkpoint levels, the robot wave, every robot's moves, saving and continuing. Checks that set `wave` directly clear `_run_route` first, so the stages play in order.
+
 **Two progression layers:**
 
 1. **Meta (between runs).** Skill-tree nodes live in `SkillTreeData.NODES`. Each node has an `id`, a `parent`, `max_level`, `base_cost` plus `cost_step`, a tree `pos`, `unlocks_ship` and `unlocks_upgrade`. `MetaSave.tree_levels[id]` stores the rank. **The tree deliberately gives no combat bonuses at run start** (Matthew's design call): nodes only add starting hull and shields, Lazarus revive, ships, economy perks (magnet, Scrap, XP, boss bounty, rerolls), "DRAFT CARD" nodes whose `unlocks_upgrade` adds a `RUN_UPGRADE_POOL` id to the level-up drafts, and "EVOLVE" nodes (see below) that only change a sub weapon once it's drafted.
