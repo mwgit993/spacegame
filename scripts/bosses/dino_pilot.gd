@@ -22,6 +22,10 @@ const SPECIES: Dictionary = {
 	"raptor": {"skin": Color("#e08a2e"), "belly": Color("#f6e0a8"), "accent": Color("#8e4510"), "scarf": Color("#3c8cff")},
 	"ptero": {"skin": Color("#9378dc"), "belly": Color("#ddd0f8"), "accent": Color("#e8344a"), "scarf": Color("#ffe854")},
 	"trike": {"skin": Color("#4a8fd8"), "belly": Color("#d4e8ff"), "accent": Color("#ff9624"), "scarf": Color("#e8344a")},
+	"stego": {"skin": Color("#7fb8d8"), "belly": Color("#eef8ff"), "accent": Color("#ff8a4c"), "scarf": Color("#e8344a")},
+	"spino": {"skin": Color("#d8453a"), "belly": Color("#f4c890"), "accent": Color("#ff9624"), "scarf": Color("#2c2c3c")},
+	"plesio": {"skin": Color("#3cb8b0"), "belly": Color("#c8f4e8"), "accent": Color("#ffe854"), "scarf": Color("#ff6a9a")},
+	"dilo": {"skin": Color("#2fa86a"), "belly": Color("#d8f8c8"), "accent": Color("#ff4cd4"), "scarf": Color("#3cf4ff")},
 }
 
 var species: String = "rex"
@@ -129,6 +133,18 @@ static func paint_face(sp: String, expr: String) -> Image:
 			Kit.ellipse(img, 22.0 + cos(a) * 7.0, 9.5 + sin(a) * 8.4, 1.3, 1.3, accent)
 	elif sp == "ptero":
 		Kit.poly(img, PackedVector2Array([Vector2(15, 4), Vector2(29, 0), Vector2(22, 7)]), accent)
+	elif sp == "spino":
+		Kit.poly(img, PackedVector2Array([Vector2(14, 7), Vector2(17, 0), Vector2(29, 0), Vector2(29, 13), Vector2(22, 12)]), accent)
+		for sx: int in [19, 23, 27]:
+			Kit.line(img, Vector2(float(sx), 1), Vector2(float(sx) - 2.0, 11), accent.darkened(0.35))
+	elif sp == "stego":
+		for pl: Vector3 in [Vector3(21, 3, 4), Vector3(25, 8, 4), Vector3(27, 13, 3)]:
+			Kit.poly(img, PackedVector2Array([Vector2(pl.x - pl.z, pl.y + 3.0), Vector2(pl.x, pl.y - pl.z), Vector2(pl.x + pl.z, pl.y + 3.0), Vector2(pl.x, pl.y + 6.0)]), accent)
+	elif sp == "dilo":
+		Kit.ellipse(img, 21.0, 11.0, 7.0, 8.5, accent)
+		for k2: int in range(6):
+			var a2: float = -1.7 + float(k2) * 0.62
+			Kit.ellipse(img, 21.0 + cos(a2) * 6.0, 11.0 + sin(a2) * 7.4, 1.1, 1.1, Color("#3cf4ff"))
 
 	# Shoulders, scarf, neck, skull.
 	Kit.ball(img, 21.0, 21.5, 7.5, 5.5, skin)
@@ -145,9 +161,15 @@ static func paint_face(sp: String, expr: String) -> Image:
 			snout = PackedVector2Array([Vector2(0, 10.5), Vector2(13, 6.5), Vector2(17, 8), Vector2(17, 11.5), Vector2(3, 11.5)])
 		"trike":
 			snout = PackedVector2Array([Vector2(3, 11), Vector2(8, 6.5), Vector2(16, 6), Vector2(16, 12), Vector2(5, 12)])
+		"spino":
+			snout = PackedVector2Array([Vector2(0, 10), Vector2(10, 7.5), Vector2(17, 7.5), Vector2(17, 11.5), Vector2(1, 11.5)])
+		"stego", "plesio":
+			snout = PackedVector2Array([Vector2(7, 10), Vector2(11, 6.5), Vector2(17, 7), Vector2(17, 12), Vector2(7, 12)])
+		"dilo":
+			snout = PackedVector2Array([Vector2(3, 9), Vector2(12, 6), Vector2(17, 7.5), Vector2(17, 11.5), Vector2(4, 11.5)])
 		_:
 			snout = PackedVector2Array([Vector2(5, 8), Vector2(12, 5), Vector2(17, 7), Vector2(17, 12), Vector2(5, 12)])
-	var beak: bool = sp == "ptero" or sp == "trike"
+	var beak: bool = sp == "ptero" or sp == "trike" or sp == "stego"
 	Kit.poly(img, snout, skin)
 	if sp == "ptero":
 		Kit.poly(img, PackedVector2Array([Vector2(0, 10.5), Vector2(9, 7.5), Vector2(10, 11.5), Vector2(3, 11.5)]), Color("#f0b44a"))
@@ -195,6 +217,14 @@ static func paint_face(sp: String, expr: String) -> Image:
 			Kit.line(img, Vector2(18, 15), Vector2(21, 17), accent)
 			for f: Vector3 in [Vector3(16, 3, 0), Vector3(19, 2.5, 1), Vector3(22, 3.5, 2)]:
 				Kit.poly(img, PackedVector2Array([Vector2(f.x - 1.5, f.y + 1.5), Vector2(f.x + 2.5 + f.z, f.y - 3.0), Vector2(f.x + 1.5, f.y + 2.0)]), Color("#e8344a"))
+		"dilo":
+			Kit.line(img, Vector2(12, 5), Vector2(19, 0), Color("#ff4c68"), 1.0)
+			Kit.line(img, Vector2(14, 6), Vector2(21, 1), Color("#ff4c68"), 1.0)
+		"plesio":
+			for sp2: Vector2i in [Vector2i(20, 6), Vector2i(23, 9), Vector2i(19, 15), Vector2i(22, 18)]:
+				Kit.put(img, sp2.x, sp2.y, accent)
+		"spino":
+			Kit.line(img, Vector2(20, 8), Vector2(22, 12), skin.darkened(0.3))
 		"trike":
 			var horn: Color = Color("#f4ead0")
 			Kit.line(img, Vector2(15, 5), Vector2(10, 0), horn, 2.0)
@@ -249,6 +279,10 @@ static func paint_face(sp: String, expr: String) -> Image:
 		var vein: Color = Color("#ff3048")
 		for vp: Vector2i in [Vector2i(24, 2), Vector2i(26, 2), Vector2i(23, 3), Vector2i(27, 3), Vector2i(23, 5), Vector2i(27, 5), Vector2i(24, 6), Vector2i(26, 6)]:
 			Kit.put(img, vp.x, vp.y, vein)
+	if sp == "plesio" and not roaring:
+		Kit.line(img, Vector2(9, 12), Vector2(9, 3), Color("#ffe854"), 1.0)
+		Kit.rect(img, 8, 2, 3, 1, Color("#ff9624"))
+		Kit.rect(img, 7, 12, 4, 1, Color("#ff9624"))
 	Kit.shade(img, 0.2, 0.25, 0.9)
 	return Kit.outline(img)
 

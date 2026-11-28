@@ -113,6 +113,10 @@ var _boss_dying: bool = false
 const BossRigs = preload("res://scripts/bosses/boss_rigs.gd")
 const BossRig = preload("res://scripts/bosses/boss_rig.gd")
 var _rig: BossRig = null
+# Stage-module bosses keep their painted frames, with a dino pilot in a canopy sitting on top of
+# the silhouette (every boss is piloted by an angry space dinosaur).
+const DinoPilotScript = preload("res://scripts/bosses/dino_pilot.gd")
+var _pilot: DinoPilotScript = null
 var _boss_death_timer: float = 0.0
 var _boss_death_boom_timer: float = 0.0
 
@@ -303,6 +307,8 @@ func setup(
 				_sprite.add_child(_rig)
 				_rig.setup(self)
 				_sprite.texture = null
+			if _rig == null:
+				_add_frame_pilot()
 
 			# Launch Mega Man-style Boss Teleport Arrival -> Signature Pose -> 28-Pip HP Bar Fill!
 			boss_intro_active = true
@@ -1365,6 +1371,8 @@ func _process_boss(delta: float) -> void:
 		_boss_attack()
 		if _rig != null:
 			_rig.on_attack(_boss_pattern)
+		if _pilot != null:
+			_pilot.roar(0.3)
 		_boss_attack_anim_timer = 0.28
 		_boss_recoil_x = 5.5
 		_sprite.scale = Vector2(1.06, 0.95)
@@ -1539,17 +1547,17 @@ func _boss_attack() -> void:
 
 		5: # STAGE 6: INFERNO SKULL BALROG
 			if _boss_pattern == 0:
-				_shoot_from_spread(global_position + Vector2(-32.0, 14.0), 5 + boss_phase * 2, 0.18, 155.0 + spd_bonus, _bullet_a)
+				_shoot_from_spread(_bm("mouth", Vector2(-32.0, 14.0)), 5 + boss_phase * 2, 0.18, 155.0 + spd_bonus, _bullet_a)
 				_fire_timer = 0.86 * rate_mult
 			else:
 				for k: int in range(-boss_phase, boss_phase + 1):
-					_shoot_aimed_from(global_position + Vector2(-20.0, -16.0), 178.0 + spd_bonus, _bullet_b, float(k) * 0.09)
+					_shoot_aimed_from(_bm("eye", Vector2(-20.0, -16.0)), 178.0 + spd_bonus, _bullet_b, float(k) * 0.09)
 				_fire_timer = 0.74 * rate_mult
 
 		6: # STAGE 7: ABYSSAL KRAKEN
 			for arm: int in range(4 + boss_phase):
 				var ang: float = PI + sin(_age * 3.0 + float(arm) * 0.5) * 0.58 + float(arm - 2) * 0.19
-				_shoot_from(global_position + Vector2(-40.0, float(arm - 2) * 20.0), Vector2.from_angle(ang) * (146.0 + spd_bonus), _bullet_a)
+				_shoot_from(_bm("arm%d" % (arm % 6), Vector2(-40.0, float(arm - 2) * 20.0)), Vector2.from_angle(ang) * (146.0 + spd_bonus), _bullet_a)
 			_fire_timer = 0.68 * rate_mult
 
 		_: # STAGE 8: NEON MEDUSA OVERMIND
@@ -1565,6 +1573,38 @@ func _boss_attack() -> void:
 				_shoot_ring(10 + boss_phase * 2, 154.0 + spd_bonus, _bullet_b, _boss_spin)
 				_boss_spin -= 0.25
 				_fire_timer = 0.72 * rate_mult
+
+
+# A dino pilot for a boss drawn from painted frames: its canopy straddles the top edge of the
+# silhouette a little ahead of centre, and the species comes from the stage, so each boss keeps its
+# own pilot.
+func _add_frame_pilot() -> void:
+	var tex: Texture2D = _sprite.texture
+	if tex == null:
+		return
+	var img: Image = tex.get_image()
+	var used: Rect2i = img.get_used_rect()
+	if used.size.x < 24 or used.size.y < 24:
+		return
+	var cx: int = used.position.x + int(float(used.size.x) * 0.42)
+	# The first row where the body is solid across the canopy's middle (skips thin antennae,
+	# branches and rings).
+	var top: int = used.position.y
+	for y: int in range(used.position.y, used.end.y):
+		var solid: int = 0
+		for x: int in range(maxi(0, cx - 7), mini(img.get_width(), cx + 8)):
+			if img.get_pixel(x, y).a > 0.5:
+				solid += 1
+		if solid >= 11:
+			top = y
+			break
+	var species: Array = (DinoPilotScript.SPECIES as Dictionary).keys()
+	var st_id: String = String(StageData.get_stage(stage_idx).get("id", str(stage_idx)))
+	_pilot = DinoPilotScript.new()
+	_pilot.position = Vector2(float(cx), float(top + 12)) - Vector2(img.get_size()) * 0.5
+	_pilot.use_parent_material = true
+	_sprite.add_child(_pilot)
+	_pilot.setup(String(species[absi(st_id.hash()) % species.size()]), Vector2i(34, 28))
 
 
 # Shows one of BossPainter's frames (_0/_1 idle, _2 attack); rigged bosses animate themselves.
@@ -1717,6 +1757,8 @@ func take_damage(dmg: float, silent: bool = false) -> void:
 		hp = maxf(0.0, hp - effective_dmg)
 		if _rig != null:
 			_rig.on_hurt()
+		if _pilot != null:
+			_pilot.hurt()
 
 		# Check 3-Phase Thresholds (66% -> Phase 2, 33% -> Phase 3)!
 		var ratio: float = hp / max_hp
@@ -1744,6 +1786,9 @@ func _enter_next_boss_phase(new_phase: int) -> void:
 	boss_phase = new_phase
 	if _rig != null:
 		_rig.on_phase(new_phase)
+	if _pilot != null:
+		_pilot.roar(0.95)
+		_pilot.low_hp = new_phase >= 3
 	boss_shield_timer = 0.95 # Brief phase-transition energy shield!
 	_dps_accumulator = 0.0
 	_fire_timer = 0.45
@@ -1765,6 +1810,8 @@ func _start_boss_death_sequence() -> void:
 	_boss_dying = true
 	if _rig != null:
 		_rig.on_die()
+	if _pilot != null:
+		_pilot.low_hp = true
 	_boss_death_timer = 1.15
 	_boss_death_boom_timer = 0.02
 	hp = 0.0
@@ -1793,6 +1840,8 @@ func _finish_boss_death() -> void:
 	RetroSfx.play("big_explode", -3.5, 0.05)
 	if _rig != null and fx != null:
 		_rig.eject(fx, fx)
+	if _pilot != null and fx != null:
+		_pilot.eject(fx, fx)
 	destroyed.emit(self, true)
 	queue_free()
 
