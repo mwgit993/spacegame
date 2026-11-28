@@ -1512,14 +1512,19 @@ func _smoke_check_sub_weapons() -> bool:
 	return ok
 
 
-# The animated stage 1-8 bosses (scripts/bosses/): each rigged stage's boss uses its rig instead of
+# The animated stage 1-8 bosses (scripts/bosses/): each stage's boss uses its rig instead of
 # the painted frames, has a dino pilot, fires from the rig's muzzles (every attack pattern), runs
-# every reaction, and on death the pilot bails out in an escape pod that cleans itself up.
+# every reaction, and on death the pilot bails out in an escape pod that cleans itself up. Stage
+# module bosses (9+) keep their frames with a dino pilot that bails out too.
 const SMOKE_RIG_MUZZLES: Dictionary = {
 	0: ["cannon_top", "cannon_bot", "core", "ring"],
 	1: ["stinger", "claw_top", "claw_bot"],
 	2: ["maw", "spread", "ring"],
 	3: ["scythe_top", "scythe_bot", "mouth"],
+	4: ["ring", "aimed"],
+	5: ["mouth", "eye"],
+	6: ["arm0", "arm1", "arm2", "arm3", "arm4", "arm5"],
+	7: ["ring"],
 }
 
 
@@ -1578,6 +1583,20 @@ func _smoke_check_boss_rigs() -> bool:
 		boss._finish_boss_death()
 		if _smoke_count_pods() != pods_before + 1:
 			push_error("SMOKE: stage %d boss pilot did not bail out in an escape pod" % (st_i + 1))
+			ok = false
+	# Stage-module bosses keep their painted frames, each with a dino pilot that bails out too.
+	for st_m: int in range(StageData.BUILTIN_STAGES, StageData.stage_count()):
+		_smoke_clear_enemies()
+		var mboss: GameEnemy = _spawn_enemy_now({"type": GameEnemy.Type.BOSS, "pos": Vector2(414.0, 134.0), "hp_mult": 1.0, "phase": 0.0, "squad": 1, "stage": st_m})
+		if mboss == null or mboss._pilot == null or mboss._rig != null:
+			push_error("SMOKE: stage %d boss has no dino pilot" % (st_m + 1))
+			ok = false
+			continue
+		var mpods: int = _smoke_count_pods()
+		mboss._start_boss_death_sequence()
+		mboss._finish_boss_death()
+		if _smoke_count_pods() != mpods + 1:
+			push_error("SMOKE: stage %d boss pilot did not bail out" % (st_m + 1))
 			ok = false
 	# The pods fly off and free themselves.
 	for pod: Node in fx_layer.get_children():

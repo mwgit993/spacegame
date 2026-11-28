@@ -8,6 +8,10 @@ const RIGS: Dictionary = {
 	1: preload("res://scripts/bosses/rig_scorpion.gd"),
 	2: preload("res://scripts/bosses/rig_wyvern.gd"),
 	3: preload("res://scripts/bosses/rig_mantis.gd"),
+	4: preload("res://scripts/bosses/rig_seraph.gd"),
+	5: preload("res://scripts/bosses/rig_skull.gd"),
+	6: preload("res://scripts/bosses/rig_kraken.gd"),
+	7: preload("res://scripts/bosses/rig_medusa.gd"),
 }
 
 
