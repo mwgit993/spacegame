@@ -28,4 +28,26 @@ const TRACKS: Dictionary = {
 		"name": "LEVEL 2", "info": "RECORDED MP3  126 BPM", "file": "res://assets/music/level 2.mp3",
 		"bpm": 126.0, "loop_start": 843635, "loop_end": 4875635,
 	},
+	# 120 BPM. The quiet intro and its build-up play once, then 16.06 s -> 110.06 s (47 bars)
+	# repeats: from the end of the main part, just before the outro, back to its first beat
+	# (the drop after the build-up).
+	"stage_3": {
+		"name": "LEVEL 3", "info": "RECORDED MP3  120 BPM", "file": "res://assets/music/level 3.mp3",
+		"bpm": 120.0, "loop_start": 708260, "loop_end": 4853660,
+	},
+	# 160 BPM. The song's second half repeats its first half 32 bars later, so after one full
+	# pass it loops the second half, 60.05 s -> 108.05 s: the end of the last section (just
+	# before the outro) jumps back to where the second half starts, with the same music before
+	# both points.
+	"stage_4": {
+		"name": "LEVEL 4", "info": "RECORDED MP3  160 BPM", "file": "res://assets/music/level 4.mp3",
+		"bpm": 160.0, "loop_start": 2648385, "loop_end": 4765185,
+	},
+	# 82 BPM (bars of 4 beats at 82). The intro plays once, then 11.77 s -> 105.43 s (32 bars)
+	# repeats: from just before the final hit back to the opening hit of the first section, so
+	# every section is in the loop.
+	"stage_5": {
+		"name": "LEVEL 5", "info": "RECORDED MP3  82 BPM", "file": "res://assets/music/level 5.mp3",
+		"bpm": 82.0, "loop_start": 519118, "loop_end": 4649459,
+	},
 }
